@@ -200,13 +200,33 @@ export function AIRecommendations() {
 
                   {/* Action Buttons */}
                   <div className="flex gap-2">
-                    <Button className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white">
+                    <Button 
+                      onClick={() => {
+                        console.log('Executing recommendation:', action.title);
+                        alert(`Executing: ${action.title}\n\n${action.description}`);
+                      }}
+                      className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+                    >
                       Execute Now
                     </Button>
-                    <Button variant="outline" className="border-gray-700">
+                    <Button 
+                      variant="outline" 
+                      className="border-gray-700"
+                      onClick={() => {
+                        console.log('Adding to plan:', action.title);
+                        alert(`Added "${action.title}" to your trading plan`);
+                      }}
+                    >
                       Add to Plan
                     </Button>
-                    <Button variant="outline" className="border-gray-700">
+                    <Button 
+                      variant="outline" 
+                      className="border-gray-700"
+                      onClick={() => {
+                        console.log('Dismissing recommendation:', action.title);
+                        alert(`Dismissed: ${action.title}`);
+                      }}
+                    >
                       Dismiss
                     </Button>
                   </div>

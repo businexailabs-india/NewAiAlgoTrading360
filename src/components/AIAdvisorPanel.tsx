@@ -176,7 +176,14 @@ export function AIAdvisorPanel() {
                   </div>
                 </div>
 
-                <Button size="sm" className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white">
+                <Button 
+                  size="sm" 
+                  onClick={() => {
+                    console.log('Applying insight:', insight.title);
+                    alert(`Applied: ${insight.title}\n\n${insight.description}`);
+                  }}
+                  className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+                >
                   Apply
                 </Button>
               </div>
