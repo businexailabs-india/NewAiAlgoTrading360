@@ -1,0 +1,175 @@
+// Prisma Schema for SmartTrade Portfolio Optimizer
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  name          String?
+  phone         String?
+  role          String   @default("user") // user, admin
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  brokerConnections BrokerConnection[]
+  holdings          Holding[]
+  trades            Trade[]
+  settings          UserSettings?
+  portfolios        Portfolio[]
+
+  @@map("users")
+}
+
+model BrokerConnection {
+  id                    String   @id @default(uuid())
+  userId                String   @map("user_id")
+  broker                String   // zerodha, upstox, angelone
+  apiKeyEncrypted       String?  @map("api_key_encrypted")
+  accessTokenEncrypted  String?  @map("access_token_encrypted")
+  refreshTokenEncrypted String?  @map("refresh_token_encrypted")
+  expiresAt             DateTime? @map("expires_at")
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  holdings Holding[]
+  trades   Trade[]
+
+  @@map("broker_connections")
+}
+
+model Holding {
+  id                  String   @id @default(uuid())
+  userId              String   @map("user_id")
+  brokerConnectionId  String   @map("broker_connection_id")
+  symbol              String
+  exchange            String   // NSE, BSE
+  isin                String?
+  quantity            Int
+  averagePrice        Decimal  @map("average_price") @db.Decimal(10, 2)
+  lastPrice           Decimal  @map("last_price") @db.Decimal(10, 2)
+  pnl                 Decimal  @db.Decimal(10, 2)
+  pnlPercentage       Decimal  @map("pnl_percentage") @db.Decimal(5, 2)
+  currentValue        Decimal  @map("current_value") @db.Decimal(12, 2)
+  investedValue       Decimal  @map("invested_value") @db.Decimal(12, 2)
+  product             String   // CNC, MIS
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerConnection BrokerConnection @relation(fields: [brokerConnectionId], references: [id], onDelete: Cascade)
+
+  @@map("holdings")
+}
+
+model Trade {
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  brokerConnectionId String   @map("broker_connection_id")
+  orderId            String?  @map("order_id")
+  symbol             String
+  exchange           String
+  tradeType          String   @map("trade_type") // BUY, SELL
+  quantity           Int
+  price              Decimal  @db.Decimal(10, 2)
+  orderType          String   @map("order_type") // MARKET, LIMIT, SL, SL-M
+  product            String   // CNC, MIS, NRML
+  status             String   // PENDING, COMPLETE, REJECTED, CANCELLED
+  executedAt         DateTime? @map("executed_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerConnection BrokerConnection @relation(fields: [brokerConnectionId], references: [id], onDelete: Cascade)
+
+  @@map("trades")
+}
+
+model Portfolio {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  name             String
+  description      String?
+  totalValue       Decimal  @map("total_value") @db.Decimal(12, 2)
+  investedValue    Decimal  @map("invested_value") @db.Decimal(12, 2)
+  currentValue     Decimal  @map("current_value") @db.Decimal(12, 2)
+  totalPnL         Decimal  @map("total_pnl") @db.Decimal(12, 2)
+  totalPnLPercent  Decimal  @map("total_pnl_percent") @db.Decimal(5, 2)
+  dayPnL           Decimal  @map("day_pnl") @db.Decimal(10, 2)
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("portfolios")
+}
+
+model UserSettings {
+  id        String   @id @default(uuid())
+  userId    String   @unique @map("user_id")
+  settings  Json     // Store all settings as JSON
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model Strategy {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  category        String   // momentum, mean-reversion, arbitrage, etc.
+  code            String   @db.Text
+  parameters      Json
+  isActive        Boolean  @default(false) @map("is_active")
+  backtestResults Json?    @map("backtest_results")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("strategies")
+}
+
+model MarketData {
+  id        String   @id @default(uuid())
+  symbol    String
+  exchange  String
+  open      Decimal  @db.Decimal(10, 2)
+  high      Decimal  @db.Decimal(10, 2)
+  low       Decimal  @db.Decimal(10, 2)
+  close     Decimal  @db.Decimal(10, 2)
+  volume    BigInt
+  timestamp DateTime
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([symbol, exchange, timestamp])
+  @@map("market_data")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String
+  resource  String
+  details   Json?
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
