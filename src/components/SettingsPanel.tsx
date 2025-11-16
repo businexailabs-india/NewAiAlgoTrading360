@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
+import { useTheme } from '../contexts/ThemeContext';
 import { 
   Bell, 
   Shield, 
@@ -64,6 +65,9 @@ const DEFAULT_SETTINGS = {
 };
 
 export function SettingsPanel() {
+  // Use theme context for global theme management
+  const { theme, chartColorScheme, setTheme: setGlobalTheme, setChartColorScheme: setGlobalChartColorScheme } = useTheme();
+  
   // Load settings from localStorage on mount
   const loadSettings = () => {
     try {
@@ -78,16 +82,23 @@ export function SettingsPanel() {
   };
 
   const [notifications, setNotifications] = useState(loadSettings().notifications);
-  const [theme, setTheme] = useState(loadSettings().appearance.theme);
   const [language, setLanguage] = useState(loadSettings().general.language);
   const [currency, setCurrency] = useState(loadSettings().general.currency);
   const [timezone, setTimezone] = useState(loadSettings().general.timezone);
-  const [chartColorScheme, setChartColorScheme] = useState(loadSettings().appearance.chartColorScheme);
   const [tradingSettings, setTradingSettings] = useState(loadSettings().trading);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(loadSettings().security.twoFactorEnabled);
   
   const [showApiKey, setShowApiKey] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Update global theme when changed
+  const handleThemeChange = (newTheme: 'dark' | 'light') => {
+    setGlobalTheme(newTheme);
+  };
+
+  const handleChartColorSchemeChange = (newScheme: 'green-red' | 'blue-orange' | 'purple-yellow') => {
+    setGlobalChartColorScheme(newScheme);
+  };
 
   // Save all settings to localStorage
   const saveAllSettings = () => {
@@ -135,7 +146,7 @@ export function SettingsPanel() {
     }, 1000); // Debounce auto-save by 1 second
 
     return () => clearTimeout(timer);
-  }, [notifications, theme, language, currency, timezone, twoFactorEnabled]);
+  }, [notifications, theme, language, currency, timezone, chartColorScheme, tradingSettings, twoFactorEnabled]);
 
   return (
     <div className="space-y-6">
@@ -635,7 +646,7 @@ export function SettingsPanel() {
                 <Label className="text-gray-300 mb-3 block">Theme</Label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
-                    onClick={() => setTheme('dark')}
+                    onClick={() => handleThemeChange('dark')}
                     className={`p-4 rounded-lg border-2 transition-all ${
                       theme === 'dark'
                         ? 'border-cyan-500 bg-cyan-500/10'
@@ -644,10 +655,10 @@ export function SettingsPanel() {
                   >
                     <Moon className="w-6 h-6 text-cyan-400 mb-2" />
                     <div className="text-white">Dark Mode</div>
-                    <div className="text-xs text-gray-400">Current theme</div>
+                    <div className="text-xs text-gray-400">{theme === 'dark' ? 'Active' : 'Click to activate'}</div>
                   </button>
                   <button
-                    onClick={() => setTheme('light')}
+                    onClick={() => handleThemeChange('light')}
                     className={`p-4 rounded-lg border-2 transition-all ${
                       theme === 'light'
                         ? 'border-cyan-500 bg-cyan-500/10'
@@ -656,7 +667,7 @@ export function SettingsPanel() {
                   >
                     <Sun className="w-6 h-6 text-yellow-400 mb-2" />
                     <div className="text-white">Light Mode</div>
-                    <div className="text-xs text-gray-400">Coming soon</div>
+                    <div className="text-xs text-gray-400">{theme === 'light' ? 'Active' : 'Coming soon'}</div>
                   </button>
                 </div>
               </div>
@@ -665,7 +676,7 @@ export function SettingsPanel() {
                 <Label className="text-gray-300">Chart Color Scheme</Label>
                 <Select 
                   value={chartColorScheme}
-                  onValueChange={setChartColorScheme}
+                  onValueChange={handleChartColorSchemeChange}
                 >
                   <SelectTrigger className="bg-gray-800 border-gray-700 mt-2">
                     <SelectValue />
