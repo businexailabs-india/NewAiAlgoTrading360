@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Bell, 
   Shield, 
@@ -16,7 +16,9 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Check
+  Check,
+  Save,
+  CheckCircle
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -26,8 +28,12 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
-export function SettingsPanel() {
-  const [notifications, setNotifications] = useState({
+// Settings storage key
+const SETTINGS_STORAGE_KEY = 'smarttrade_settings';
+
+// Default settings
+const DEFAULT_SETTINGS = {
+  notifications: {
     emailAlerts: true,
     pushNotifications: true,
     tradeExecutions: true,
@@ -35,23 +41,120 @@ export function SettingsPanel() {
     anomalyDetection: true,
     dailyReports: false,
     weeklyReports: true
-  });
+  },
+  general: {
+    language: 'en',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata'
+  },
+  appearance: {
+    theme: 'dark',
+    chartColorScheme: 'green-red'
+  },
+  trading: {
+    defaultOrderType: 'market',
+    defaultQuantity: 100,
+    maxPositionSize: 100000,
+    defaultStopLoss: 3.5,
+    defaultTarget: 5.0
+  },
+  security: {
+    twoFactorEnabled: true
+  }
+};
 
-  const [theme, setTheme] = useState('dark');
-  const [language, setLanguage] = useState('en');
-  const [currency, setCurrency] = useState('INR');
-  const [timezone, setTimezone] = useState('Asia/Kolkata');
+export function SettingsPanel() {
+  // Load settings from localStorage on mount
+  const loadSettings = () => {
+    try {
+      const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+    return DEFAULT_SETTINGS;
+  };
+
+  const [notifications, setNotifications] = useState(loadSettings().notifications);
+  const [theme, setTheme] = useState(loadSettings().appearance.theme);
+  const [language, setLanguage] = useState(loadSettings().general.language);
+  const [currency, setCurrency] = useState(loadSettings().general.currency);
+  const [timezone, setTimezone] = useState(loadSettings().general.timezone);
+  const [chartColorScheme, setChartColorScheme] = useState(loadSettings().appearance.chartColorScheme);
+  const [tradingSettings, setTradingSettings] = useState(loadSettings().trading);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(loadSettings().security.twoFactorEnabled);
   
   const [showApiKey, setShowApiKey] = useState(false);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(true);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Save all settings to localStorage
+  const saveAllSettings = () => {
+    const settings = {
+      notifications,
+      general: {
+        language,
+        currency,
+        timezone
+      },
+      appearance: {
+        theme,
+        chartColorScheme
+      },
+      trading: tradingSettings,
+      security: {
+        twoFactorEnabled
+      },
+      lastUpdated: new Date().toISOString()
+    };
+
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      console.log('Settings saved successfully:', settings);
+      
+      // Show success message
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      
+      return true;
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      return false;
+    }
+  };
 
   const handleSaveSettings = () => {
-    console.log('Saving settings...');
-    // Implement save logic
+    saveAllSettings();
   };
+
+  // Auto-save when critical settings change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveAllSettings();
+    }, 1000); // Debounce auto-save by 1 second
+
+    return () => clearTimeout(timer);
+  }, [notifications, theme, language, currency, timezone, twoFactorEnabled]);
 
   return (
     <div className="space-y-6">
+      {/* Success Notification */}
+      {saveSuccess && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 flex items-center gap-3"
+        >
+          <CheckCircle className="w-5 h-5 text-green-400" />
+          <div>
+            <p className="text-green-400 font-medium">Settings Saved Successfully!</p>
+            <p className="text-sm text-green-300/70">Your preferences have been updated.</p>
+          </div>
+        </motion.div>
+      )}
+
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -449,7 +552,10 @@ export function SettingsPanel() {
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="default-order-type" className="text-gray-300">Default Order Type</Label>
-                  <Select defaultValue="market">
+                  <Select 
+                    value={tradingSettings.defaultOrderType}
+                    onValueChange={(value) => setTradingSettings({...tradingSettings, defaultOrderType: value})}
+                  >
                     <SelectTrigger className="bg-gray-800 border-gray-700 mt-2">
                       <SelectValue />
                     </SelectTrigger>
@@ -466,7 +572,8 @@ export function SettingsPanel() {
                   <Input 
                     id="default-quantity"
                     type="number"
-                    defaultValue="100"
+                    value={tradingSettings.defaultQuantity}
+                    onChange={(e) => setTradingSettings({...tradingSettings, defaultQuantity: parseInt(e.target.value) || 0})}
                     className="bg-gray-800 border-gray-700 mt-2"
                   />
                 </div>
@@ -476,7 +583,8 @@ export function SettingsPanel() {
                   <Input 
                     id="max-position-size"
                     type="number"
-                    defaultValue="100000"
+                    value={tradingSettings.maxPositionSize}
+                    onChange={(e) => setTradingSettings({...tradingSettings, maxPositionSize: parseInt(e.target.value) || 0})}
                     className="bg-gray-800 border-gray-700 mt-2"
                   />
                 </div>
@@ -487,7 +595,8 @@ export function SettingsPanel() {
                     id="default-stop-loss"
                     type="number"
                     step="0.1"
-                    defaultValue="3.5"
+                    value={tradingSettings.defaultStopLoss}
+                    onChange={(e) => setTradingSettings({...tradingSettings, defaultStopLoss: parseFloat(e.target.value) || 0})}
                     className="bg-gray-800 border-gray-700 mt-2"
                   />
                 </div>
@@ -498,7 +607,8 @@ export function SettingsPanel() {
                     id="default-target"
                     type="number"
                     step="0.1"
-                    defaultValue="5.0"
+                    value={tradingSettings.defaultTarget}
+                    onChange={(e) => setTradingSettings({...tradingSettings, defaultTarget: parseFloat(e.target.value) || 0})}
                     className="bg-gray-800 border-gray-700 mt-2"
                   />
                 </div>
@@ -553,7 +663,10 @@ export function SettingsPanel() {
 
               <div>
                 <Label className="text-gray-300">Chart Color Scheme</Label>
-                <Select defaultValue="green-red">
+                <Select 
+                  value={chartColorScheme}
+                  onValueChange={setChartColorScheme}
+                >
                   <SelectTrigger className="bg-gray-800 border-gray-700 mt-2">
                     <SelectValue />
                   </SelectTrigger>

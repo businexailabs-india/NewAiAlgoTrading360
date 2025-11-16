@@ -16,7 +16,8 @@ import {
   Zap,
   AlertCircle,
   FileText,
-  LogOut
+  LogOut,
+  Shield
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 
@@ -89,6 +90,11 @@ const menuItems = [
 ];
 
 const bottomItems = [
+  {
+    id: 'admin',
+    label: 'Admin',
+    icon: Shield
+  },
   {
     id: 'settings',
     label: 'Settings',

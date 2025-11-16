@@ -17,6 +17,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { ProfilePanel } from './components/ProfilePanel';
 import { TradingIntegrationGuide } from './components/TradingIntegrationGuide';
 import { StrategyHeatMapAnalysis } from './components/StrategyHeatMapAnalysis';
+import { AdminConsole } from './components/AdminConsole';
 
 export default function App() {
   const [autoExecute, setAutoExecute] = useState(false);
@@ -90,6 +91,9 @@ export default function App() {
       
       case 'profile':
         return <ProfilePanel />;
+      
+      case 'admin':
+        return <AdminConsole />;
       
       default:
         return (
