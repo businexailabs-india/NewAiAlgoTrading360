@@ -1,59 +1,52 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { TrendingDown, Calendar, DollarSign, BarChart3, Activity, Target } from 'lucide-react';
+import { TrendingDown, Calendar, DollarSign, BarChart3, Activity, Target, Loader2 } from 'lucide-react';
 import { Card } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
+import { portfolioService, AdvancedMetricsResponse } from '../services/portfolioService';
 
 interface AdvancedPerformanceMetricsProps {
   strategyId?: string;
+  portfolioId?: string;
 }
 
-// Heat map data for monthly returns
-const generateHeatMapData = () => {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const years = ['2023', '2024'];
-  
-  return years.map(year => ({
-    year,
-    months: months.map(month => ({
-      month,
-      return: (Math.random() * 20 - 5).toFixed(2),
-      trades: Math.floor(Math.random() * 50) + 10
-    }))
-  }));
-};
-
-// Multi-period performance data
-const multiPeriodStats = {
-  '6M': { winRate: 68.5, avgReturn: 12.4, sharpe: 1.85, maxDrawdown: -6.2, trades: 145 },
-  '9M': { winRate: 71.2, avgReturn: 18.7, sharpe: 1.92, maxDrawdown: -8.1, trades: 218 },
-  '1Y': { winRate: 69.8, avgReturn: 24.5, sharpe: 1.88, maxDrawdown: -9.5, trades: 289 },
-  '2Y': { winRate: 72.1, avgReturn: 52.3, sharpe: 2.05, maxDrawdown: -12.3, trades: 612 }
-};
-
-// Drawdown analysis data
-const drawdownData = [
-  { period: 'Current', value: -2.3, duration: '5 days', recovery: 'In progress' },
-  { period: 'Max (1Y)', value: -9.5, duration: '23 days', recovery: '45 days' },
-  { period: 'Max (2Y)', value: -12.3, duration: '31 days', recovery: '67 days' },
-  { period: 'Avg', value: -4.2, duration: '12 days', recovery: '28 days' }
-];
-
-// Tax impact analysis
-const taxImpactData = {
-  shortTermGains: 125000,
-  longTermGains: 89000,
-  shortTermTax: 18750, // 15% STCG
-  longTermTax: 8900, // 10% LTCG above 1L
-  totalTaxLiability: 27650,
-  netReturns: 185350,
-  effectiveTaxRate: 12.98
-};
-
-export function AdvancedPerformanceMetrics({ strategyId }: AdvancedPerformanceMetricsProps) {
+export function AdvancedPerformanceMetrics({ strategyId, portfolioId }: AdvancedPerformanceMetricsProps) {
   const [selectedPeriod, setSelectedPeriod] = useState<'6M' | '9M' | '1Y' | '2Y'>('1Y');
-  const heatMapData = generateHeatMapData();
+  const [metricsData, setMetricsData] = useState<AdvancedMetricsResponse['data'] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      setLoading(true);
+      try {
+        const response = await portfolioService.getAdvancedMetrics(selectedPeriod, strategyId);
+        setMetricsData(response.data);
+      } catch (error) {
+        console.error('Error loading advanced metrics:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMetrics();
+  }, [selectedPeriod, strategyId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!metricsData) {
+    return (
+      <div className="text-center py-12 text-gray-400">
+        Failed to load metrics data
+      </div>
+    );
+  }
 
   const getReturnColor = (returnValue: number) => {
     if (returnValue >= 5) return 'bg-green-500';
@@ -102,36 +95,26 @@ export function AdvancedPerformanceMetrics({ strategyId }: AdvancedPerformanceMe
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Card className="bg-gray-900/50 border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-1">Win Rate</div>
-            <div className="text-2xl text-cyan-400 font-semibold">
-              {multiPeriodStats[selectedPeriod].winRate}%
-            </div>
-          </Card>
-          <Card className="bg-gray-900/50 border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-1">Avg Return</div>
-            <div className="text-2xl text-green-400 font-semibold">
-              +{multiPeriodStats[selectedPeriod].avgReturn}%
-            </div>
-          </Card>
-          <Card className="bg-gray-900/50 border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-1">Sharpe Ratio</div>
-            <div className="text-2xl text-purple-400 font-semibold">
-              {multiPeriodStats[selectedPeriod].sharpe}
-            </div>
-          </Card>
-          <Card className="bg-gray-900/50 border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-1">Max Drawdown</div>
-            <div className="text-2xl text-red-400 font-semibold">
-              {multiPeriodStats[selectedPeriod].maxDrawdown}%
-            </div>
-          </Card>
-          <Card className="bg-gray-900/50 border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-1">Total Trades</div>
-            <div className="text-2xl text-white font-semibold">
-              {multiPeriodStats[selectedPeriod].trades}
-            </div>
-          </Card>
+          <div className="bg-gray-900/50 rounded-lg p-4">
+            <div className="text-sm text-gray-400 mb-1">Win Rate</div>
+            <div className="text-2xl text-cyan-400">{metricsData.multiPeriodStats[selectedPeriod].winRate}%</div>
+          </div>
+          <div className="bg-gray-900/50 rounded-lg p-4">
+            <div className="text-sm text-gray-400 mb-1">Avg Return</div>
+            <div className="text-2xl text-green-400">+{metricsData.multiPeriodStats[selectedPeriod].avgReturn}%</div>
+          </div>
+          <div className="bg-gray-900/50 rounded-lg p-4">
+            <div className="text-sm text-gray-400 mb-1">Sharpe Ratio</div>
+            <div className="text-2xl text-purple-400">{metricsData.multiPeriodStats[selectedPeriod].sharpe}</div>
+          </div>
+          <div className="bg-gray-900/50 rounded-lg p-4">
+            <div className="text-sm text-gray-400 mb-1">Max Drawdown</div>
+            <div className="text-2xl text-red-400">{metricsData.multiPeriodStats[selectedPeriod].maxDrawdown}%</div>
+          </div>
+          <div className="bg-gray-900/50 rounded-lg p-4">
+            <div className="text-sm text-gray-400 mb-1">Total Trades</div>
+            <div className="text-2xl text-white">{metricsData.multiPeriodStats[selectedPeriod].trades}</div>
+          </div>
         </div>
       </motion.div>
 
@@ -148,7 +131,7 @@ export function AdvancedPerformanceMetrics({ strategyId }: AdvancedPerformanceMe
         </h3>
 
         <div className="space-y-4">
-          {heatMapData.map((yearData, yearIndex) => (
+          {metricsData.heatMap.map((yearData, yearIndex) => (
             <div key={yearData.year}>
               <div className="text-sm text-gray-400 mb-2 font-semibold">{yearData.year}</div>
               <div className="grid grid-cols-12 gap-2">
@@ -174,11 +157,14 @@ export function AdvancedPerformanceMetrics({ strategyId }: AdvancedPerformanceMe
                       {/* Tooltip */}
                       <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10">
                         <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 shadow-xl whitespace-nowrap">
-                          <div className="text-sm text-white font-semibold">{monthData.month} {yearData.year}</div>
-                          <div className={`text-sm ${returnValue >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {returnValue >= 0 ? '+' : ''}{monthData.return}%
+                          <div className="text-xs text-gray-500 mb-1">{monthData.month}</div>
+                          <div className={`text-sm font-semibold ${
+                            parseFloat(monthData.return) >= 0 ? 'text-green-400' : 'text-red-400'
+                          }`}>
+                            {parseFloat(monthData.return) >= 0 ? '+' : ''}{monthData.return}%
                           </div>
-                          <div className="text-xs text-gray-400">{monthData.trades} trades</div>
+                          <div className="text-xs text-gray-600">{monthData.trades} trades</div>
+                          <div className="text-xs text-gray-500">₹{monthData.totalPnL.toLocaleString()}</div>
                         </div>
                       </div>
                     </div>
@@ -223,20 +209,14 @@ export function AdvancedPerformanceMetrics({ strategyId }: AdvancedPerformanceMe
           Drawdown Analysis
         </h3>
 
-        <div className="space-y-3">
-          {drawdownData.map((dd, index) => (
-            <Card key={index} className="bg-gray-900/50 border-gray-700 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-400 mb-1">{dd.period}</div>
-                  <div className="text-2xl text-red-400 font-semibold">{dd.value}%</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-gray-500">Duration: {dd.duration}</div>
-                  <div className="text-xs text-gray-500">Recovery: {dd.recovery}</div>
-                </div>
-              </div>
-            </Card>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {metricsData.drawdown.map((item, i) => (
+            <div key={i} className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
+              <div className="text-sm text-gray-400 mb-2">{item.period}</div>
+              <div className="text-2xl text-red-400 font-semibold mb-2">{item.value}%</div>
+              <div className="text-xs text-gray-500">Duration: {item.duration}</div>
+              <div className="text-xs text-gray-500">Recovery: {item.recovery}</div>
+            </div>
           ))}
         </div>
       </motion.div>
@@ -253,59 +233,27 @@ export function AdvancedPerformanceMetrics({ strategyId }: AdvancedPerformanceMe
           Tax Impact Analysis
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <Card className="bg-gray-900/50 border-gray-700 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm text-gray-400">Short-Term Gains</div>
-              <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">
-                STCG (15%)
-              </Badge>
-            </div>
-            <div className="text-2xl text-white font-semibold mb-1">
-              ₹{taxImpactData.shortTermGains.toLocaleString()}
-            </div>
-            <div className="text-sm text-red-400">
-              Tax: ₹{taxImpactData.shortTermTax.toLocaleString()}
-            </div>
-          </Card>
-
-          <Card className="bg-gray-900/50 border-gray-700 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm text-gray-400">Long-Term Gains</div>
-              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                LTCG (10%)
-              </Badge>
-            </div>
-            <div className="text-2xl text-white font-semibold mb-1">
-              ₹{taxImpactData.longTermGains.toLocaleString()}
-            </div>
-            <div className="text-sm text-red-400">
-              Tax: ₹{taxImpactData.longTermTax.toLocaleString()}
-            </div>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="bg-gradient-to-br from-red-500/10 to-red-600/10 border-red-500/30 p-4">
-            <div className="text-xs text-gray-400 mb-1">Total Tax Liability</div>
-            <div className="text-2xl text-red-400 font-semibold">
-              ₹{taxImpactData.totalTaxLiability.toLocaleString()}
-            </div>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-green-500/10 to-green-600/10 border-green-500/30 p-4">
-            <div className="text-xs text-gray-400 mb-1">Net Returns (Post-Tax)</div>
-            <div className="text-2xl text-green-400 font-semibold">
-              ₹{taxImpactData.netReturns.toLocaleString()}
-            </div>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/10 border-yellow-500/30 p-4">
-            <div className="text-xs text-gray-400 mb-1">Effective Tax Rate</div>
-            <div className="text-2xl text-yellow-400 font-semibold">
-              {taxImpactData.effectiveTaxRate}%
-            </div>
-          </Card>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-gray-900/50 rounded-lg p-4">
+            <div className="text-sm text-gray-400 mb-1">Short-Term Gains</div>
+            <div className="text-xl text-white">₹{metricsData.taxImpact.shortTermGains.toLocaleString()}</div>
+            <div className="text-xs text-orange-400">Tax @ 15%: ₹{metricsData.taxImpact.shortTermTax.toLocaleString()}</div>
+          </div>
+          <div className="bg-gray-900/50 rounded-lg p-4">
+            <div className="text-sm text-gray-400 mb-1">Long-Term Gains</div>
+            <div className="text-xl text-white">₹{metricsData.taxImpact.longTermGains.toLocaleString()}</div>
+            <div className="text-xs text-green-400">Tax @ 10%: ₹{metricsData.taxImpact.longTermTax.toLocaleString()}</div>
+          </div>
+          <div className="bg-gray-900/50 rounded-lg p-4">
+            <div className="text-sm text-gray-400 mb-1">Total Tax Liability</div>
+            <div className="text-xl text-yellow-400">₹{metricsData.taxImpact.totalTaxLiability.toLocaleString()}</div>
+            <div className="text-xs text-gray-500">Effective: {metricsData.taxImpact.effectiveTaxRate}%</div>
+          </div>
+          <div className="bg-gray-900/50 rounded-lg p-4">
+            <div className="text-sm text-gray-400 mb-1">Net Returns (Post-Tax)</div>
+            <div className="text-xl text-green-400">₹{metricsData.taxImpact.netReturns.toLocaleString()}</div>
+            <div className="text-xs text-gray-500">After all deductions</div>
+          </div>
         </div>
 
         <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
@@ -315,7 +263,7 @@ export function AdvancedPerformanceMetrics({ strategyId }: AdvancedPerformanceMe
               <div className="text-sm text-blue-400 font-semibold mb-1">Tax Optimization Tip</div>
               <div className="text-xs text-gray-400">
                 Consider holding positions for more than 1 year to benefit from lower LTCG rates. 
-                Current portfolio has {((taxImpactData.longTermGains / (taxImpactData.shortTermGains + taxImpactData.longTermGains)) * 100).toFixed(1)}% long-term holdings.
+                Current portfolio has {((metricsData.taxImpact.longTermGains / (metricsData.taxImpact.shortTermGains + metricsData.taxImpact.longTermGains)) * 100).toFixed(1)}% long-term holdings.
               </div>
             </div>
           </div>
