@@ -14,6 +14,8 @@ export function QuantConnectDashboard() {
   const [strategyMetrics, setStrategyMetrics] = useState<QCStrategyMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [backtesting, setBacktesting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     loadProjects();
@@ -22,6 +24,7 @@ export function QuantConnectDashboard() {
   const loadProjects = async () => {
     try {
       setLoading(true);
+      setError(null);
       const projectList = await quantconnectService.getProjects();
       setProjects(projectList);
       
@@ -38,6 +41,27 @@ export function QuantConnectDashboard() {
       }
     } catch (error) {
       console.error('Error loading projects:', error);
+      setError('Failed to load projects. Using mock data for testing.');
+      
+      // Fallback to mock data for testing
+      const mockProjects: QCProject[] = [
+        {
+          projectId: 1,
+          name: 'Virtual Fluorescent Pink Sheep',
+          created: new Date().toISOString(),
+          modified: new Date().toISOString(),
+          language: 'Py'
+        },
+        {
+          projectId: 2,
+          name: 'Clone of BTC Dual Thrust Long Only',
+          created: new Date().toISOString(),
+          modified: new Date().toISOString(),
+          language: 'Py'
+        }
+      ];
+      setProjects(mockProjects);
+      setSelectedProject(mockProjects[0]);
     } finally {
       setLoading(false);
     }
@@ -48,6 +72,7 @@ export function QuantConnectDashboard() {
 
     try {
       setBacktesting(true);
+      setError(null);
       const result = await quantconnectService.runBacktest(
         selectedProject.projectId,
         `Backtest-${Date.now()}`
@@ -56,21 +81,40 @@ export function QuantConnectDashboard() {
       if (result.success) {
         // Poll for results
         setTimeout(async () => {
-          const backtestData = await quantconnectService.getBacktestResults(
-            selectedProject.projectId,
-            result.backtestId
-          );
-          setBacktestResults(backtestData);
+          try {
+            const backtestData = await quantconnectService.getBacktestResults(
+              selectedProject.projectId,
+              result.backtestId
+            );
+            setBacktestResults(backtestData);
 
-          const metrics = await quantconnectService.getStrategyMetrics(
-            selectedProject.projectId,
-            result.backtestId
-          );
-          setStrategyMetrics(metrics);
+            const metrics = await quantconnectService.getStrategyMetrics(
+              selectedProject.projectId,
+              result.backtestId
+            );
+            setStrategyMetrics(metrics);
+          } catch (err) {
+            console.error('Error fetching backtest results:', err);
+            setError('Backtest started but results not available yet.');
+          }
         }, 5000); // Wait 5 seconds for backtest to complete
       }
     } catch (error) {
       console.error('Error running backtest:', error);
+      setError('Failed to run backtest. Using mock data for testing.');
+      
+      // Fallback: show mock results
+      const mockMetrics: QCStrategyMetrics = {
+        totalPnL: 125430,
+        totalTrades: 289,
+        winRate: 69.8,
+        avgReturn: 2.8,
+        sharpeRatio: 1.88,
+        maxDrawdown: -9.5,
+        alpha: 0.15,
+        beta: 0.85
+      };
+      setStrategyMetrics(mockMetrics);
     } finally {
       setBacktesting(false);
     }
@@ -78,6 +122,8 @@ export function QuantConnectDashboard() {
 
   const handleCreateProject = async () => {
     try {
+      setCreating(true);
+      setError(null);
       const newProject = await quantconnectService.createProject(
         `Strategy-${Date.now()}`,
         'Py'
@@ -86,6 +132,20 @@ export function QuantConnectDashboard() {
       setSelectedProject(newProject);
     } catch (error) {
       console.error('Error creating project:', error);
+      setError('Failed to create project. Please check your QuantConnect credentials.');
+      
+      // Fallback: create mock project for testing
+      const mockProject: QCProject = {
+        projectId: Date.now(),
+        name: `Strategy-${Date.now()}`,
+        created: new Date().toISOString(),
+        modified: new Date().toISOString(),
+        language: 'Py'
+      };
+      setProjects([...projects, mockProject]);
+      setSelectedProject(mockProject);
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -107,12 +167,38 @@ export function QuantConnectDashboard() {
         </div>
         <Button
           onClick={handleCreateProject}
-          className="bg-cyan-500 hover:bg-cyan-600 text-white"
+          disabled={creating}
+          className="bg-cyan-500 hover:bg-cyan-600 text-white disabled:opacity-50"
         >
-          <Plus className="w-4 h-4 mr-2" />
-          New Project
+          {creating ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            <>
+              <Plus className="w-4 h-4 mr-2" />
+              New Project
+            </>
+          )}
         </Button>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <Activity className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-yellow-400 font-semibold">Notice</p>
+              <p className="text-yellow-300/80 text-sm mt-1">{error}</p>
+              <p className="text-yellow-300/60 text-xs mt-2">
+                To connect to real QuantConnect data, ensure your backend is running and credentials are configured.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recent Projects Highlight */}
       {projects.some(p => p.name.includes('Virtual Fluorescent Pink Sheep') || p.name.includes('BTC Dual Thrust')) && (
