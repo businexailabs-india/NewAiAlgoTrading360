@@ -12,6 +12,7 @@ import { MarketSentimentDashboard } from './MarketSentimentDashboard';
 import { AnomalyDetectionPanel } from './AnomalyDetectionPanel';
 import { VoiceAssistant } from './VoiceAssistant';
 import { PerformanceComparison } from './PerformanceComparison';
+import { QuantConnectDashboard } from './QuantConnectDashboard';
 
 export function SmartTradingDashboard() {
   const [timeRange, setTimeRange] = useState('1M');
@@ -197,6 +198,10 @@ export function SmartTradingDashboard() {
           <TabsTrigger value="anomalies" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
             Anomaly Detection
           </TabsTrigger>
+          <TabsTrigger value="quantconnect" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
+            <Zap className="w-4 h-4 mr-2" />
+            QuantConnect
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="performance">
@@ -221,6 +226,10 @@ export function SmartTradingDashboard() {
 
         <TabsContent value="anomalies">
           <AnomalyDetectionPanel />
+        </TabsContent>
+
+        <TabsContent value="quantconnect">
+          <QuantConnectDashboard />
         </TabsContent>
       </Tabs>
 
