@@ -153,3 +153,113 @@ export const createTrade = asyncHandler(async (req: Request, res: Response) => {
     data: trade
   });
 });
+
+export const getAdvancedMetrics = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { period = '1Y' } = req.query;
+
+  // Multi-period statistics
+  const multiPeriodStats = {
+    '6M': { winRate: 68.5, avgReturn: 12.4, sharpe: 1.85, maxDrawdown: -6.2, trades: 145 },
+    '9M': { winRate: 71.2, avgReturn: 18.7, sharpe: 1.92, maxDrawdown: -8.1, trades: 218 },
+    '1Y': { winRate: 69.8, avgReturn: 24.5, sharpe: 1.88, maxDrawdown: -9.5, trades: 289 },
+    '2Y': { winRate: 72.1, avgReturn: 52.3, sharpe: 2.05, maxDrawdown: -12.3, trades: 612 }
+  };
+
+  // Heat map data
+  const generateHeatMap = () => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const years = ['2023', '2024'];
+    
+    return years.map(year => ({
+      year,
+      months: months.map(month => ({
+        month,
+        return: (Math.random() * 20 - 5).toFixed(2),
+        trades: Math.floor(Math.random() * 50) + 10
+      }))
+    }));
+  };
+
+  // Drawdown analysis
+  const drawdownData = [
+    { period: 'Current', value: -2.3, duration: '5 days', recovery: 'In progress' },
+    { period: 'Max (1Y)', value: -9.5, duration: '23 days', recovery: '45 days' },
+    { period: 'Max (2Y)', value: -12.3, duration: '31 days', recovery: '67 days' },
+    { period: 'Avg', value: -4.2, duration: '12 days', recovery: '28 days' }
+  ];
+
+  // Tax impact
+  const taxImpact = {
+    shortTermGains: 125000,
+    longTermGains: 89000,
+    shortTermTax: 18750,
+    longTermTax: 8900,
+    totalTaxLiability: 27650,
+    netReturns: 185350,
+    effectiveTaxRate: 12.98
+  };
+
+  res.status(200).json({
+    success: true,
+    data: {
+      multiPeriodStats,
+      heatMap: generateHeatMap(),
+      drawdown: drawdownData,
+      taxImpact
+    }
+  });
+});
+
+export const getPerformanceComparison = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { timeRange = '1Y', portfolioIds } = req.query;
+
+  // Generate performance comparison data
+  const generateData = (range: string) => {
+    let points = 52;
+    switch(range) {
+      case '1M': points = 30; break;
+      case '6M': points = 26; break;
+      case '1Y': points = 52; break;
+      case '3Y': points = 36; break;
+      case 'MAX': points = 60; break;
+    }
+
+    const data = [];
+    for (let i = 0; i < points; i++) {
+      const smallcap = 100 + (Math.random() * 20 - 5) + (i * 0.3);
+      const largecap = 100 + (Math.random() * 15 - 3) + (i * 0.15);
+      
+      data.push({
+        index: i,
+        date: new Date(Date.now() - (points - i) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        smallcap: Number(smallcap.toFixed(2)),
+        largecap: Number(largecap.toFixed(2))
+      });
+    }
+    return data;
+  };
+
+  const performanceData = generateData(timeRange as string);
+  const currentSmallcap = performanceData[performanceData.length - 1].smallcap;
+  const currentLargecap = performanceData[performanceData.length - 1].largecap;
+
+  res.status(200).json({
+    success: true,
+    data: {
+      timeRange,
+      performanceData,
+      summary: {
+        smallcap: {
+          currentValue: currentSmallcap,
+          returnPercent: ((currentSmallcap - 100) / 100 * 100).toFixed(2)
+        },
+        largecap: {
+          currentValue: currentLargecap,
+          returnPercent: ((currentLargecap - 100) / 100 * 100).toFixed(2)
+        }
+      }
+    }
+  });
+});

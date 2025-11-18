@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import { TrendingUp, TrendingDown, Zap, Volume2, Eye } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { StockAnalysisModal } from './StockAnalysisModal';
 
 const trendingStocks = [
   { symbol: 'HDFCBANK', name: 'HDFC Bank', price: 1648.50, change: 3.42, volume: '12.5M', reason: 'Strong Q4 results', sentiment: 'bullish', strength: 92 },
@@ -26,6 +28,12 @@ const volumeSurge = [
 ];
 
 export function TrendingStocks() {
+  const [selectedStock, setSelectedStock] = useState<typeof trendingStocks[0] | null>(null);
+
+  const handleAnalyze = (stock: typeof trendingStocks[0]) => {
+    setSelectedStock(stock);
+  };
+
   return (
     <div className="space-y-6">
       {/* AI Trending Stocks */}
@@ -93,7 +101,11 @@ export function TrendingStocks() {
                   </div>
                 </div>
 
-                <Button size="sm" className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white">
+                <Button 
+                  size="sm" 
+                  onClick={() => handleAnalyze(stock)}
+                  className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
+                >
                   Analyze
                 </Button>
               </div>
@@ -167,6 +179,14 @@ export function TrendingStocks() {
           </div>
         </div>
       </div>
+
+      {/* Stock Analysis Modal */}
+      {selectedStock && (
+        <StockAnalysisModal 
+          stock={selectedStock}
+          onClose={() => setSelectedStock(null)}
+        />
+      )}
     </div>
   );
 }

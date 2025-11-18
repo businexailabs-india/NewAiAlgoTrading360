@@ -1,5 +1,6 @@
+import { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { X, TrendingUp, Target, BarChart3, Activity, Calendar, Clock, DollarSign } from 'lucide-react';
+import { X, TrendingUp, Target, BarChart3, Activity, Calendar, Clock, DollarSign, Filter } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -219,6 +220,52 @@ const metrics = [
 ];
 
 export function StrategyDetailsModal({ strategy, onClose }: StrategyDetailsModalProps) {
+  const [timeFilter, setTimeFilter] = useState<'today' | 'week' | 'month' | 'all'>('all');
+
+  // Filter trades based on selected time period
+  const filteredTrades = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    return allTrades.filter(trade => {
+      const tradeDate = new Date(trade.entryDate);
+      
+      switch (timeFilter) {
+        case 'today':
+          return tradeDate >= today;
+        case 'week':
+          const weekAgo = new Date(today);
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          return tradeDate >= weekAgo;
+        case 'month':
+          const monthAgo = new Date(today);
+          monthAgo.setMonth(monthAgo.getMonth() - 1);
+          return tradeDate >= monthAgo;
+        case 'all':
+        default:
+          return true;
+      }
+    });
+  }, [timeFilter]);
+
+  // Calculate filtered metrics
+  const filteredMetrics = useMemo(() => {
+    const totalTrades = filteredTrades.length;
+    const winningTrades = filteredTrades.filter(t => t.pnl > 0).length;
+    const totalPnl = filteredTrades.reduce((sum, t) => sum + t.pnl, 0);
+    const avgReturn = totalTrades > 0 
+      ? (filteredTrades.reduce((sum, t) => sum + t.pnlPercent, 0) / totalTrades).toFixed(2)
+      : '0.00';
+    const winRate = totalTrades > 0 ? ((winningTrades / totalTrades) * 100).toFixed(1) : '0.0';
+    
+    return {
+      totalTrades,
+      winRate,
+      avgReturn,
+      totalPnl
+    };
+  }, [filteredTrades]);
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'target-hit':
@@ -293,23 +340,114 @@ export function StrategyDetailsModal({ strategy, onClose }: StrategyDetailsModal
 
         {/* Content */}
         <div className="p-6">
-          {/* Key Metrics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            {metrics.map((metric, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="bg-gray-800/50 border border-gray-700 rounded-xl p-4"
+          {/* Time Filter */}
+          <div className="mb-6 flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-400">Filter by:</span>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => setTimeFilter('today')}
+                variant={timeFilter === 'today' ? 'default' : 'outline'}
+                className={timeFilter === 'today' 
+                  ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50 hover:bg-cyan-500/30'
+                  : 'border-gray-700 hover:bg-gray-800'
+                }
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <metric.icon className="w-4 h-4 text-cyan-400" />
-                  <span className="text-sm text-gray-400">{metric.label}</span>
-                </div>
-                <div className="text-2xl text-white">{metric.value}</div>
-              </motion.div>
-            ))}
+                Today
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setTimeFilter('week')}
+                variant={timeFilter === 'week' ? 'default' : 'outline'}
+                className={timeFilter === 'week' 
+                  ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50 hover:bg-cyan-500/30'
+                  : 'border-gray-700 hover:bg-gray-800'
+                }
+              >
+                Week
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setTimeFilter('month')}
+                variant={timeFilter === 'month' ? 'default' : 'outline'}
+                className={timeFilter === 'month' 
+                  ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50 hover:bg-cyan-500/30'
+                  : 'border-gray-700 hover:bg-gray-800'
+                }
+              >
+                Month
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setTimeFilter('all')}
+                variant={timeFilter === 'all' ? 'default' : 'outline'}
+                className={timeFilter === 'all' 
+                  ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50 hover:bg-cyan-500/30'
+                  : 'border-gray-700 hover:bg-gray-800'
+                }
+              >
+                All Time
+              </Button>
+            </div>
+            <Badge className="bg-gray-700/50 text-gray-300 border-gray-600">
+              {filteredTrades.length} {filteredTrades.length === 1 ? 'trade' : 'trades'}
+            </Badge>
+          </div>
+
+          {/* Key Metrics - Dynamic based on filter */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gray-800/50 border border-gray-700 rounded-xl p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <BarChart3 className="w-4 h-4 text-cyan-400" />
+                <span className="text-sm text-gray-400">Total Trades</span>
+              </div>
+              <div className="text-2xl text-white">{filteredMetrics.totalTrades}</div>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
+              className="bg-gray-800/50 border border-gray-700 rounded-xl p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Target className="w-4 h-4 text-cyan-400" />
+                <span className="text-sm text-gray-400">Win Rate</span>
+              </div>
+              <div className="text-2xl text-white">{filteredMetrics.winRate}%</div>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="bg-gray-800/50 border border-gray-700 rounded-xl p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="w-4 h-4 text-cyan-400" />
+                <span className="text-sm text-gray-400">Avg Return</span>
+              </div>
+              <div className="text-2xl text-white">+{filteredMetrics.avgReturn}%</div>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+              className="bg-gray-800/50 border border-gray-700 rounded-xl p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <DollarSign className="w-4 h-4 text-cyan-400" />
+                <span className="text-sm text-gray-400">Total P&L</span>
+              </div>
+              <div className={`text-2xl ${filteredMetrics.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {filteredMetrics.totalPnl >= 0 ? '+' : ''}₹{Math.abs(filteredMetrics.totalPnl).toLocaleString()}
+              </div>
+            </motion.div>
           </div>
 
           {/* Tabs */}
@@ -332,14 +470,25 @@ export function StrategyDetailsModal({ strategy, onClose }: StrategyDetailsModal
             <TabsContent value="trades">
               <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-white">Complete Trade History</h3>
+                  <h3 className="text-white">
+                    {timeFilter === 'today' && 'Today\'s Trades'}
+                    {timeFilter === 'week' && 'This Week\'s Trades'}
+                    {timeFilter === 'month' && 'This Month\'s Trades'}
+                    {timeFilter === 'all' && 'Complete Trade History'}
+                  </h3>
                   <Button size="sm" variant="outline" className="border-gray-700">
                     Export to CSV
                   </Button>
                 </div>
                 
-                <div className="space-y-3">
-                  {allTrades.map((trade, i) => (
+                {filteredTrades.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Activity className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                    <p className="text-gray-400">No trades found for the selected period</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredTrades.map((trade, i) => (
                     <motion.div
                       key={trade.id}
                       initial={{ opacity: 0, x: -20 }}
@@ -436,7 +585,8 @@ export function StrategyDetailsModal({ strategy, onClose }: StrategyDetailsModal
                       </div>
                     </motion.div>
                   ))}
-                </div>
+                  </div>
+                )}
               </div>
             </TabsContent>
 

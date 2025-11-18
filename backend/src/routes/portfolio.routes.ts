@@ -10,7 +10,9 @@ import {
   deleteHolding,
   getPortfolioSummary,
   getTrades,
-  createTrade
+  createTrade,
+  getPerformanceComparison,
+  getAdvancedMetrics
 } from '../controllers/portfolio.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { validatePagination } from '../middleware/validation.middleware';
@@ -38,5 +40,11 @@ router.get('/summary', getPortfolioSummary);
 // Trades routes
 router.get('/trades', validatePagination, getTrades);
 router.post('/trades', createTrade);
+
+// Performance comparison
+router.get('/performance-comparison', getPerformanceComparison);
+
+// Advanced metrics
+router.get('/advanced-metrics', getAdvancedMetrics);
 
 export default router;

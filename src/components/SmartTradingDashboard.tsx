@@ -11,6 +11,7 @@ import { AIAdvisorPanel } from './AIAdvisorPanel';
 import { MarketSentimentDashboard } from './MarketSentimentDashboard';
 import { AnomalyDetectionPanel } from './AnomalyDetectionPanel';
 import { VoiceAssistant } from './VoiceAssistant';
+import { PerformanceComparison } from './PerformanceComparison';
 
 export function SmartTradingDashboard() {
   const [timeRange, setTimeRange] = useState('1M');
@@ -178,6 +179,10 @@ export function SmartTradingDashboard() {
             <TrendingUp className="w-4 h-4 mr-2" />
             Performance
           </TabsTrigger>
+          <TabsTrigger value="comparison" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
+            <TrendingUp className="w-4 h-4 mr-2" />
+            Comparison
+          </TabsTrigger>
           <TabsTrigger value="analytics" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
             <Activity className="w-4 h-4 mr-2" />
             Trade Analytics
@@ -196,6 +201,10 @@ export function SmartTradingDashboard() {
 
         <TabsContent value="performance">
           <StrategyPerformanceDashboard timeRange={timeRange} />
+        </TabsContent>
+
+        <TabsContent value="comparison">
+          <PerformanceComparison timeRange={timeRange} />
         </TabsContent>
 
         <TabsContent value="analytics">
