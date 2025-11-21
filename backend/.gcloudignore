@@ -1,0 +1,61 @@
+# This file specifies files that are *not* uploaded to Google Cloud
+# using gcloud. It follows the same syntax as .gitignore, with the addition of
+# "#!include" directives (which insert the entries of the given .gitignore-style
+# file at that point).
+
+# Default ignores
+.gcloudignore
+.git
+.gitignore
+
+# Node.js dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# TypeScript
+*.ts
+!src/**/*.ts
+# tsconfig.json is needed for Docker build
+
+# Development files
+.env
+.env.local
+.env.development
+.env.test
+nodemon.json
+
+# Build artifacts (we'll build in Cloud)
+dist/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+test/
+tests/
+*.test.ts
+*.spec.ts
+
+# Prisma (keep schema, ignore migrations for now)
+prisma/migrations/
+
+# Temporary files
+tmp/
+temp/

@@ -157,7 +157,7 @@ export class QuantConnectService {
       return {
         success: data.success,
         backtestId,
-        projectId,
+        projectId: projectId.toString(),
         statistics: {
           totalTrades: parseInt(stats['Total Orders']) || 0,
           winRate: parseFloat(stats['Win Rate']) || 0,

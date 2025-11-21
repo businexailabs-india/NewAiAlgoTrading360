@@ -113,6 +113,8 @@ export class AuthService {
   }
 
   static generateAccessToken(user: { id: string; email: string; role: string }): string {
+    const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as string;
+    // @ts-ignore - JWT type mismatch with current @types/jsonwebtoken version
     return jwt.sign(
       {
         id: user.id,
@@ -120,7 +122,7 @@ export class AuthService {
         role: user.role
       },
       process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      { expiresIn }
     );
   }
 

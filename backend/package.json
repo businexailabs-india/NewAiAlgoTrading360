@@ -9,7 +9,11 @@
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "deploy:cloud-run": "powershell -File deploy-gcp.ps1 -DeploymentType cloud-run",
+    "deploy:app-engine": "powershell -File deploy-gcp.ps1 -DeploymentType app-engine",
+    "deploy:compute": "powershell -File deploy-gcp.ps1 -DeploymentType compute-engine",
+    "gcp:set-env": "powershell -File set-gcp-env.ps1"
   },
   "keywords": [
     "trading",

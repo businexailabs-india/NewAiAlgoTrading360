@@ -9,14 +9,30 @@ automatic_scaling:
   target_cpu_utilization: 0.65
 
 # Environment variables (add your actual values)
+# IMPORTANT: Set sensitive values in GCP Console, not here
 env_variables:
   NODE_ENV: "production"
   PORT: "8080"
-  SUPABASE_URL: "https://dfzrjfrplludgnycfqbj.supabase.co"
-  # Add other env vars in GCP Console for security
-  # Don't commit sensitive keys here
+  # Add these in GCP Console -> App Engine -> Settings -> Environment Variables:
+  # SUPABASE_URL
+  # SUPABASE_ANON_KEY
+  # SUPABASE_SERVICE_KEY
+  # JWT_SECRET
+  # REFRESH_TOKEN_SECRET
+  # ENCRYPTION_KEY
+  # REDIS_URL (if using Redis)
+  # ZERODHA_API_KEY, ZERODHA_API_SECRET (if using Zerodha)
+  # UPSTOX_API_KEY, UPSTOX_API_SECRET (if using Upstox)
 
 handlers:
 - url: /.*
   script: auto
   secure: always
+
+# Health check configuration
+health_check:
+  enable_health_check: True
+  check_interval_sec: 30
+  timeout_sec: 4
+  unhealthy_threshold: 2
+  healthy_threshold: 2

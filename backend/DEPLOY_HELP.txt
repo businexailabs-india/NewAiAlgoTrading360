@@ -1,0 +1,129 @@
+================================================================================
+  SmartTrade Backend - GCP Deployment Script Help
+================================================================================
+
+USAGE:
+  .\deploy-gcp.ps1 [OPTIONS]
+
+DESCRIPTION:
+  Automated deployment script for deploying SmartTrade backend to Google Cloud
+  Platform. Supports Cloud Run, App Engine, and Compute Engine.
+
+OPTIONS:
+  -DeploymentType <string>
+      Type of GCP service to deploy to.
+      Valid values: 'cloud-run', 'app-engine', 'compute-engine'
+      Default: 'cloud-run'
+      
+  -ProjectId <string>
+      Your GCP Project ID.
+      If not provided, will use current gcloud project or prompt for input.
+      
+  -Region <string>
+      GCP region for deployment.
+      Default: 'asia-south1'
+
+EXAMPLES:
+
+  1. Deploy to Cloud Run (recommended):
+     .\deploy-gcp.ps1 -DeploymentType cloud-run -ProjectId my-project-123
+
+  2. Deploy to Cloud Run with custom region:
+     .\deploy-gcp.ps1 -DeploymentType cloud-run -ProjectId my-project-123 -Region us-central1
+
+  3. Deploy to App Engine:
+     .\deploy-gcp.ps1 -DeploymentType app-engine -ProjectId my-project-123
+
+  4. Deploy to Compute Engine:
+     .\deploy-gcp.ps1 -DeploymentType compute-engine -ProjectId my-project-123
+
+  5. Use current gcloud project (will prompt if not set):
+     .\deploy-gcp.ps1 -DeploymentType cloud-run
+
+  6. Using npm scripts (easiest):
+     npm run deploy:cloud-run
+     npm run deploy:app-engine
+     npm run deploy:compute
+
+DEPLOYMENT TYPES:
+
+  cloud-run (Recommended)
+    - Serverless container platform
+    - Auto-scaling (0 to 10 instances)
+    - Pay only for what you use
+    - Cost: ~$5-15/month
+    - Best for: Most applications
+    
+  app-engine
+    - Fully managed platform
+    - Simple deployment
+    - Auto-scaling configured
+    - Cost: ~$10-20/month
+    - Best for: Traditional web apps
+    
+  compute-engine
+    - Virtual machine instance
+    - Full control over environment
+    - Manual setup required
+    - Cost: FREE tier available (e2-micro)
+    - Best for: Custom configurations
+
+PREREQUISITES:
+
+  1. Google Cloud SDK installed (already installed: v539.0.0)
+  2. GCP Project created
+  3. Billing enabled on project
+  4. .env file with production values
+
+BEFORE DEPLOYING:
+
+  1. Create .env file:
+     cp .env.example .env
+     
+  2. Edit .env with production values:
+     - SUPABASE_URL
+     - SUPABASE_ANON_KEY
+     - SUPABASE_SERVICE_KEY
+     - JWT_SECRET
+     - REFRESH_TOKEN_SECRET
+     - ENCRYPTION_KEY
+
+AFTER DEPLOYMENT:
+
+  For Cloud Run, set environment variables:
+    npm run gcp:set-env -- -ProjectId YOUR_PROJECT_ID
+    
+  Or manually:
+    gcloud run services update smarttrade-backend \
+      --region asia-south1 \
+      --set-env-vars "NODE_ENV=production,SUPABASE_URL=your_url"
+
+TROUBLESHOOTING:
+
+  Authentication issues:
+    gcloud auth login
+    gcloud auth application-default login
+    
+  Enable required APIs:
+    gcloud services enable cloudbuild.googleapis.com
+    gcloud services enable run.googleapis.com
+    gcloud services enable containerregistry.googleapis.com
+    
+  View build logs:
+    gcloud builds list
+    gcloud builds log BUILD_ID
+
+DOCUMENTATION:
+
+  Quick Start:     DEPLOY_NOW.md
+  Full Guide:      GCP_DEPLOYMENT_GUIDE.md
+  All Platforms:   DEPLOYMENT.md
+  This Help:       DEPLOY_HELP.txt
+
+SUPPORT:
+
+  GCP Console:     https://console.cloud.google.com
+  Cloud Run Docs:  https://cloud.google.com/run/docs
+  Project Issues:  https://github.com/edgexailab/portfolio-trading/issues
+
+================================================================================
