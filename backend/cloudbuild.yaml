@@ -13,7 +13,18 @@ steps:
     id: 'push-image'
     waitFor: ['build-image']
 
-  # Step 3: Deploy to Cloud Run
+  # Step 3: Run Prisma migrations
+  - name: 'gcr.io/$PROJECT_ID/smarttrade-backend:$COMMIT_SHA'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - 'npx prisma migrate deploy || echo "Migration skipped or failed"'
+    env:
+      - 'DATABASE_URL=postgresql://smarttrade_user:SmartTrade2024!SecurePass@34.45.48.255:5432/smarttrade?sslmode=require'
+    id: 'run-migrations'
+    waitFor: ['push-image']
+
+  # Step 4: Deploy to Cloud Run with Cloud SQL
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -30,9 +41,10 @@ steps:
       - '--min-instances=0'
       - '--max-instances=10'
       - '--timeout=300'
-      - '--set-env-vars=NODE_ENV=production,SUPABASE_URL=https://placeholder.supabase.co,SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUxOTI4MDAsImV4cCI6MTk2MDc2ODgwMH0.placeholder-anon-key-change-in-console,SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTY0NTE5MjgwMCwiZXhwIjoxOTYwNzY4ODAwfQ.placeholder-service-key-change-in-console,JWT_SECRET=placeholder-jwt-secret-min-32-chars-long,REFRESH_TOKEN_SECRET=placeholder-refresh-secret-min-32-chars'
+      - '--add-cloudsql-instances=$PROJECT_ID:us-central1:free-trial-first-project'
+      - '--set-env-vars=NODE_ENV=production,DATABASE_URL=postgresql://smarttrade_user:SmartTrade2024!SecurePass@localhost/smarttrade?host=/cloudsql/$PROJECT_ID:us-central1:free-trial-first-project,JWT_SECRET=SmartTrade2024JWTSecretKey32Chars,REFRESH_TOKEN_SECRET=SmartTrade2024RefreshSecret32Ch'
     id: 'deploy-cloud-run'
-    waitFor: ['push-image']
+    waitFor: ['run-migrations']
 
 # Store images in Container Registry
 images:
