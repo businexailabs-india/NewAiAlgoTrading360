@@ -28,6 +28,9 @@ import { logger } from './utils/logger';
 const app: Application = express();
 const httpServer = createServer(app);
 
+// Trust proxy - required for Cloud Run and rate limiting
+app.set('trust proxy', true);
+
 // Initialize Socket.IO
 const io = new SocketIOServer(httpServer, {
   cors: {

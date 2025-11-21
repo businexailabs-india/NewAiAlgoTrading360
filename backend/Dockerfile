@@ -34,9 +34,11 @@ COPY prisma ./prisma/
 # Install production dependencies only
 RUN npm ci --only=production
 
+# Generate Prisma client in production stage
+RUN npx prisma generate
+
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 # Expose port (Cloud Run will set PORT env var to 8080)
 EXPOSE 8080
