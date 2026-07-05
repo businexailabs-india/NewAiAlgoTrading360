@@ -1,11 +1,22 @@
+# TradingInteligency360
 
-  # SmartTrade Portfolio Optimizer
+PortFolioTradingInteligency360 Platform — SmartTrade Portfolio Optimizer for Indian equity trading and portfolio operations.
 
-  This is a code bundle for SmartTrade Portfolio Optimizer. The original project is available at https://www.figma.com/design/GBUTo7pe8MWwg110saMcUW/SmartTrade-Portfolio-Optimizer.
+## Running the code
 
-  ## Running the code
+```bash
+npm i
+npm run dev
+```
 
-  Run `npm i` to install the dependencies.
+## Backend
 
-  Run `npm run dev` to start the development server.
-  
+```bash
+cd backend
+npm i
+npm run dev
+```
+
+## AWS deployment
+
+See [AWS_DEPLOYMENT.md](./AWS_DEPLOYMENT.md).
