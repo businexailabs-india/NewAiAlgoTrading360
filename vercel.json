@@ -6,11 +6,11 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://smarttrade-backend-xdubwwouqq-el.a.run.app/api/$1"
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ],
   "env": {
-    "VITE_API_URL": "https://smarttrade-backend-xdubwwouqq-el.a.run.app/api"
+    "VITE_API_URL": "/api"
   }
 }

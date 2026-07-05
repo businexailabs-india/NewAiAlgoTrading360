@@ -3,7 +3,7 @@
  * Deployed at /api/predict — used as inference target for prediction engines
  */
 export default async function handler(req: Request): Promise<Response> {
-  const backendUrl = process.env.BACKEND_API_URL || process.env.VITE_API_URL || 'http://localhost:3001/api';
+  const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:3001';
   const engineId = new URL(req.url).searchParams.get('engineId');
 
   if (!engineId) {
@@ -16,7 +16,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   try {
-    const response = await fetch(`${backendUrl}/predictions/engines/${engineId}/predict`, {
+    const response = await fetch(`${backendUrl}/api/predictions/engines/${engineId}/predict`, {
       method: 'POST',
       headers: {
         'Authorization': authHeader,

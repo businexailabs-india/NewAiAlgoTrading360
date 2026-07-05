@@ -6,6 +6,8 @@ import { ScreenerService } from './screener.service';
 import { DatabaseService } from './database.service';
 import { MarketService } from './market.service';
 
+import { StrategyService } from './strategy.service';
+
 export interface AgentConfig {
   minConfidence?: number;
   maxPositionValue?: number;
@@ -13,6 +15,7 @@ export interface AgentConfig {
   defaultQuantity?: number;
   useScreener?: boolean;
   screenerTopN?: number;
+  strategyIds?: string[];
   symbols?: string[];
   product?: 'CNC' | 'MIS';
   [key: string]: unknown;
@@ -207,6 +210,21 @@ export class TradingAgentService {
             confidence: stock.score,
             source: 'screener'
           });
+        }
+      }
+    }
+
+    if (config.strategyIds?.length) {
+      for (const strategyId of config.strategyIds) {
+        try {
+          const strategySignals = await StrategyService.evaluateForAgent(userId, strategyId);
+          for (const s of strategySignals) {
+            if (!signals.find(x => x.symbol === s.symbol && x.source.startsWith('strategy'))) {
+              signals.push(s);
+            }
+          }
+        } catch {
+          // skip missing/inactive strategies
         }
       }
     }

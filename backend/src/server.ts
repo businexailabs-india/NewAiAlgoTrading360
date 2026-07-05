@@ -8,6 +8,12 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import rateLimit from 'express-rate-limit';
 
+// Import services and logger before use
+import { initializeQuantConnect } from './services/quantconnect.service';
+import { startAgentScheduler } from './services/agent-scheduler.service';
+import { errorHandler } from './middleware/error.middleware';
+import { logger } from './utils/logger';
+
 // Load environment variables
 dotenv.config();
 
@@ -20,7 +26,7 @@ if (process.env.QC_USER_ID && process.env.QC_API_TOKEN) {
   });
   logger.info('QuantConnect service initialized');
 } else {
-  logger.warn('QuantConnect credentials not set — QC endpoints will fail until configured');
+  logger.warn('QuantConnect credentials not set - QC endpoints will fail until configured');
 }
 
 // Import routes
@@ -38,14 +44,6 @@ import agentRoutes from './routes/agent.routes';
 import screenerRoutes from './routes/screener.routes';
 import optionsRoutes from './routes/options.routes';
 import dataRoutes from './routes/data.routes';
-
-// Import services
-import { initializeQuantConnect } from './services/quantconnect.service';
-import { startAgentScheduler } from './services/agent-scheduler.service';
-
-// Import middleware
-import { errorHandler } from './middleware/error.middleware';
-import { logger } from './utils/logger';
 
 // Initialize Express app
 const app: Application = express();

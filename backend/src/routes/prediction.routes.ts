@@ -6,6 +6,7 @@ const router = Router();
 
 router.use(authenticate);
 
+router.get('/ml-status', predictionController.getMlStatus);
 router.get('/engines', predictionController.listEngines);
 router.post('/engines', predictionController.createEngine);
 router.get('/engines/:id', predictionController.getEngine);

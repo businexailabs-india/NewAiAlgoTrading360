@@ -1,0 +1,364 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SmartTrade Platform - RDS PostgreSQL, S3, ECS Fargate, ALB, API Gateway
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: smarttrade
+  DBUsername:
+    Type: String
+    Default: smarttrade
+    MinLength: 1
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+  JwtSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+  BackendImageUri:
+    Type: String
+    Description: ECR image URI (account.dkr.ecr.region.amazonaws.com/repo:tag)
+  MlServiceImageUri:
+    Type: String
+    Description: ECR image URI for Python ML sidecar
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  FrontendUrl:
+    Type: String
+    Default: https://smarttrade-portfolio.vercel.app
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: SmartTrade RDS subnet group
+      SubnetIds: !Ref PublicSubnetIds
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS tasks for SmartTrade backend
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS PostgreSQL for SmartTrade
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${EnvironmentName}-postgres'
+      Engine: postgres
+      EngineVersion: '15.18'
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      StorageType: gp3
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBName: smarttrade
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${EnvironmentName}-cluster'
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Internet-facing ALB for SmartTrade
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${EnvironmentName}-alb'
+      Scheme: internet-facing
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '300'
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${EnvironmentName}-tg'
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SmartTradeS3DataAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Resource:
+                  - !GetAtt DataBucket.Arn
+                  - !Sub '${DataBucket.Arn}/*'
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${EnvironmentName}-backend'
+      RetentionInDays: 14
+
+  MlLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${EnvironmentName}-ml'
+      RetentionInDays: 14
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${EnvironmentName}-backend'
+      Cpu: '1024'
+      Memory: '2048'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      Volumes:
+        - Name: ml-models
+      ContainerDefinitions:
+        - Name: ml-service
+          Image: !Ref MlServiceImageUri
+          Essential: false
+          PortMappings:
+            - ContainerPort: 8081
+              Protocol: tcp
+          Environment:
+            - Name: ML_MODEL_DIR
+              Value: /app/models
+          MountPoints:
+            - SourceVolume: ml-models
+              ContainerPath: /app/models
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - python -c "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')" || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 90
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref MlLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ml
+        - Name: backend
+          Image: !Ref BackendImageUri
+          Essential: true
+          DependsOn:
+            - ContainerName: ml-service
+              Condition: START
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+            - Name: PORT
+              Value: '8080'
+            - Name: DATABASE_URL
+              Value: !Sub
+                - 'postgresql://${User}:${Pass}@${Host}:5432/smarttrade?schema=public'
+                - User: !Ref DBUsername
+                  Pass: !Ref DBPassword
+                  Host: !GetAtt RDSInstance.Endpoint.Address
+            - Name: JWT_SECRET
+              Value: !Ref JwtSecret
+            - Name: REFRESH_TOKEN_SECRET
+              Value: !Ref JwtSecret
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: AWS_S3_DATA_BUCKET
+              Value: !Ref DataBucket
+            - Name: AWS_BACKEND_URL
+              Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}'
+            - Name: AWS_PREDICTION_URL
+              Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}/api/predictions/engines'
+            - Name: CORS_ORIGIN
+              Value: !Ref FrontendUrl
+            - Name: FRONTEND_URL
+              Value: !Ref FrontendUrl
+            - Name: ENABLE_AGENT_SCHEDULER
+              Value: 'true'
+            - Name: ML_SERVICE_URL
+              Value: http://localhost:8081
+            - Name: USE_PYTHON_ML
+              Value: 'true'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListener
+    Properties:
+      ServiceName: !Sub '${EnvironmentName}-backend'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Ref PublicSubnetIds
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+      LoadBalancers:
+        - ContainerName: backend
+          ContainerPort: 8080
+          TargetGroupArn: !Ref TargetGroup
+
+  PredictionApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${EnvironmentName}-prediction-api'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+
+  PredictionIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PredictionApi
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: ANY
+      IntegrationUri: !Sub 'http://${ApplicationLoadBalancer.DNSName}/api/predictions/engines/{proxy}'
+      PayloadFormatVersion: '1.0'
+
+  PredictRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PredictionApi
+      RouteKey: 'POST /predict/{proxy+}'
+      Target: !Sub 'integrations/${PredictionIntegration}'
+
+  PredictionStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref PredictionApi
+      StageName: prod
+      AutoDeploy: true
+
+Outputs:
+  BackendUrl:
+    Description: ALB URL for backend API (set as BACKEND_API_URL in Vercel)
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}'
+  HealthCheckUrl:
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}/health'
+  PredictionApiUrl:
+    Description: API Gateway URL for deployed prediction engines
+    Value: !Sub 'https://${PredictionApi}.execute-api.${AWS::Region}.amazonaws.com/prod/predict'
+  DataBucketName:
+    Value: !Ref DataBucket
+  DatabaseEndpoint:
+    Value: !GetAtt RDSInstance.Endpoint.Address
+  ECSClusterName:
+    Value: !Ref ECSCluster
+  ECSServiceName:
+    Value: !GetAtt ECSService.Name

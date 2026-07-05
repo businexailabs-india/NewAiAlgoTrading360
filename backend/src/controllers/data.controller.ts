@@ -3,12 +3,16 @@ import { HistoricalDataService } from '../services/historical-data.service';
 import { asyncHandler } from '../middleware/error.middleware';
 
 export const getDatasetStatus = asyncHandler(async (_req: Request, res: Response) => {
-  const datasets = HistoricalDataService.listLocalDatasets();
-  const manifest = HistoricalDataService.getManifest();
+  const [datasets, manifest, storage] = await Promise.all([
+    HistoricalDataService.listLocalDatasets(),
+    HistoricalDataService.getManifest(),
+    HistoricalDataService.getStorageStatus()
+  ]);
   res.json({
     success: true,
     data: {
       dataDir: HistoricalDataService.getDataDir(),
+      storage,
       datasets,
       manifest,
       totalSymbols: datasets.length,
@@ -25,7 +29,7 @@ export const collectData = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getSymbolData = asyncHandler(async (req: Request, res: Response) => {
-  const bars = HistoricalDataService.loadSymbolData(req.params.symbol);
+  const bars = await HistoricalDataService.loadSymbolData(req.params.symbol);
   const split = bars.length > 50
     ? HistoricalDataService.trainTestSplit(bars)
     : null;

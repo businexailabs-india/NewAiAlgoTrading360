@@ -29,6 +29,8 @@ model User {
   predictionEngines  PredictionEngine[]
   tradingAgents      TradingAgent[]
   orders             Order[]
+  strategies         Strategy[]
+  knowledgeDocuments KnowledgeDocument[]
 
   @@map("users")
 }
@@ -136,9 +138,10 @@ model UserSettings {
 
 model Strategy {
   id              String   @id @default(uuid())
+  userId          String   @map("user_id")
   name            String
   description     String?
-  category        String   // momentum, mean-reversion, arbitrage, etc.
+  category        String
   code            String   @db.Text
   parameters      Json
   isActive        Boolean  @default(false) @map("is_active")
@@ -146,6 +149,9 @@ model Strategy {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
   @@map("strategies")
 }
 
@@ -213,6 +219,23 @@ model PredictionResult {
 
   @@index([engineId, symbol])
   @@map("prediction_results")
+}
+
+model KnowledgeDocument {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  title     String
+  content   String   @db.Text
+  docType   String   @default("note") @map("doc_type") // note, research, news, strategy
+  symbol    String?
+  tags      Json     @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, symbol])
+  @@map("knowledge_documents")
 }
 
 model Order {

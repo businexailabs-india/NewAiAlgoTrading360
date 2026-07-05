@@ -33,6 +33,20 @@ services:
       timeout: 3s
       retries: 5
 
+  # Python ML sidecar (scikit-learn)
+  ml-service:
+    build: ./ml-service
+    container_name: smarttrade-ml
+    ports:
+      - "8081:8081"
+    volumes:
+      - ml_models:/app/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   # Backend API
   backend:
     build: .
@@ -42,6 +56,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ml-service:
+        condition: service_healthy
     ports:
       - "3001:3001"
     environment:
@@ -49,6 +65,8 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://smarttrade:smarttrade_password@postgres:5432/smarttrade
       REDIS_URL: redis://redis:6379
+      ML_SERVICE_URL: http://ml-service:8081
+      USE_PYTHON_ML: "true"
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       ZERODHA_API_KEY: ${ZERODHA_API_KEY}
@@ -62,3 +80,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  ml_models:

@@ -1,0 +1,3 @@
+# AWS deployment artifacts — do not commit
+.deploy-secrets.json
+deployment-output.json

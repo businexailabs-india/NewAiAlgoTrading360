@@ -3,6 +3,8 @@
 # Stage 1: Build
 FROM node:20-alpine AS builder
 
+RUN apk add --no-cache openssl libc6-compat
+
 WORKDIR /app
 
 # Copy package files
@@ -24,6 +26,8 @@ RUN npm run build
 
 # Stage 2: Production
 FROM node:20-alpine
+
+RUN apk add --no-cache openssl libc6-compat
 
 WORKDIR /app
 
@@ -47,5 +51,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:'+(process.env.PORT||8080)+'/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-# Start server
-CMD ["node", "dist/server.js"]
+# Start server (run migrations then serve)
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]

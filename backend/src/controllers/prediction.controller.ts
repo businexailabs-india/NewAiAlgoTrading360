@@ -47,6 +47,11 @@ export const deployEngine = asyncHandler(async (req: Request, res: Response) => 
   });
 });
 
+export const getMlStatus = asyncHandler(async (_req: Request, res: Response) => {
+  const status = await PredictionService.getMlStatus();
+  res.json({ success: true, data: status });
+});
+
 // Public inference endpoint for deployed engines
 export const publicPredict = asyncHandler(async (req: Request, res: Response) => {
   const engineId = req.params.id || (req.query.engineId as string);

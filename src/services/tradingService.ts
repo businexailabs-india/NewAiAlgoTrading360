@@ -116,5 +116,56 @@ export const tradingService = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message);
     return data.data;
+  },
+
+  // JSON rule strategies
+  async listStrategies() {
+    const res = await fetch(`${API_BASE_URL}/strategy`, { headers: headers() });
+    const data = await res.json();
+    return data.data;
+  },
+
+  async getStrategyPresets() {
+    const res = await fetch(`${API_BASE_URL}/strategy/presets`, { headers: headers() });
+    const data = await res.json();
+    return data.data;
+  },
+
+  async createStrategy(payload: {
+    name: string;
+    description?: string;
+    category?: string;
+    symbols: string[];
+    rules: Array<Record<string, unknown>>;
+  }) {
+    const res = await fetch(`${API_BASE_URL}/strategy`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+    return data.data;
+  },
+
+  async evaluateStrategy(id: string) {
+    const res = await fetch(`${API_BASE_URL}/strategy/${id}/evaluate`, {
+      method: 'POST',
+      headers: headers()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+    return data.data;
+  },
+
+  async backtestStrategy(id: string, horizonDays = 7) {
+    const res = await fetch(`${API_BASE_URL}/strategy/${id}/backtest`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ horizonDays })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+    return data.data;
   }
 };

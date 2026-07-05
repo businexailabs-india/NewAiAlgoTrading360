@@ -18,3 +18,7 @@ backend/data/historical/*.json
 
 # Deploy artifacts
 .vercel
+
+# Python
+__pycache__/
+*.pyc

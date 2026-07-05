@@ -2,16 +2,27 @@ import { prisma } from '../config/database';
 import { AppError } from '../middleware/error.middleware';
 import { MarketService } from './market.service';
 import { HistoricalDataService, OHLCVBar } from './historical-data.service';
-import { logger } from '../utils/logger';
+import { PredictionSignals, SignalWeights } from './prediction-signals';
+import { MlClientService, MlModelType } from './ml-client.service';
+import { RagService } from './rag.service';
 
-export type EngineType = 'momentum' | 'mean_reversion' | 'ml_regression' | 'ensemble';
+export type EngineType = 'momentum' | 'mean_reversion' | 'ml_regression' | 'ensemble' | 'sklearn' | 'advanced_ml';
 export type DeployTarget = 'vercel' | 'aws' | 'local';
 
 interface EngineParameters {
   lookbackDays?: number;
   threshold?: number;
   horizonDays?: number;
-  weights?: Record<string, number>;
+  minAccuracy?: number;
+  weights?: SignalWeights;
+  symbolWeights?: Record<string, SignalWeights>;
+  symbolAccuracy?: Record<string, number>;
+  symbolModels?: Record<string, string>;
+  mlBackend?: 'python' | 'node';
+  modelType?: MlModelType;
+  validationMode?: 'holdout' | 'walk_forward';
+  tuneHyperparams?: boolean;
+  useRag?: boolean;
   [key: string]: unknown;
 }
 
@@ -23,6 +34,8 @@ interface PredictionOutput {
   currentPrice: number;
   horizonDays: number;
   signals: Record<string, number>;
+  testAccuracy?: number;
+  signalAgreement?: number;
 }
 
 export class PredictionService {
@@ -59,7 +72,12 @@ export class PredictionService {
         description: data.description,
         engineType: data.engineType,
         symbols: data.symbols,
-        parameters: (data.parameters || { lookbackDays: 30, threshold: 0.02, horizonDays: 5 }) as object,
+        parameters: (data.parameters || {
+          lookbackDays: 60,
+          threshold: 0.015,
+          horizonDays: 7,
+          minAccuracy: 50
+        }) as object,
         status: 'draft'
       }
     });
@@ -91,6 +109,51 @@ export class PredictionService {
 
   static async trainEngine(userId: string, engineId: string) {
     const engine = await this.getEngine(userId, engineId);
+    const engineType = engine.engineType as EngineType;
+
+    if (this.shouldUsePythonMl(engineType)) {
+      const healthy = await MlClientService.checkHealth();
+      if (healthy) {
+        return this.trainEngineWithPython(userId, engineId, engine);
+      }
+      if (engineType === 'sklearn' || engineType === 'advanced_ml') {
+        throw new AppError('Python ML service required for sklearn/advanced_ml engines. Start ml-service.', 503);
+      }
+    }
+
+    if (engineType === 'ensemble') {
+      return this.trainEngineEnsemble(userId, engineId, engine);
+    }
+
+    return this.trainEngineWithNode(userId, engineId, engine);
+  }
+
+  private static shouldUsePythonMl(engineType: EngineType): boolean {
+    if (!MlClientService.isEnabled()) return false;
+    return engineType === 'sklearn' || engineType === 'ml_regression' || engineType === 'advanced_ml';
+  }
+
+  private static getMlTrainOptions(params: EngineParameters, engineType: EngineType) {
+    if (engineType === 'advanced_ml') {
+      return {
+        modelType: (params.modelType || 'stacking') as MlModelType,
+        validationMode: params.validationMode || 'walk_forward',
+        tuneHyperparams: params.tuneHyperparams ?? true
+      };
+    }
+    return {
+      modelType: (params.modelType || 'gradient_boosting') as MlModelType,
+      validationMode: params.validationMode || 'walk_forward',
+      tuneHyperparams: params.tuneHyperparams ?? false
+    };
+  }
+
+  private static async trainEngineWithPython(
+    userId: string,
+    engineId: string,
+    engine: { symbols: unknown; parameters: unknown; engineType: string }
+  ) {
+    await MlClientService.ensureAvailable();
     await prisma.predictionEngine.update({
       where: { id: engineId },
       data: { status: 'training' }
@@ -98,38 +161,158 @@ export class PredictionService {
 
     const symbols = engine.symbols as string[];
     const params = engine.parameters as EngineParameters;
+    const horizonDays = params.horizonDays || 7;
+    const minAccuracy = params.minAccuracy || 50;
+    const mlOptions = this.getMlTrainOptions(params, engine.engineType as EngineType);
+
+    let totalTrain = 0;
+    let totalTest = 0;
+    let count = 0;
+    const symbolMetrics: Record<string, object> = {};
+    const symbolAccuracy: Record<string, number> = {};
+    const symbolModels: Record<string, string> = {};
+
+    for (const symbol of symbols) {
+      const historical = await this.getHistoricalBars(symbol, params.lookbackDays || 252);
+      if (historical.length < 80) continue;
+
+      const result = await MlClientService.trainSymbol(engineId, symbol, historical, horizonDays, mlOptions);
+      totalTrain += result.train_accuracy;
+      totalTest += result.effective_accuracy ?? result.test_accuracy;
+      count++;
+      symbolAccuracy[symbol] = result.effective_accuracy ?? result.test_accuracy;
+      symbolModels[symbol] = result.model_key;
+      symbolMetrics[symbol] = {
+        trainAccuracy: result.train_accuracy,
+        testAccuracy: result.test_accuracy,
+        effectiveAccuracy: result.effective_accuracy,
+        testF1: result.test_f1,
+        bars: historical.length,
+        samples: result.samples,
+        modelType: result.model_type,
+        walkForward: result.walk_forward,
+        featureImportance: result.feature_importance
+      };
+
+      let ragContext: string | undefined;
+      if (params.useRag !== false) {
+        const rag = await RagService.query(userId, `${symbol} stock outlook prediction`, symbol, 3);
+        ragContext = rag.context || undefined;
+      }
+
+      const pred = await MlClientService.predictSymbol(
+        engineId,
+        symbol,
+        historical,
+        historical[historical.length - 1].close,
+        horizonDays,
+        minAccuracy,
+        ragContext
+      );
+
+      await prisma.predictionResult.create({
+        data: {
+          engineId,
+          symbol,
+          prediction: {
+            ...pred,
+            trainAccuracy: result.train_accuracy,
+            testAccuracy: result.test_accuracy,
+            dataBars: historical.length,
+            mlBackend: 'python'
+          }
+        }
+      });
+    }
+
+    const avgTrain = count ? totalTrain / count : 0;
+    const avgTest = count ? totalTest / count : 0;
+
+    return prisma.predictionEngine.update({
+      where: { id: engineId },
+      data: {
+        status: 'ready',
+        accuracy: avgTest,
+        lastTrainedAt: new Date(),
+        parameters: {
+          ...(params as object),
+          symbolAccuracy,
+          symbolModels,
+          mlBackend: 'python',
+          minAccuracy,
+          lastTraining: {
+            trainAccuracy: Number(avgTrain.toFixed(2)),
+            testAccuracy: Number(avgTest.toFixed(2)),
+            symbolMetrics,
+            trainedAt: new Date().toISOString(),
+            dataSource: process.env.AWS_S3_DATA_BUCKET ? 'aws_s3' : 'local_historical',
+            engine: mlOptions.modelType,
+            validationMode: mlOptions.validationMode,
+            tuneHyperparams: mlOptions.tuneHyperparams
+          }
+        } as object
+      }
+    });
+  }
+
+  private static async trainEngineWithNode(
+    userId: string,
+    engineId: string,
+    engine: { symbols: unknown; parameters: unknown }
+  ) {
+    await prisma.predictionEngine.update({
+      where: { id: engineId },
+      data: { status: 'training' }
+    });
+
+    const symbols = engine.symbols as string[];
+    const params = engine.parameters as EngineParameters;
+    const horizonDays = params.horizonDays || 7;
+    const threshold = params.threshold || 0.015;
+    const minAccuracy = params.minAccuracy || 50;
+
     let totalAccuracy = 0;
     let totalTestAccuracy = 0;
     let count = 0;
-    const symbolMetrics: Record<string, { trainAccuracy: number; testAccuracy: number; bars: number }> = {};
+    const symbolMetrics: Record<string, {
+      trainAccuracy: number;
+      testAccuracy: number;
+      bars: number;
+      weights?: SignalWeights;
+    }> = {};
+    const symbolWeights: Record<string, SignalWeights> = {};
+    const symbolAccuracy: Record<string, number> = {};
 
     for (const symbol of symbols) {
       const historical = await this.getHistoricalBars(symbol, params.lookbackDays || 252);
       if (historical.length < 50) continue;
 
       const { train, test } = HistoricalDataService.trainTestSplit(historical, 0.2);
+      const tuneBars = train.length > 400 ? train.slice(-400) : train;
+      const tunedWeights = PredictionSignals.tuneWeights(tuneBars, horizonDays, threshold);
+      symbolWeights[symbol] = tunedWeights;
 
-      const trainPredictions = this.runBacktestOnBars(engine.engineType as EngineType, train, params);
-      const testPredictions = this.runBacktestOnBars(engine.engineType as EngineType, test, params);
-
-      const trainAccuracy = this.evaluateAccuracyOnBars(trainPredictions, train);
-      const testAccuracy = this.evaluateAccuracyOnBars(testPredictions, test);
+      const trainAccuracy = PredictionSignals.backtestAccuracy(train, tunedWeights, horizonDays, threshold);
+      const testAccuracy = PredictionSignals.backtestAccuracy(test, tunedWeights, horizonDays, threshold);
 
       totalAccuracy += trainAccuracy;
       totalTestAccuracy += testAccuracy;
       count++;
+      symbolAccuracy[symbol] = testAccuracy;
 
       symbolMetrics[symbol] = {
         trainAccuracy: Number(trainAccuracy.toFixed(2)),
         testAccuracy: Number(testAccuracy.toFixed(2)),
-        bars: historical.length
+        bars: historical.length,
+        weights: tunedWeights
       };
 
-      const latestPred = this.predict(
-        engine.engineType as EngineType,
-        historical.map(b => ({ close: b.close })),
+      const latestPred = this.predictFromBars(
+        historical,
         historical[historical.length - 1].close,
-        params
+        params,
+        tunedWeights,
+        testAccuracy
       );
 
       await prisma.predictionResult.create({
@@ -152,12 +335,16 @@ export class PredictionService {
         lastTrainedAt: new Date(),
         parameters: {
           ...(params as object),
+          symbolWeights,
+          symbolAccuracy,
+          minAccuracy,
           lastTraining: {
             trainAccuracy: Number(avgTrainAccuracy.toFixed(2)),
             testAccuracy: Number(avgTestAccuracy.toFixed(2)),
             symbolMetrics,
             trainedAt: new Date().toISOString(),
-            dataSource: 'local_historical'
+            dataSource: process.env.AWS_S3_DATA_BUCKET ? 'aws_s3' : 'local_historical',
+            indicators: ['momentum', 'meanReversion', 'regression', 'rsi', 'macd', 'bollinger', 'volume']
           }
         } as object
       }
@@ -165,7 +352,7 @@ export class PredictionService {
   }
 
   private static async getHistoricalBars(symbol: string, minBars: number): Promise<OHLCVBar[]> {
-    const local = HistoricalDataService.getBarsForSymbol(symbol, minBars);
+    const local = await HistoricalDataService.getBarsForSymbol(symbol, minBars);
     if (local.length >= minBars) return local;
 
     const remote = await MarketService.getHistoricalData(symbol, Math.min(minBars, 365 * 2));
@@ -181,15 +368,32 @@ export class PredictionService {
 
   static async runPredictions(userId: string, engineId: string): Promise<PredictionOutput[]> {
     const engine = await this.getEngine(userId, engineId);
+    const engineType = engine.engineType as EngineType;
+
+    if (this.shouldUsePythonMl(engineType) && await MlClientService.checkHealth()) {
+      return this.runPredictionsWithPython(userId, engineId, engine);
+    }
+    if (engineType === 'sklearn' && !(await MlClientService.checkHealth())) {
+      throw new AppError('Python ML service unavailable', 503);
+    }
+
     const symbols = engine.symbols as string[];
     const params = engine.parameters as EngineParameters;
     const results: PredictionOutput[] = [];
 
     for (const symbol of symbols) {
       const historical = await this.getHistoricalBars(symbol, params.lookbackDays || 60);
-      const bars = historical.map(b => ({ close: b.close }));
       const quote = await MarketService.getQuote(symbol, userId);
-      const prediction = this.predict(engine.engineType as EngineType, bars, quote.price, params);
+      const weights = params.symbolWeights?.[symbol];
+      const testAcc = params.symbolAccuracy?.[symbol] ?? Number(engine.accuracy) ?? 50;
+
+      const prediction = this.predictFromBars(
+        historical,
+        quote.price,
+        params,
+        weights,
+        testAcc
+      );
 
       await prisma.predictionResult.create({
         data: { engineId, symbol, prediction }
@@ -201,6 +405,62 @@ export class PredictionService {
     return results;
   }
 
+  private static async runPredictionsWithPython(
+    userId: string,
+    engineId: string,
+    engine: { symbols: unknown; parameters: unknown; accuracy: unknown }
+  ): Promise<PredictionOutput[]> {
+    await MlClientService.ensureAvailable();
+    const symbols = engine.symbols as string[];
+    const params = engine.parameters as EngineParameters;
+    const results: PredictionOutput[] = [];
+
+    for (const symbol of symbols) {
+      const historical = await this.getHistoricalBars(symbol, params.lookbackDays || 252);
+      const quote = await MarketService.getQuote(symbol, userId);
+
+      const pred = await MlClientService.predictSymbol(
+        engineId,
+        symbol,
+        historical,
+        quote.price,
+        params.horizonDays || 7,
+        params.minAccuracy || 50
+      );
+
+      const output: PredictionOutput = {
+        symbol,
+        direction: pred.direction,
+        confidence: pred.confidence,
+        targetPrice: pred.target_price,
+        currentPrice: pred.current_price,
+        horizonDays: pred.horizon_days,
+        signals: pred.signals,
+        testAccuracy: pred.test_accuracy,
+        signalAgreement: pred.probabilities
+          ? Math.abs(pred.probabilities.buy - pred.probabilities.sell) / 100
+          : undefined
+      };
+
+      await prisma.predictionResult.create({
+        data: { engineId, symbol, prediction: { ...output, mlBackend: 'python' } }
+      });
+      results.push(output);
+    }
+    return results;
+  }
+
+  static async getMlStatus() {
+    const enabled = MlClientService.isEnabled();
+    const healthy = enabled ? await MlClientService.checkHealth() : false;
+    return {
+      enabled,
+      healthy,
+      url: process.env.ML_SERVICE_URL || null,
+      engine: 'sklearn-gradient-boosting'
+    };
+  }
+
   static async deployEngine(userId: string, engineId: string, target: DeployTarget) {
     const engine = await this.getEngine(userId, engineId);
     if (engine.status !== 'ready' && engine.status !== 'deployed') {
@@ -210,10 +470,16 @@ export class PredictionService {
     const baseUrl = target === 'vercel'
       ? process.env.VERCEL_PREDICTION_URL || `https://${process.env.VERCEL_PROJECT || 'smarttrade'}.vercel.app/api/predict`
       : target === 'aws'
-      ? process.env.AWS_PREDICTION_URL || `https://${process.env.AWS_API_GATEWAY_ID || 'api'}.execute-api.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/prod/predict`
+      ? process.env.AWS_BACKEND_URL
+        ? `${process.env.AWS_BACKEND_URL}/api/predictions/engines/${engineId}/predict`
+        : process.env.AWS_PREDICTION_URL
+          ? `${process.env.AWS_PREDICTION_URL}/${engineId}/predict`
+          : `https://${process.env.AWS_API_GATEWAY_ID || 'api'}.execute-api.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/prod/predict`
       : `${process.env.API_URL || 'http://localhost:3001'}/api/predictions/engines/${engineId}/predict`;
 
-    const deployUrl = `${baseUrl}?engineId=${engineId}`;
+    const deployUrl = target === 'aws' && process.env.AWS_BACKEND_URL
+      ? baseUrl
+      : `${baseUrl}?engineId=${engineId}`;
 
     return prisma.predictionEngine.update({
       where: { id: engineId },
@@ -225,133 +491,54 @@ export class PredictionService {
     });
   }
 
-  private static predict(
-    type: EngineType,
-    historical: Array<{ close: number }>,
+  private static predictFromBars(
+    bars: OHLCVBar[],
     currentPrice: number,
-    params: EngineParameters
+    params: EngineParameters,
+    weights?: SignalWeights,
+    testAccuracy = 50
   ): Omit<PredictionOutput, 'symbol'> {
-    const closes = historical.map(h => h.close);
-    const signals: Record<string, number> = {};
+    const threshold = params.threshold || 0.015;
+    const horizonDays = params.horizonDays || 7;
+    const minAccuracy = params.minAccuracy || 50;
 
-    let score = 0;
-
-    if (type === 'momentum' || type === 'ensemble') {
-      const momentum = this.momentumSignal(closes, params.lookbackDays || 14);
-      signals.momentum = momentum;
-      score += momentum * (params.weights?.momentum ?? (type === 'ensemble' ? 0.4 : 1));
+    if (bars.length < 30) {
+      return {
+        direction: 'HOLD',
+        confidence: 0,
+        targetPrice: currentPrice,
+        currentPrice,
+        horizonDays,
+        signals: {},
+        testAccuracy,
+        signalAgreement: 0
+      };
     }
 
-    if (type === 'mean_reversion' || type === 'ensemble') {
-      const reversion = this.meanReversionSignal(closes, params.lookbackDays || 20);
-      signals.meanReversion = reversion;
-      score += reversion * (params.weights?.meanReversion ?? (type === 'ensemble' ? 0.3 : 1));
-    }
+    const ind = PredictionSignals.computeIndicators(bars);
+    const { score, signals } = PredictionSignals.scoreFromIndicators(ind, weights ?? params.weights);
+    const agreement = PredictionSignals.signalAgreement(signals, score);
 
-    if (type === 'ml_regression' || type === 'ensemble') {
-      const regression = this.regressionSignal(closes);
-      signals.regression = regression;
-      score += regression * (params.weights?.regression ?? (type === 'ensemble' ? 0.3 : 1));
-    }
-
-    const threshold = params.threshold || 0.02;
-    const direction: 'BUY' | 'SELL' | 'HOLD' =
+    let direction: 'BUY' | 'SELL' | 'HOLD' =
       score > threshold ? 'BUY' : score < -threshold ? 'SELL' : 'HOLD';
 
-    const confidence = Math.min(95, Math.abs(score) * 100 + 50);
-    const horizonDays = params.horizonDays || 5;
+    const confidence = PredictionSignals.calibratedConfidence(score, testAccuracy, agreement, minAccuracy);
+
+    if (testAccuracy < minAccuracy || agreement < 0.4) {
+      direction = 'HOLD';
+    }
+
     const targetPrice = Number((currentPrice * (1 + score * horizonDays * 0.01)).toFixed(2));
 
-    return { direction, confidence: Number(confidence.toFixed(1)), targetPrice, currentPrice, horizonDays, signals };
-  }
-
-  private static momentumSignal(closes: number[], period: number): number {
-    if (closes.length < period + 1) return 0;
-    const recent = closes[closes.length - 1];
-    const past = closes[closes.length - period - 1];
-    return past ? (recent - past) / past : 0;
-  }
-
-  private static meanReversionSignal(closes: number[], period: number): number {
-    if (closes.length < period) return 0;
-    const slice = closes.slice(-period);
-    const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
-    const current = closes[closes.length - 1];
-    return mean ? -(current - mean) / mean : 0;
-  }
-
-  private static regressionSignal(closes: number[]): number {
-    if (closes.length < 5) return 0;
-    const n = closes.length;
-    const xMean = (n - 1) / 2;
-    const yMean = closes.reduce((a, b) => a + b, 0) / n;
-    let num = 0, den = 0;
-    for (let i = 0; i < n; i++) {
-      num += (i - xMean) * (closes[i] - yMean);
-      den += (i - xMean) ** 2;
-    }
-    const slope = den ? num / den : 0;
-    return slope / yMean;
-  }
-
-  private static runBacktestOnBars(
-    type: EngineType,
-    bars: OHLCVBar[],
-    params: EngineParameters
-  ) {
-    const predictions = [];
-    const closes = bars.map(b => b.close);
-    for (let i = 20; i < closes.length; i++) {
-      const slice = closes.slice(0, i + 1).map(c => ({ close: c }));
-      const pred = this.predict(type, slice, closes[i], params);
-      predictions.push(pred);
-    }
-    return predictions;
-  }
-
-  private static runBacktest(
-    type: EngineType,
-    historical: Array<{ close: number }>,
-    params: EngineParameters
-  ) {
-    const predictions = [];
-    for (let i = 20; i < historical.length; i++) {
-      const slice = historical.slice(0, i + 1);
-      const pred = this.predict(type, slice, slice[slice.length - 1].close, params);
-      predictions.push(pred);
-    }
-    return predictions;
-  }
-
-  private static evaluateAccuracyOnBars(
-    predictions: Array<{ direction: string }>,
-    bars: OHLCVBar[]
-  ): number {
-    let correct = 0;
-    let total = 0;
-    for (let i = 0; i < predictions.length - 5; i++) {
-      const futureIdx = i + 21;
-      if (futureIdx >= bars.length) break;
-      const actual = bars[futureIdx].close > bars[i + 20].close ? 'BUY' : 'SELL';
-      if (predictions[i].direction === actual) correct++;
-      total++;
-    }
-    return total ? (correct / total) * 100 : 0;
-  }
-
-  private static evaluateAccuracy(
-    predictions: Array<{ direction: string }>,
-    historical: Array<{ close: number }>
-  ): number {
-    let correct = 0;
-    let total = 0;
-    for (let i = 0; i < predictions.length - 1; i++) {
-      const actual = historical[i + 21]?.close > historical[i + 20]?.close ? 'BUY' : 'SELL';
-      if (predictions[i].direction === actual || predictions[i].direction === 'HOLD') {
-        correct++;
-      }
-      total++;
-    }
-    return total ? (correct / total) * 100 : 0;
+    return {
+      direction,
+      confidence,
+      targetPrice,
+      currentPrice,
+      horizonDays,
+      signals,
+      testAccuracy: Number(testAccuracy.toFixed(1)),
+      signalAgreement: Number(agreement.toFixed(2))
+    };
   }
 }
