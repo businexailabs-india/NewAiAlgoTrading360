@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Slider } from './ui/slider';
 import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Button } from './ui/button';
-import { Brain, PlayCircle } from 'lucide-react';
+import { Brain, PlayCircle, Loader2 } from 'lucide-react';
 import { AIRecommendationsTable } from './AIRecommendationsTable';
+import { tradingService } from '../services/tradingService';
 
 interface RebalancingConsoleProps {
   autoExecute: boolean;
@@ -14,6 +16,34 @@ interface RebalancingConsoleProps {
 }
 
 export function RebalancingConsole({ autoExecute, setAutoExecute, selectedBroker, setSelectedBroker }: RebalancingConsoleProps) {
+  const [executing, setExecuting] = useState(false);
+  const [lastResult, setLastResult] = useState<string | null>(null);
+
+  const handleExecuteRebalance = async () => {
+    setExecuting(true);
+    setLastResult(null);
+    try {
+      const screener = await tradingService.runScreener({ topN: 5 });
+      const buys = screener.topBuys || screener.stocks?.filter((s: { signal: string }) => s.signal === 'BUY').slice(0, 3) || [];
+      const isPaper = !autoExecute;
+
+      for (const stock of buys) {
+        await tradingService.placeOrder({
+          symbol: stock.symbol,
+          tradeType: 'BUY',
+          quantity: 1,
+          isPaper
+        });
+      }
+
+      setLastResult(`Executed ${buys.length} ${isPaper ? 'paper' : 'live'} buy orders from screener picks`);
+    } catch (err) {
+      setLastResult(err instanceof Error ? err.message : 'Rebalance failed');
+    } finally {
+      setExecuting(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -139,10 +169,17 @@ export function RebalancingConsole({ autoExecute, setAutoExecute, selectedBroker
               </motion.div>
             )}
 
-            <Button className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white">
-              <PlayCircle className="w-4 h-4 mr-2" />
-              Execute Rebalance Now
+            <Button
+              onClick={handleExecuteRebalance}
+              disabled={executing}
+              className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
+            >
+              {executing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <PlayCircle className="w-4 h-4 mr-2" />}
+              {autoExecute ? 'Execute Live Rebalance' : 'Execute Paper Rebalance'}
             </Button>
+            {lastResult && (
+              <p className="text-xs text-gray-400 mt-2">{lastResult}</p>
+            )}
           </div>
         </div>
       </div>

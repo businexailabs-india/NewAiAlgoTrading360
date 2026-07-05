@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SmartTrade Prediction Engine - AWS App Runner + API Gateway
+
+Parameters:
+  BackendImageUri:
+    Type: String
+    Description: ECR image URI for the backend container
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: PostgreSQL connection string
+  JwtSecret:
+    Type: String
+    NoEcho: true
+
+Resources:
+  PredictionApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: smarttrade-prediction-api
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: ['*']
+        AllowMethods: ['GET', 'POST', 'OPTIONS']
+        AllowHeaders: ['Content-Type', 'Authorization']
+
+  PredictionIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PredictionApi
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: POST
+      IntegrationUri: !Sub 'https://${AppRunnerService.ServiceUrl}/api/predictions/engines/{engineId}/predict'
+      PayloadFormatVersion: '1.0'
+
+  PredictRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PredictionApi
+      RouteKey: 'POST /predict'
+      Target: !Sub 'integrations/${PredictionIntegration}'
+
+  PredictionStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref PredictionApi
+      StageName: prod
+      AutoDeploy: true
+
+  AppRunnerService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: smarttrade-backend
+      SourceConfiguration:
+        ImageRepository:
+          ImageIdentifier: !Ref BackendImageUri
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: '8080'
+            RuntimeEnvironmentVariables:
+              - Name: NODE_ENV
+                Value: production
+              - Name: DATABASE_URL
+                Value: !Ref DatabaseUrl
+              - Name: JWT_SECRET
+                Value: !Ref JwtSecret
+              - Name: PORT
+                Value: '8080'
+        AutoDeploymentsEnabled: true
+      InstanceConfiguration:
+        Cpu: '1 vCPU'
+        Memory: '2 GB'
+
+Outputs:
+  PredictionApiUrl:
+    Description: API Gateway URL for prediction inference
+    Value: !Sub 'https://${PredictionApi}.execute-api.${AWS::Region}.amazonaws.com/prod/predict'
+  AppRunnerUrl:
+    Description: App Runner service URL
+    Value: !GetAtt AppRunnerService.ServiceUrl

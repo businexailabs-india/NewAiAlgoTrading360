@@ -21,11 +21,14 @@ model User {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   // Relations
-  brokerConnections BrokerConnection[]
-  holdings          Holding[]
-  trades            Trade[]
-  settings          UserSettings?
-  portfolios        Portfolio[]
+  brokerConnections  BrokerConnection[]
+  holdings           Holding[]
+  trades             Trade[]
+  settings           UserSettings?
+  portfolios         Portfolio[]
+  predictionEngines  PredictionEngine[]
+  tradingAgents      TradingAgent[]
+  orders             Order[]
 
   @@map("users")
 }
@@ -46,6 +49,7 @@ model BrokerConnection {
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   holdings Holding[]
   trades   Trade[]
+  orders   Order[]
 
   @@map("broker_connections")
 }
@@ -172,4 +176,121 @@ model AuditLog {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("audit_logs")
+}
+
+model PredictionEngine {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  name          String
+  description   String?
+  engineType    String    @map("engine_type")
+  symbols       Json
+  parameters    Json
+  status        String    @default("draft")
+  deployTarget  String?   @map("deploy_target")
+  deployUrl     String?   @map("deploy_url")
+  accuracy      Decimal?  @db.Decimal(5, 2)
+  lastTrainedAt DateTime? @map("last_trained_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  predictions PredictionResult[]
+
+  @@index([userId, status])
+  @@map("prediction_engines")
+}
+
+model PredictionResult {
+  id            String   @id @default(uuid())
+  engineId      String   @map("engine_id")
+  symbol        String
+  prediction    Json
+  actualOutcome Json?    @map("actual_outcome")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  engine PredictionEngine @relation(fields: [engineId], references: [id], onDelete: Cascade)
+
+  @@index([engineId, symbol])
+  @@map("prediction_results")
+}
+
+model Order {
+  id                 String    @id @default(uuid())
+  userId             String    @map("user_id")
+  brokerConnectionId String?   @map("broker_connection_id")
+  brokerOrderId      String?   @map("broker_order_id")
+  symbol             String
+  exchange           String    @default("NSE")
+  instrumentType     String    @default("EQUITY") @map("instrument_type")
+  optionDetails      Json?     @map("option_details")
+  tradeType          String    @map("trade_type")
+  quantity           Int
+  price              Decimal?  @db.Decimal(10, 2)
+  triggerPrice       Decimal?  @map("trigger_price") @db.Decimal(10, 2)
+  orderType          String    @default("MARKET") @map("order_type")
+  product            String    @default("CNC")
+  status             String    @default("PENDING")
+  isPaper            Boolean   @default(true) @map("is_paper")
+  agentId            String?   @map("agent_id")
+  rejectionReason    String?   @map("rejection_reason")
+  executedAt         DateTime? @map("executed_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerConnection BrokerConnection? @relation(fields: [brokerConnectionId], references: [id])
+  agent            TradingAgent?     @relation(fields: [agentId], references: [id])
+
+  @@index([userId, status])
+  @@index([agentId])
+  @@map("orders")
+}
+
+model TradingAgent {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  name          String
+  description   String?
+  mode          String    @default("paper")
+  isActive      Boolean   @default(false) @map("is_active")
+  engineId      String?   @map("engine_id")
+  config        Json
+  lastRunAt     DateTime? @map("last_run_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+  runs   AgentRun[]
+
+  @@index([userId, isActive])
+  @@map("trading_agents")
+}
+
+model AgentRun {
+  id           String   @id @default(uuid())
+  agentId      String   @map("agent_id")
+  status       String
+  signals      Json?
+  ordersPlaced Json?    @map("orders_placed")
+  summary      Json?
+  error        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  agent TradingAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@map("agent_runs")
+}
+
+model ScreenerResult {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  criteria  Json
+  results   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("screener_results")
 }

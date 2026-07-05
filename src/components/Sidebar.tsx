@@ -24,6 +24,8 @@ import { Badge } from './ui/badge';
 interface SidebarProps {
   activeSection: string;
   onSectionChange: (section: string) => void;
+  onLogout?: () => void;
+  user?: { name: string | null; email: string; role: string } | null;
 }
 
 const menuItems = [
@@ -86,6 +88,18 @@ const menuItems = [
     label: 'Heat Map Analysis',
     icon: BarChart3,
     badge: { text: 'New', color: 'purple' }
+  },
+  {
+    id: 'auto-trading',
+    label: 'Auto Trading',
+    icon: Zap,
+    badge: { text: 'New', color: 'green' }
+  },
+  {
+    id: 'predictions',
+    label: 'Prediction Engines',
+    icon: Brain,
+    badge: { text: 'ML', color: 'purple' }
   }
 ];
 
@@ -107,7 +121,7 @@ const bottomItems = [
   }
 ];
 
-export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
+export function Sidebar({ activeSection, onSectionChange, onLogout, user }: SidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
 
@@ -307,6 +321,7 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
 
         {/* Logout Button */}
         <motion.button
+          onClick={onLogout}
           className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-red-400 hover:bg-red-500/10 transition-all relative group border border-transparent hover:border-red-500/30"
         >
           <LogOut className="w-5 h-5 flex-shrink-0" />
@@ -342,7 +357,7 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
           }`}
         >
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center text-white flex-shrink-0">
-            JD
+            {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}
           </div>
 
           <AnimatePresence>
@@ -354,8 +369,8 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
                 transition={{ duration: 0.2 }}
                 className="flex-1 min-w-0"
               >
-                <div className="text-sm text-white truncate">John Doe</div>
-                <div className="text-xs text-gray-400 truncate">Premium Trader</div>
+                <div className="text-sm text-white truncate">{user?.name || 'Trader'}</div>
+                <div className="text-xs text-gray-400 truncate">{user?.email || 'Premium Trader'}</div>
               </motion.div>
             )}
           </AnimatePresence>

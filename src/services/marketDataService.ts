@@ -57,6 +57,7 @@ export interface MarketBreadth {
 }
 
 class MarketDataService {
+  private apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
   private baseUrlNSE = 'https://www.nseindia.com/api';
   private baseUrlBSE = 'https://api.bseindia.com';
   private cache: Map<string, { data: any; timestamp: number }> = new Map();
@@ -77,6 +78,25 @@ class MarketDataService {
       const cacheKey = 'nse_indices';
       const cached = this.getFromCache(cacheKey);
       if (cached) return cached;
+
+      // Try backend live indices (Yahoo Finance)
+      const backendRes = await fetch(`${this.apiBaseUrl}/market/indices`);
+      if (backendRes.ok) {
+        const { data } = await backendRes.json();
+        const indices: IndexData[] = data.map((item: { name: string; value: number; change: number; changePercent: number }) => ({
+          name: item.name,
+          value: item.value,
+          change: item.change,
+          changePercent: item.changePercent,
+          high: item.value,
+          low: item.value,
+          open: item.value,
+          previousClose: item.value - item.change,
+          timestamp: new Date()
+        }));
+        this.setCache(cacheKey, indices);
+        return indices;
+      }
 
       // NSE API endpoint for indices
       const response = await fetch(`${this.baseUrlNSE}/allIndices`, {
@@ -161,6 +181,31 @@ class MarketDataService {
       const cacheKey = `nse_stock_${symbol}`;
       const cached = this.getFromCache(cacheKey);
       if (cached) return cached;
+
+      // Try backend live market API first (Yahoo/broker feed)
+      const token = localStorage.getItem('authToken');
+      const backendRes = await fetch(`${this.apiBaseUrl}/market/quote/${symbol}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (backendRes.ok) {
+        const { data } = await backendRes.json();
+        const quote: StockQuote = {
+          symbol,
+          name: symbol,
+          exchange: 'NSE',
+          price: data.price,
+          change: data.change,
+          changePercent: data.changePercent,
+          volume: data.volume || 0,
+          high: data.high || data.price,
+          low: data.low || data.price,
+          open: data.open || data.price,
+          previousClose: data.price - data.change,
+          timestamp: new Date(data.timestamp)
+        };
+        this.setCache(cacheKey, quote);
+        return quote;
+      }
 
       const response = await fetch(`${this.baseUrlNSE}/quote-equity?symbol=${symbol}`, {
         headers: this.nseHeaders

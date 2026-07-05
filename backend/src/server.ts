@@ -11,6 +11,18 @@ import rateLimit from 'express-rate-limit';
 // Load environment variables
 dotenv.config();
 
+// Initialize QuantConnect if credentials are available
+if (process.env.QC_USER_ID && process.env.QC_API_TOKEN) {
+  initializeQuantConnect({
+    userId: process.env.QC_USER_ID,
+    apiToken: process.env.QC_API_TOKEN,
+    baseUrl: process.env.QC_BASE_URL
+  });
+  logger.info('QuantConnect service initialized');
+} else {
+  logger.warn('QuantConnect credentials not set — QC endpoints will fail until configured');
+}
+
 // Import routes
 import authRoutes from './routes/auth.routes';
 import brokerRoutes from './routes/broker.routes';
@@ -19,6 +31,17 @@ import marketRoutes from './routes/market.routes';
 import strategyRoutes from './routes/strategy.routes';
 import taxRoutes from './routes/tax.routes';
 import adminRoutes from './routes/admin.routes';
+import quantconnectRoutes from './routes/quantconnect.routes';
+import predictionRoutes from './routes/prediction.routes';
+import orderRoutes from './routes/order.routes';
+import agentRoutes from './routes/agent.routes';
+import screenerRoutes from './routes/screener.routes';
+import optionsRoutes from './routes/options.routes';
+import dataRoutes from './routes/data.routes';
+
+// Import services
+import { initializeQuantConnect } from './services/quantconnect.service';
+import { startAgentScheduler } from './services/agent-scheduler.service';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -76,6 +99,13 @@ app.use('/api/market', marketRoutes);
 app.use('/api/strategy', strategyRoutes);
 app.use('/api/tax', taxRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/quantconnect', quantconnectRoutes);
+app.use('/api/predictions', predictionRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/agents', agentRoutes);
+app.use('/api/screener', screenerRoutes);
+app.use('/api/options', optionsRoutes);
+app.use('/api/data', dataRoutes);
 
 // WebSocket connection handling
 io.on('connection', (socket) => {
@@ -120,6 +150,10 @@ httpServer.listen(PORT, () => {
   logger.info(`📊 Environment: ${process.env.NODE_ENV}`);
   logger.info(`🔗 API URL: ${process.env.API_URL}`);
   logger.info(`🌐 Frontend URL: ${process.env.FRONTEND_URL}`);
+
+  if (process.env.ENABLE_AGENT_SCHEDULER !== 'false') {
+    startAgentScheduler();
+  }
 });
 
 // Graceful shutdown
