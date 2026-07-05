@@ -5,6 +5,9 @@
 
   export default defineConfig({
     plugins: [react()],
+    define: {
+      'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || '/api'),
+    },
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
       alias: {
@@ -57,5 +60,12 @@
     server: {
       port: 3000,
       open: true,
+      proxy: {
+        '/api': {
+          target: process.env.VITE_BACKEND_URL || 'http://smarttrade-alb-1574969447.ap-south-1.elb.amazonaws.com',
+          changeOrigin: true,
+          secure: false
+        }
+      }
     },
   });

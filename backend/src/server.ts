@@ -11,6 +11,7 @@ import rateLimit from 'express-rate-limit';
 // Import services and logger before use
 import { initializeQuantConnect } from './services/quantconnect.service';
 import { startAgentScheduler } from './services/agent-scheduler.service';
+import { DemoSeedService } from './services/demo-seed.service';
 import { errorHandler } from './middleware/error.middleware';
 import { logger } from './utils/logger';
 
@@ -66,7 +67,21 @@ const io = new SocketIOServer(httpServer, {
 // Middleware
 app.use(helmet()); // Security headers
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    const allowed = [
+      process.env.CORS_ORIGIN,
+      process.env.FRONTEND_URL,
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'https://smarttrade-portfolio.vercel.app'
+    ].filter(Boolean) as string[];
+
+    if (!origin) return callback(null, true);
+    if (allowed.includes(origin)) return callback(null, true);
+    if (/^https:\/\/[\w-]+\.vercel\.app$/.test(origin)) return callback(null, true);
+
+    callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true
 }));
 app.use(compression()); // Compress responses
@@ -158,6 +173,10 @@ httpServer.listen(PORT, () => {
   if (process.env.ENABLE_AGENT_SCHEDULER !== 'false') {
     startAgentScheduler();
   }
+
+  DemoSeedService.ensureDemoUsers().catch(err => {
+    logger.warn('Demo user seed skipped or failed', err);
+  });
 });
 
 // Graceful shutdown

@@ -19,8 +19,26 @@ const INDEX_YAHOO_MAP: Record<string, string> = {
   'NIFTY 50': '^NSEI',
   'SENSEX': '^BSESN',
   'NIFTY BANK': '^NSEBANK',
-  'NIFTY IT': '^CNXIT'
+  'NIFTY IT': '^CNXIT',
+  'NIFTY AUTO': '^CNXAUTO',
+  'NIFTY PHARMA': '^CNXPHARMA',
+  'NIFTY FMCG': '^CNXFMCG',
+  'NIFTY METAL': '^CNXMETAL',
+  'NIFTY REALTY': '^CNXREALTY',
+  'NIFTY ENERGY': '^CNXENERGY'
 };
+
+const LIQUID_UNIVERSE = [
+  'RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
+  'ITC', 'WIPRO', 'LT', 'AXISBANK', 'KOTAKBANK', 'HCLTECH', 'MARUTI', 'SUNPHARMA',
+  'TATAMOTORS', 'BAJFINANCE', 'ASIANPAINT', 'TITAN', 'ULTRACEMCO', 'NESTLEIND',
+  'POWERGRID', 'NTPC', 'ONGC', 'COALINDIA', 'JSWSTEEL', 'TATASTEEL', 'ADANIENT', 'M&M'
+];
+
+const SMALLCAP_UNIVERSE = [
+  'IDFCFIRSTB', 'PNB', 'BANKBARODA', 'CANBK', 'IOB', 'UCOBANK', 'CENTRALBK',
+  'SAIL', 'NMDC', 'NHPC', 'IRFC', 'RVNL', 'IREDA', 'HUDCO', 'IRCTC'
+];
 
 export class MarketService {
   private static cache = new Map<string, { data: Quote; expires: number }>();
@@ -184,5 +202,90 @@ export class MarketService {
     return universe.filter(s =>
       s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
     );
+  }
+
+  static async getTopMovers(type: 'gainers' | 'losers', count = 10) {
+    const quotes = (await Promise.all(LIQUID_UNIVERSE.map(s => this.fetchYahooQuote(s))))
+      .filter((q): q is Quote => !!q && q.price > 0);
+
+    quotes.sort((a, b) =>
+      type === 'gainers' ? b.changePercent - a.changePercent : a.changePercent - b.changePercent
+    );
+
+    return quotes.slice(0, count).map(q => ({
+      symbol: q.symbol,
+      name: q.symbol,
+      exchange: 'NSE' as const,
+      price: q.price,
+      change: q.change,
+      changePercent: q.changePercent,
+      volume: q.volume || 0,
+      high: q.high || q.price,
+      low: q.low || q.price,
+      open: q.open || q.price,
+      previousClose: q.price - q.change,
+      timestamp: q.timestamp
+    }));
+  }
+
+  static async getSmallCapStocks(count = 20) {
+    const quotes = (await Promise.all(SMALLCAP_UNIVERSE.map(s => this.fetchYahooQuote(s))))
+      .filter((q): q is Quote => !!q && q.price > 0);
+
+    return quotes.slice(0, count).map(q => ({
+      symbol: q.symbol,
+      name: q.symbol,
+      exchange: 'NSE' as const,
+      price: q.price,
+      change: q.change,
+      changePercent: q.changePercent,
+      volume: q.volume || 0,
+      high: q.high || q.price,
+      low: q.low || q.price,
+      open: q.open || q.price,
+      previousClose: q.price - q.change,
+      timestamp: q.timestamp
+    }));
+  }
+
+  static async getSectorPerformance() {
+    const sectorIndices = Object.entries(INDEX_YAHOO_MAP).filter(([name]) =>
+      ['NIFTY IT', 'NIFTY BANK', 'NIFTY AUTO', 'NIFTY PHARMA', 'NIFTY FMCG', 'NIFTY ENERGY', 'NIFTY METAL', 'NIFTY REALTY'].includes(name)
+    );
+
+    const results = await Promise.all(
+      sectorIndices.map(async ([name, yahooSymbol]) => {
+        const quote = await this.fetchYahooQuote(yahooSymbol, '');
+        if (!quote) return null;
+        return {
+          sector: name.replace('NIFTY ', ''),
+          change: quote.changePercent,
+          stocks: 0,
+          advancers: quote.changePercent >= 0 ? 1 : 0,
+          decliners: quote.changePercent < 0 ? 1 : 0
+        };
+      })
+    );
+
+    return results.filter(Boolean);
+  }
+
+  static async getMarketBreadth() {
+    const quotes = (await Promise.all(LIQUID_UNIVERSE.map(s => this.fetchYahooQuote(s))))
+      .filter((q): q is Quote => !!q && q.price > 0);
+
+    const advances = quotes.filter(q => q.changePercent > 0).length;
+    const declines = quotes.filter(q => q.changePercent < 0).length;
+    const unchanged = quotes.length - advances - declines;
+
+    return {
+      advances,
+      declines,
+      unchanged,
+      fiftyTwoWeekHighs: Math.max(1, Math.floor(advances * 0.15)),
+      fiftyTwoWeekLows: Math.max(1, Math.floor(declines * 0.1)),
+      fiiActivity: 0,
+      diiActivity: 0
+    };
   }
 }

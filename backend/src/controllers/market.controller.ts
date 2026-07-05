@@ -54,3 +54,31 @@ export const getMarketStatus = asyncHandler(async (_req: Request, res: Response)
     }
   });
 });
+
+export const getTopGainers = asyncHandler(async (req: Request, res: Response) => {
+  const count = parseInt(req.query.count as string) || 10;
+  const data = await MarketService.getTopMovers('gainers', count);
+  res.status(200).json({ success: true, data });
+});
+
+export const getTopLosers = asyncHandler(async (req: Request, res: Response) => {
+  const count = parseInt(req.query.count as string) || 10;
+  const data = await MarketService.getTopMovers('losers', count);
+  res.status(200).json({ success: true, data });
+});
+
+export const getSmallCapStocks = asyncHandler(async (req: Request, res: Response) => {
+  const count = parseInt(req.query.count as string) || 20;
+  const data = await MarketService.getSmallCapStocks(count);
+  res.status(200).json({ success: true, data });
+});
+
+export const getSectorPerformance = asyncHandler(async (_req: Request, res: Response) => {
+  const data = await MarketService.getSectorPerformance();
+  res.status(200).json({ success: true, data });
+});
+
+export const getMarketBreadth = asyncHandler(async (_req: Request, res: Response) => {
+  const data = await MarketService.getMarketBreadth();
+  res.status(200).json({ success: true, data });
+});

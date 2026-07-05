@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Wallet, TrendingUp, Users, Zap, Loader2 } from 'lucide-react';
 import { authService } from '../services/authService';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_BASE_URL } from '../lib/api';
 
 interface SummaryData {
   totalInvested: number;
