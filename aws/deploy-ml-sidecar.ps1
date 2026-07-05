@@ -160,9 +160,7 @@ if (-not $SkipBackendBuild) {
 
 if ($SkipStackUpdate) {
     Write-Host "`n[3/4] Skipping stack update (-SkipStackUpdate)" -ForegroundColor Yellow
-    exit 0
-}
-
+} else {
 Write-Host "`n[3/4] Updating CloudFormation stack with ML sidecar..." -ForegroundColor Yellow
 $VpcId = aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" @Aws --query "Vpcs[0].VpcId" --output text
 $SubnetIds = aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VpcId" @Aws --query "Subnets[*].SubnetId" --output text
@@ -196,7 +194,7 @@ if ($LASTEXITCODE -ne 0) {
     $stackStatus = aws cloudformation describe-stacks --stack-name $StackName @Aws --query "Stacks[0].StackStatus" --output text 2>$null
     $ErrorActionPreference = $prevEap
     if ($stackStatus -match "COMPLETE") {
-        Write-Host "  Stack already up to date — forcing ECS rollout of new images..." -ForegroundColor Yellow
+        Write-Host "  Stack already up to date - forcing ECS rollout of new images..." -ForegroundColor Yellow
     } else {
         throw "CloudFormation update failed"
     }
@@ -204,10 +202,14 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "  Waiting for stack update..." -ForegroundColor Gray
     aws cloudformation wait stack-update-complete --stack-name $StackName @Aws
 }
+}
 
-Write-Host "`n[4/4] Waiting for ECS service to stabilize..." -ForegroundColor Yellow
 $cluster = aws cloudformation describe-stacks --stack-name $StackName @Aws --query "Stacks[0].Outputs[?OutputKey=='ECSClusterName'].OutputValue" --output text
 $service = aws cloudformation describe-stacks --stack-name $StackName @Aws --query "Stacks[0].Outputs[?OutputKey=='ECSServiceName'].OutputValue" --output text
+Write-Host "  Forcing ECS rollout..." -ForegroundColor Gray
+aws ecs update-service --cluster $cluster --service $service --force-new-deployment @Aws | Out-Null
+
+Write-Host "`n[4/4] Waiting for ECS service to stabilize..." -ForegroundColor Yellow
 aws ecs wait services-stable --cluster $cluster --services $service @Aws
 
 $healthUrl = aws cloudformation describe-stacks --stack-name $StackName @Aws --query "Stacks[0].Outputs[?OutputKey=='HealthCheckUrl'].OutputValue" --output text

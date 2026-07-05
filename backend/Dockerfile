@@ -52,4 +52,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:'+(process.env.PORT||8080)+'/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Start server (run migrations then serve)
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+CMD ["sh", "-c", "npx prisma migrate resolve --rolled-back 20250705180000_llm_rag_semantic 2>/dev/null || true; npx prisma migrate deploy && node dist/server.js"]

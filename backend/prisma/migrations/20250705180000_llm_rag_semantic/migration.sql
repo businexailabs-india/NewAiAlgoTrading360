@@ -1,4 +1,25 @@
--- Semantic RAG chunks + LLM adapter registry
+-- Knowledge documents (required for semantic RAG chunks)
+CREATE TABLE IF NOT EXISTS "knowledge_documents" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "doc_type" TEXT NOT NULL DEFAULT 'note',
+    "symbol" TEXT,
+    "tags" JSONB NOT NULL DEFAULT '[]',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "knowledge_documents_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX IF NOT EXISTS "knowledge_documents_user_id_symbol_idx" ON "knowledge_documents"("user_id", "symbol");
+
+DO $$ BEGIN
+    ALTER TABLE "knowledge_documents" ADD CONSTRAINT "knowledge_documents_user_id_fkey"
+        FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Semantic RAG chunks
 CREATE TABLE IF NOT EXISTS "knowledge_chunks" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -24,6 +45,7 @@ DO $$ BEGIN
         FOREIGN KEY ("document_id") REFERENCES "knowledge_documents"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- LLM adapter registry
 CREATE TABLE IF NOT EXISTS "llm_adapters" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
