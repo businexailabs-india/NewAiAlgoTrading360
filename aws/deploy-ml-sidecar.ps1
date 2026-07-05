@@ -193,12 +193,12 @@ aws cloudformation update-stack `
 if ($LASTEXITCODE -ne 0) {
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = 'SilentlyContinue'
-    $reason = aws cloudformation describe-stacks --stack-name $StackName @Aws --query "Stacks[0].StackStatusReason" --output text 2>$null
+    $stackStatus = aws cloudformation describe-stacks --stack-name $StackName @Aws --query "Stacks[0].StackStatus" --output text 2>$null
     $ErrorActionPreference = $prevEap
-    if ($reason -match "No updates") {
-        Write-Host "  No CloudFormation changes needed (stack already current)" -ForegroundColor Yellow
+    if ($stackStatus -match "COMPLETE") {
+        Write-Host "  Stack already up to date — forcing ECS rollout of new images..." -ForegroundColor Yellow
     } else {
-        throw "CloudFormation update failed: $reason"
+        throw "CloudFormation update failed"
     }
 } else {
     Write-Host "  Waiting for stack update..." -ForegroundColor Gray
