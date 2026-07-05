@@ -44,6 +44,9 @@ import agentRoutes from './routes/agent.routes';
 import screenerRoutes from './routes/screener.routes';
 import optionsRoutes from './routes/options.routes';
 import dataRoutes from './routes/data.routes';
+import advisorRoutes from './routes/advisor.routes';
+import knowledgeRoutes from './routes/knowledge.routes';
+import llmRoutes from './routes/llm.routes';
 
 // Initialize Express app
 const app: Application = express();
@@ -104,6 +107,9 @@ app.use('/api/agents', agentRoutes);
 app.use('/api/screener', screenerRoutes);
 app.use('/api/options', optionsRoutes);
 app.use('/api/data', dataRoutes);
+app.use('/api/advisor', advisorRoutes);
+app.use('/api/knowledge', knowledgeRoutes);
+app.use('/api/llm', llmRoutes);
 
 // WebSocket connection handling
 io.on('connection', (socket) => {

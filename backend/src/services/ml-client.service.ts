@@ -127,25 +127,36 @@ export class MlClientService {
 
   static async ragIngest(
     userId: string,
-    documents: Array<{ text: string; metadata?: Record<string, unknown> }>
+    documents: Array<{ text: string; metadata?: Record<string, unknown> }>,
+    mode: 'tfidf' | 'hybrid' = 'hybrid'
   ): Promise<number> {
     const res = await axios.post(
       `${this.baseUrl}/rag/ingest`,
-      { user_id: userId, documents },
-      { timeout: 60000 }
+      { user_id: userId, documents, mode },
+      { timeout: 120000 }
     );
     return res.data.data.chunks_indexed;
+  }
+
+  static async embedTexts(texts: string[]): Promise<number[][]> {
+    const res = await axios.post(
+      `${this.baseUrl}/embed`,
+      { texts },
+      { timeout: 60000 }
+    );
+    return res.data.data.embeddings;
   }
 
   static async ragQuery(
     userId: string,
     query: string,
     topK = 5,
-    symbol?: string
+    symbol?: string,
+    mode: 'tfidf' | 'hybrid' = 'hybrid'
   ): Promise<RagHit[]> {
     const res = await axios.post(
       `${this.baseUrl}/rag/query`,
-      { user_id: userId, query, top_k: topK, symbol },
+      { user_id: userId, query, top_k: topK, symbol, mode },
       { timeout: 15000 }
     );
     return res.data.data.hits;

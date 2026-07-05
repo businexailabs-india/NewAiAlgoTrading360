@@ -12,7 +12,7 @@ export interface PredictionEngine {
   id: string;
   name: string;
   description?: string;
-  engineType: 'momentum' | 'mean_reversion' | 'ml_regression' | 'ensemble';
+  engineType: 'momentum' | 'mean_reversion' | 'ml_regression' | 'ensemble' | 'sklearn' | 'advanced_ml';
   symbols: string[];
   parameters: Record<string, unknown>;
   status: 'draft' | 'training' | 'ready' | 'deployed' | 'failed';
@@ -98,5 +98,12 @@ export const predictionService = {
       const data = await res.json();
       throw new Error(data.message);
     }
+  },
+
+  async getMlStatus(): Promise<Record<string, unknown>> {
+    const res = await fetch(`${API_BASE_URL}/predictions/ml-status`, { headers: getHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+    return data.data;
   }
 };

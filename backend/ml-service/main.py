@@ -4,7 +4,9 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from semantic_rag import query_hybrid, rebuild_hybrid_index
 from rag import get_index, rebuild_index
+from embeddings import embed_texts
 from trainer import predict_symbol, train_symbol
 
 app = FastAPI(title="SmartTrade ML Service", version="2.0.0")
@@ -48,6 +50,11 @@ class RagDocument(BaseModel):
 class RagIngestRequest(BaseModel):
     user_id: str
     documents: list[RagDocument]
+    mode: str = Field(default="hybrid")  # tfidf | hybrid
+
+
+class EmbedRequest(BaseModel):
+    texts: list[str]
 
 
 class RagQueryRequest(BaseModel):
@@ -55,6 +62,7 @@ class RagQueryRequest(BaseModel):
     query: str
     top_k: int = Field(default=5, ge=1, le=20)
     symbol: str | None = None
+    mode: str = Field(default="hybrid")
 
 
 @app.get("/health")
@@ -69,7 +77,8 @@ def health():
             "stacking",
             "ensemble_vote",
         ],
-        "rag": "tfidf",
+        "rag": "hybrid-semantic-tfidf",
+        "embeddings": "sentence-transformers/all-MiniLM-L6-v2",
     }
 
 
@@ -117,20 +126,28 @@ def predict(req: PredictRequest):
 @app.post("/rag/ingest")
 def rag_ingest(req: RagIngestRequest):
     docs = [{"text": d.text, "metadata": d.metadata} for d in req.documents]
-    count = rebuild_index(req.user_id, docs)
-    return {"success": True, "data": {"chunks_indexed": count}}
+    if req.mode == "hybrid":
+        count = rebuild_hybrid_index(req.user_id, docs)
+    else:
+        count = rebuild_index(req.user_id, docs)
+    return {"success": True, "data": {"chunks_indexed": count, "mode": req.mode}}
+
+
+@app.post("/embed")
+def embed(req: EmbedRequest):
+    vectors = embed_texts(req.texts)
+    return {"success": True, "data": {"embeddings": vectors, "dimensions": len(vectors[0]) if vectors else 0}}
 
 
 @app.post("/rag/query")
 def rag_query(req: RagQueryRequest):
-    idx = get_index(req.user_id)
-    hits = idx.query(req.query, req.top_k, req.symbol)
-    return {
-        "success": True,
-        "data": {
-            "hits": [
-                {"text": h.text, "score": round(h.score, 4), "metadata": h.metadata}
-                for h in hits
-            ]
-        },
-    }
+    mode = getattr(req, "mode", "hybrid")
+    if mode == "hybrid":
+        hits = query_hybrid(req.user_id, req.query, req.top_k, req.symbol)
+    else:
+        idx = get_index(req.user_id)
+        hits = [
+            {"text": h.text, "score": round(h.score, 4), "metadata": h.metadata, "method": "tfidf"}
+            for h in idx.query(req.query, req.top_k, req.symbol)
+        ]
+    return {"success": True, "data": {"hits": hits}}

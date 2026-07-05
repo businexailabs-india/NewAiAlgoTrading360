@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY features.py trainer.py main.py models.py rag.py ./
+COPY features.py trainer.py main.py models.py rag.py embeddings.py semantic_rag.py ./
 
 ENV ML_MODEL_DIR=/app/models
 RUN mkdir -p /app/models

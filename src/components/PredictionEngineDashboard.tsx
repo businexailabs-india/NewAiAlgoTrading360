@@ -14,8 +14,10 @@ import { predictionService, PredictionEngine, PredictionResult } from '../servic
 const ENGINE_TYPES = [
   { value: 'momentum', label: 'Momentum', desc: 'Trend-following based on price momentum' },
   { value: 'mean_reversion', label: 'Mean Reversion', desc: 'Buys dips, sells rallies' },
-  { value: 'ml_regression', label: 'ML Regression', desc: 'Linear regression on price history' },
-  { value: 'ensemble', label: 'Ensemble', desc: 'Combines all signals with weights' }
+  { value: 'ml_regression', label: 'ML Regression', desc: 'Python ML with linear-style signals' },
+  { value: 'sklearn', label: 'Sklearn ML', desc: 'Python gradient boosting on OHLCV features' },
+  { value: 'advanced_ml', label: 'Advanced ML', desc: 'Walk-forward + stacking + hyperparameter tuning' },
+  { value: 'ensemble', label: 'Ensemble', desc: 'Combines Node signals + Python ML' }
 ];
 
 const STATUS_COLORS: Record<string, string> = {

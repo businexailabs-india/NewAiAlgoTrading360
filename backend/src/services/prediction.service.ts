@@ -351,6 +351,47 @@ export class PredictionService {
     });
   }
 
+  private static async trainEngineEnsemble(
+    userId: string,
+    engineId: string,
+    engine: { symbols: unknown; parameters: unknown; engineType: string }
+  ) {
+    const nodeResult = await this.trainEngineWithNode(userId, engineId, engine);
+    const params = (nodeResult.parameters || {}) as EngineParameters;
+
+    if (await MlClientService.checkHealth()) {
+      const pyResult = await this.trainEngineWithPython(userId, engineId, engine);
+      const pyParams = (pyResult.parameters || {}) as EngineParameters;
+      const nodeAcc = params.symbolAccuracy || {};
+      const pyAcc = pyParams.symbolAccuracy || {};
+      const merged: Record<string, number> = {};
+      for (const sym of Object.keys({ ...nodeAcc, ...pyAcc })) {
+        const n = nodeAcc[sym] ?? 50;
+        const p = pyAcc[sym] ?? 50;
+        merged[sym] = Number(((n + p) / 2).toFixed(2));
+      }
+      const avg = Object.values(merged).reduce((a, b) => a + b, 0) / (Object.keys(merged).length || 1);
+      return prisma.predictionEngine.update({
+        where: { id: engineId },
+        data: {
+          status: 'ready',
+          accuracy: avg,
+          parameters: {
+            ...params,
+            symbolAccuracy: merged,
+            mlBackend: 'ensemble',
+            lastTraining: {
+              ...(params.lastTraining as object),
+              ensemble: { node: nodeAcc, python: pyAcc, merged }
+            }
+          } as object
+        }
+      });
+    }
+
+    return nodeResult;
+  }
+
   private static async getHistoricalBars(symbol: string, minBars: number): Promise<OHLCVBar[]> {
     const local = await HistoricalDataService.getBarsForSymbol(symbol, minBars);
     if (local.length >= minBars) return local;

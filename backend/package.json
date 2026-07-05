@@ -13,6 +13,7 @@
     "collect-data": "ts-node scripts/collect-historical-data.ts",
     "collect-data:5y": "ts-node scripts/collect-historical-data.ts 5",
     "ml:dev": "cd ml-service && uvicorn main:app --host 0.0.0.0 --port 8081 --reload",
+    "llm:dev": "cd llm-service && uvicorn main:app --host 0.0.0.0 --port 8082 --reload",
     "deploy:aws": "powershell -File ../aws/deploy-full.ps1",
     "deploy:cloud-run": "powershell -File deploy-gcp.ps1 -DeploymentType cloud-run",
     "deploy:app-engine": "powershell -File deploy-gcp.ps1 -DeploymentType app-engine",

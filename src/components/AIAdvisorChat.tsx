@@ -3,77 +3,68 @@ import { motion } from 'motion/react';
 import { Send, Bot, User, TrendingUp, PieChart, Shield } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
+import { Badge } from './ui/badge';
+import { advisorService } from '../services/advisorService';
 
 const suggestedQuestions = [
-  {
-    icon: TrendingUp,
-    text: "Should I increase my tech sector allocation now?",
-    category: "Portfolio"
-  },
-  {
-    icon: PieChart,
-    text: "What's the optimal portfolio rebalancing strategy?",
-    category: "Strategy"
-  },
-  {
-    icon: Shield,
-    text: "How can I reduce portfolio risk in this market?",
-    category: "Risk"
-  },
-  {
-    icon: TrendingUp,
-    text: "Which sectors are showing strongest momentum?",
-    category: "Market"
-  }
+  { icon: TrendingUp, text: 'Should I increase my tech sector allocation now?', category: 'Portfolio' },
+  { icon: PieChart, text: "What's the optimal portfolio rebalancing strategy?", category: 'Strategy' },
+  { icon: Shield, text: 'How can I reduce portfolio risk in this market?', category: 'Risk' },
+  { icon: TrendingUp, text: 'Which sectors are showing strongest momentum?', category: 'Market' }
 ];
 
+type ChatMessage = {
+  type: 'user' | 'ai';
+  text: string;
+  provider?: string;
+  sources?: Array<{ title: string; score: number }>;
+};
+
 export function AIAdvisorChat() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       type: 'ai',
-      text: "Hello! I'm your AI Portfolio Advisor powered by GPT-4. I can help you with portfolio analysis, market insights, investment strategies, and risk management. What would you like to know?"
+      text: "Hello! I'm your SmartTrade AI Advisor with semantic RAG, ML predictions, and optional LoRA/Ollama/OpenAI. Ask about portfolio, sectors, or strategies."
     }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const handleSend = async () => {
+    if (!input.trim() || isTyping) return;
 
-    const userMessage = { type: 'user', text: input };
-    setMessages([...messages, userMessage]);
+    const userText = input.trim();
+    setMessages(prev => [...prev, { type: 'user', text: userText }]);
     setInput('');
     setIsTyping(true);
+    setError(null);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponse = {
-        type: 'ai',
-        text: `Based on your current portfolio analysis and market conditions:
-
-**Technology Sector (Current: 35%)**
-- Your tech allocation is 5% above target (30%)
-- NIFTY IT index showing strong momentum (+1.67% today)
-- However, consider trimming positions due to:
-  • High valuation metrics (P/E ratio above historical average)
-  • Upcoming Q4 results may cause volatility
-  • Dollar weakness could impact IT exporters
-
-**Recommendation:**
-1. Reduce tech allocation to 30% by selling 80 shares of INFY
-2. Expected tax impact: ₹15,400 (LTCG)
-3. Redeploy capital into Banking sector (underweight at 20% vs 25% target)
-
-**Risk-Adjusted Return:**
-- Expected portfolio Sharpe ratio improvement: 1.84 → 2.08
-- Volatility reduction: ~12%
-- Diversification benefit: Reduced single-sector concentration
-
-Would you like me to create a detailed rebalancing plan?`
-      };
-      setMessages(prev => [...prev, aiResponse]);
+    try {
+      const result = await advisorService.chat(userText);
+      setMessages(prev => [
+        ...prev,
+        {
+          type: 'ai',
+          text: result.reply,
+          provider: result.provider,
+          sources: result.sources?.map(s => ({ title: s.title, score: s.score }))
+        }
+      ]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Advisor unavailable';
+      setError(msg);
+      setMessages(prev => [
+        ...prev,
+        {
+          type: 'ai',
+          text: `Could not reach the advisor API. Sign in and ensure the backend is running.\n\n_${msg}_`,
+          provider: 'error'
+        }
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 2000);
+    }
   };
 
   const handleQuestionClick = (question: string) => {
@@ -82,7 +73,6 @@ Would you like me to create a detailed rebalancing plan?`
 
   return (
     <div className="space-y-6">
-      {/* Chat Messages */}
       <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-6 min-h-[500px] max-h-[600px] overflow-y-auto">
         <div className="space-y-4">
           {messages.map((msg, i) => (
@@ -97,13 +87,21 @@ Would you like me to create a detailed rebalancing plan?`
                   <Bot className="w-5 h-5 text-white" />
                 </div>
               )}
-              
+
               <div className={`max-w-[80%] rounded-xl p-4 ${
                 msg.type === 'user'
                   ? 'bg-cyan-500/20 border border-cyan-500/30 text-white'
                   : 'bg-gray-900/50 border border-gray-700 text-gray-300'
               }`}>
+                {msg.provider && msg.type === 'ai' && (
+                  <Badge className="mb-2 bg-purple-500/20 text-purple-300 text-xs">{msg.provider}</Badge>
+                )}
                 <div className="text-sm whitespace-pre-line">{msg.text}</div>
+                {msg.sources && msg.sources.length > 0 && (
+                  <div className="mt-3 pt-2 border-t border-gray-700 text-xs text-gray-500">
+                    Sources: {msg.sources.slice(0, 3).map(s => s.title).join(', ')}
+                  </div>
+                )}
               </div>
 
               {msg.type === 'user' && (
@@ -115,19 +113,15 @@ Would you like me to create a detailed rebalancing plan?`
           ))}
 
           {isTyping && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex gap-3"
-            >
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
               <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
                 <Bot className="w-5 h-5 text-white" />
               </div>
               <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-4">
                 <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               </div>
             </motion.div>
@@ -135,7 +129,6 @@ Would you like me to create a detailed rebalancing plan?`
         </div>
       </div>
 
-      {/* Suggested Questions */}
       {messages.length === 1 && (
         <div>
           <h4 className="text-gray-400 text-sm mb-3">Suggested Questions:</h4>
@@ -162,10 +155,11 @@ Would you like me to create a detailed rebalancing plan?`
         </div>
       )}
 
-      {/* Input */}
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
       <div className="flex gap-3">
         <Textarea
-          placeholder="Ask anything about your portfolio, market trends, or investment strategies..."
+          placeholder="Ask about portfolio, RAG research, ML signals, or LoRA-trained models..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
@@ -182,7 +176,7 @@ Would you like me to create a detailed rebalancing plan?`
       </div>
 
       <div className="text-xs text-gray-500 text-center">
-        AI-powered insights are based on historical data and current market conditions. Always conduct your own research before making investment decisions.
+        Powered by semantic RAG + sklearn predictions. Optional: OpenAI, Ollama, or LoRA/QLoRA adapters.
       </div>
     </div>
   );
