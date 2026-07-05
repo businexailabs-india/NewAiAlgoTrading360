@@ -170,6 +170,7 @@ $cfnParams = @(
     @{ ParameterKey = "EnvironmentName"; ParameterValue = "smarttrade" }
     @{ ParameterKey = "BackendImageUri"; ParameterValue = $BackendImageUri }
     @{ ParameterKey = "MlServiceImageUri"; ParameterValue = $MlImageUri }
+    @{ ParameterKey = "LlmServiceImageUri"; UsePreviousValue = $true }
     @{ ParameterKey = "VpcId"; ParameterValue = $VpcId }
     @{ ParameterKey = "PublicSubnetIds"; ParameterValue = $SubnetParam }
     @{ ParameterKey = "FrontendUrl"; ParameterValue = "https://smarttrade-portfolio.vercel.app" }

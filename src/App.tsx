@@ -10,6 +10,8 @@ import { TaxAnalytics } from './components/TaxAnalytics';
 import { TradingTabs } from './components/TradingTabs';
 import { AIInsightsPanel } from './components/AIInsightsPanel';
 import { StrategyExplorer } from './components/StrategyExplorer';
+import { StrategiesHub } from './components/StrategiesHub';
+import { KnowledgeLlmDashboard } from './components/KnowledgeLlmDashboard';
 import { SmartTradingDashboard } from './components/SmartTradingDashboard';
 import { AccountManagementModal } from './components/AccountManagementModal';
 import { Sidebar } from './components/Sidebar';
@@ -74,9 +76,12 @@ export default function App() {
         return (
           <>
             <TradingTabs />
-            <StrategyExplorer />
+            <StrategiesHub />
           </>
         );
+
+      case 'knowledge-llm':
+        return <KnowledgeLlmDashboard />;
       
       case 'analytics':
         return <AIInsightsPanel />;

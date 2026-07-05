@@ -96,6 +96,12 @@ const menuItems = [
     badge: { text: 'New', color: 'green' }
   },
   {
+    id: 'knowledge-llm',
+    label: 'Knowledge & LLM',
+    icon: FileText,
+    badge: { text: 'RAG', color: 'cyan' }
+  },
+  {
     id: 'predictions',
     label: 'Prediction Engines',
     icon: Brain,

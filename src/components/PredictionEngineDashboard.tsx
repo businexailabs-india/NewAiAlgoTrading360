@@ -31,6 +31,7 @@ const STATUS_COLORS: Record<string, string> = {
 export function PredictionEngineDashboard() {
   const [engines, setEngines] = useState<PredictionEngine[]>([]);
   const [predictions, setPredictions] = useState<PredictionResult[]>([]);
+  const [mlStatus, setMlStatus] = useState<{ healthy?: boolean; service?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -43,8 +44,12 @@ export function PredictionEngineDashboard() {
   const loadEngines = async () => {
     try {
       setLoading(true);
-      const data = await predictionService.listEngines();
+      const [data, ml] = await Promise.all([
+        predictionService.listEngines(),
+        predictionService.getMlStatus().catch(() => null)
+      ]);
       setEngines(data);
+      setMlStatus(ml);
     } catch (err) {
       console.error('Failed to load engines:', err);
     } finally {
@@ -132,9 +137,17 @@ export function PredictionEngineDashboard() {
               <p className="text-sm text-gray-400">Create, train, and deploy ML prediction engines to Vercel or AWS</p>
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            {mlStatus && (
+              <Badge className={mlStatus.healthy ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}>
+                <Server className="w-3 h-3 mr-1 inline" />
+                ML {mlStatus.healthy ? 'Online' : 'Offline'}
+              </Badge>
+            )}
           <Button onClick={() => setShowCreate(!showCreate)} className="bg-purple-500/20 border border-purple-500/30 text-purple-400">
             <Plus className="w-4 h-4 mr-2" /> New Engine
           </Button>
+          </div>
         </div>
 
         {showCreate && (

@@ -23,6 +23,9 @@ Parameters:
   MlServiceImageUri:
     Type: String
     Description: ECR image URI for Python ML sidecar
+  LlmServiceImageUri:
+    Type: String
+    Description: ECR image URI for Python LLM sidecar (LoRA/QLoRA)
   VpcId:
     Type: AWS::EC2::VPC::Id
   PublicSubnetIds:
@@ -197,12 +200,18 @@ Resources:
       LogGroupName: !Sub '/ecs/${EnvironmentName}-ml'
       RetentionInDays: 14
 
+  LlmLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${EnvironmentName}-llm'
+      RetentionInDays: 14
+
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
       Family: !Sub '${EnvironmentName}-backend'
-      Cpu: '1024'
-      Memory: '2048'
+      Cpu: '2048'
+      Memory: '4096'
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
@@ -210,7 +219,36 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       Volumes:
         - Name: ml-models
+        - Name: llm-adapters
       ContainerDefinitions:
+        - Name: llm-service
+          Image: !Ref LlmServiceImageUri
+          Essential: false
+          PortMappings:
+            - ContainerPort: 8082
+              Protocol: tcp
+          Environment:
+            - Name: LLM_ADAPTER_DIR
+              Value: /app/adapters
+            - Name: LLM_BASE_MODEL
+              Value: sshleifer/tiny-gpt2
+          MountPoints:
+            - SourceVolume: llm-adapters
+              ContainerPath: /app/adapters
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - python -c "import urllib.request; urllib.request.urlopen('http://localhost:8082/health')" || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 120
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LlmLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: llm
         - Name: ml-service
           Image: !Ref MlServiceImageUri
           Essential: false
@@ -242,6 +280,8 @@ Resources:
           Essential: true
           DependsOn:
             - ContainerName: ml-service
+              Condition: START
+            - ContainerName: llm-service
               Condition: START
           PortMappings:
             - ContainerPort: 8080
@@ -277,6 +317,8 @@ Resources:
               Value: 'true'
             - Name: ML_SERVICE_URL
               Value: http://localhost:8081
+            - Name: LLM_SERVICE_URL
+              Value: http://localhost:8082
             - Name: USE_PYTHON_ML
               Value: 'true'
           LogConfiguration:
