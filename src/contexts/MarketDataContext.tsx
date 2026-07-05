@@ -1,17 +1,15 @@
 /**
- * Market Data Context
- * Provides real-time market data throughout the application
+ * Market Data Context — live updates via Socket.IO + REST fallback polling.
  */
-
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { 
-  marketDataService, 
-  IndexData, 
-  StockQuote, 
-  SectorPerformance, 
-  MarketBreadth 
+import {
+  marketDataService,
+  IndexData,
+  StockQuote,
+  SectorPerformance,
+  MarketBreadth
 } from '../services/marketDataService';
-import { simulatedWebSocketService } from '../services/websocketService';
+import { liveMarketSocket } from '../services/liveMarketSocket';
 
 interface MarketDataContextType {
   indices: IndexData[];
@@ -21,14 +19,19 @@ interface MarketDataContextType {
   sectorPerformance: SectorPerformance[];
   marketBreadth: MarketBreadth | null;
   isLoading: boolean;
+  isLive: boolean;
+  lastUpdated: Date | null;
   error: string | null;
   refreshData: () => Promise<void>;
   getStockQuote: (symbol: string, exchange?: 'NSE' | 'BSE') => Promise<StockQuote | null>;
   searchStocks: (query: string) => Promise<Array<{ symbol: string; name: string; exchange: string }>>;
-  subscribeToStock: (symbol: string, callback: (data: any) => void) => () => void;
+  subscribeToStock: (symbol: string, callback: (data: Record<string, unknown>) => void) => () => void;
 }
 
 const MarketDataContext = createContext<MarketDataContextType | undefined>(undefined);
+
+const POLL_MS = 15000;
+const INDEX_CHANNELS = ['index:NIFTY 50', 'index:SENSEX', 'index:NIFTY BANK', 'index:NIFTY IT'];
 
 export function MarketDataProvider({ children }: { children: React.ReactNode }) {
   const [indices, setIndices] = useState<IndexData[]>([]);
@@ -38,24 +41,27 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
   const [sectorPerformance, setSectorPerformance] = useState<SectorPerformance[]>([]);
   const [marketBreadth, setMarketBreadth] = useState<MarketBreadth | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch all market data
+  const mapIndices = (data: Array<{ name: string; value: number; change: number; changePercent: number }>): IndexData[] =>
+    data.map(item => ({
+      name: item.name,
+      value: item.value,
+      change: item.change,
+      changePercent: item.changePercent,
+      high: item.value,
+      low: item.value,
+      open: item.value,
+      previousClose: item.value - item.change,
+      timestamp: new Date()
+    }));
+
   const fetchMarketData = useCallback(async () => {
     try {
-      setIsLoading(true);
       setError(null);
-
-      // Fetch data in parallel
-      const [
-        nseIndices,
-        bseIndices,
-        gainers,
-        losers,
-        smallCaps,
-        sectors,
-        breadth
-      ] = await Promise.all([
+      const [nseIndices, bseIndices, gainers, losers, smallCaps, sectors, breadth] = await Promise.all([
         marketDataService.fetchNSEIndices(),
         marketDataService.fetchBSEIndices(),
         marketDataService.fetchTopGainers(10),
@@ -65,133 +71,136 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
         marketDataService.fetchMarketBreadth()
       ]);
 
-      // Combine NSE and BSE indices
       setIndices([...nseIndices, ...bseIndices]);
       setTopGainers(gainers);
       setTopLosers(losers);
       setSmallCapStocks(smallCaps);
       setSectorPerformance(sectors);
       setMarketBreadth(breadth);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error('Error fetching market data:', err);
-      setError('Failed to fetch market data. Using cached/fallback data.');
+      setError('Failed to fetch market data');
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Initial data fetch
   useEffect(() => {
     fetchMarketData();
-
-    // Refresh data every 30 seconds
-    const interval = setInterval(fetchMarketData, 30000);
-
+    const interval = setInterval(fetchMarketData, POLL_MS);
     return () => clearInterval(interval);
   }, [fetchMarketData]);
 
-  // Set up real-time updates for indices
   useEffect(() => {
-    const unsubscribers: Array<() => void> = [];
+    liveMarketSocket.subscribe(INDEX_CHANNELS);
 
-    // Subscribe to major indices
-    const indexNames = ['NIFTY 50', 'SENSEX', 'NIFTY BANK', 'NIFTY IT'];
-    
-    indexNames.forEach(indexName => {
-      const unsubscribe = simulatedWebSocketService.subscribe(
-        `index:${indexName}`,
-        (data) => {
-          setIndices(prevIndices => {
-            const index = prevIndices.findIndex(idx => idx.name === data.name);
-            if (index !== -1) {
-              const updated = [...prevIndices];
-              updated[index] = { ...updated[index], ...data };
-              return updated;
-            }
-            return prevIndices;
-          });
+    const unsubs = [
+      liveMarketSocket.onIndices((data) => {
+        if (Array.isArray(data)) {
+          setIndices(mapIndices(data as Array<{ name: string; value: number; change: number; changePercent: number }>));
+          setLastUpdated(new Date());
+          setIsLive(true);
         }
-      );
-      unsubscribers.push(unsubscribe);
-    });
+      }),
+      liveMarketSocket.onGainers((data) => {
+        if (Array.isArray(data)) {
+          setTopGainers(data as StockQuote[]);
+          setLastUpdated(new Date());
+          setIsLive(true);
+        }
+      }),
+      liveMarketSocket.onLosers((data) => {
+        if (Array.isArray(data)) {
+          setTopLosers(data as StockQuote[]);
+          setLastUpdated(new Date());
+          setIsLive(true);
+        }
+      }),
+      liveMarketSocket.onSectors((data) => {
+        if (Array.isArray(data)) {
+          setSectorPerformance(data as SectorPerformance[]);
+          setLastUpdated(new Date());
+          setIsLive(true);
+        }
+      }),
+      liveMarketSocket.onBreadth((data) => {
+        if (data && typeof data === 'object') {
+          setMarketBreadth(data as MarketBreadth);
+          setLastUpdated(new Date());
+          setIsLive(true);
+        }
+      })
+    ];
+
+    const liveCheck = setInterval(() => {
+      setIsLive(liveMarketSocket.isConnected());
+    }, 3000);
 
     return () => {
-      unsubscribers.forEach(unsub => unsub());
+      unsubs.forEach(u => u());
+      clearInterval(liveCheck);
+      liveMarketSocket.disconnect();
     };
   }, []);
 
-  // Get stock quote
-  const getStockQuote = useCallback(async (
-    symbol: string, 
-    exchange: 'NSE' | 'BSE' = 'NSE'
-  ): Promise<StockQuote | null> => {
+  const getStockQuote = useCallback(async (symbol: string, exchange: 'NSE' | 'BSE' = 'NSE') => {
     try {
-      if (exchange === 'NSE') {
-        return await marketDataService.fetchNSEStockQuote(symbol);
-      } else {
-        return await marketDataService.fetchBSEStockQuote(symbol);
-      }
-    } catch (err) {
-      console.error(`Error fetching quote for ${symbol}:`, err);
+      return exchange === 'NSE'
+        ? await marketDataService.fetchNSEStockQuote(symbol)
+        : await marketDataService.fetchBSEStockQuote(symbol);
+    } catch {
       return null;
     }
   }, []);
 
-  // Search stocks
   const searchStocks = useCallback(async (query: string) => {
     try {
       return await marketDataService.searchStocks(query);
-    } catch (err) {
-      console.error('Error searching stocks:', err);
+    } catch {
       return [];
     }
   }, []);
 
-  // Subscribe to stock updates
-  const subscribeToStock = useCallback((
-    symbol: string, 
-    callback: (data: any) => void
-  ): (() => void) => {
-    return simulatedWebSocketService.subscribe(`stock:${symbol}`, callback);
+  const subscribeToStock = useCallback((symbol: string, callback: (data: Record<string, unknown>) => void) => {
+    return liveMarketSocket.onTick(`stock:${symbol}`, callback);
   }, []);
 
-  // Refresh data manually
   const refreshData = useCallback(async () => {
+    setIsLoading(true);
     await fetchMarketData();
   }, [fetchMarketData]);
 
-  const value: MarketDataContextType = {
-    indices,
-    topGainers,
-    topLosers,
-    smallCapStocks,
-    sectorPerformance,
-    marketBreadth,
-    isLoading,
-    error,
-    refreshData,
-    getStockQuote,
-    searchStocks,
-    subscribeToStock
-  };
-
   return (
-    <MarketDataContext.Provider value={value}>
+    <MarketDataContext.Provider
+      value={{
+        indices,
+        topGainers,
+        topLosers,
+        smallCapStocks,
+        sectorPerformance,
+        marketBreadth,
+        isLoading,
+        isLive,
+        lastUpdated,
+        error,
+        refreshData,
+        getStockQuote,
+        searchStocks,
+        subscribeToStock
+      }}
+    >
       {children}
     </MarketDataContext.Provider>
   );
 }
 
-// Custom hook to use market data
 export function useMarketData() {
   const context = useContext(MarketDataContext);
-  if (context === undefined) {
-    throw new Error('useMarketData must be used within a MarketDataProvider');
-  }
+  if (!context) throw new Error('useMarketData must be used within MarketDataProvider');
   return context;
 }
 
-// Hook for subscribing to specific stock
 export function useStockData(symbol: string, exchange: 'NSE' | 'BSE' = 'NSE') {
   const { getStockQuote, subscribeToStock } = useMarketData();
   const [stockData, setStockData] = useState<StockQuote | null>(null);
@@ -199,22 +208,17 @@ export function useStockData(symbol: string, exchange: 'NSE' | 'BSE' = 'NSE') {
 
   useEffect(() => {
     let mounted = true;
-
-    // Initial fetch
     getStockQuote(symbol, exchange).then(data => {
       if (mounted) {
         setStockData(data);
         setLoading(false);
       }
     });
-
-    // Subscribe to real-time updates
     const unsubscribe = subscribeToStock(symbol, (data) => {
       if (mounted) {
-        setStockData(prevData => prevData ? { ...prevData, ...data } : data);
+        setStockData(prev => (prev ? { ...prev, ...data } as StockQuote : (data as StockQuote)));
       }
     });
-
     return () => {
       mounted = false;
       unsubscribe();
@@ -222,54 +226,4 @@ export function useStockData(symbol: string, exchange: 'NSE' | 'BSE' = 'NSE') {
   }, [symbol, exchange, getStockQuote, subscribeToStock]);
 
   return { stockData, loading };
-}
-
-// Hook for watching multiple stocks
-export function useWatchlist(symbols: string[]) {
-  const { getStockQuote, subscribeToStock } = useMarketData();
-  const [watchlistData, setWatchlistData] = useState<Map<string, StockQuote>>(new Map());
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    const unsubscribers: Array<() => void> = [];
-
-    // Fetch initial data for all symbols
-    Promise.all(
-      symbols.map(symbol => getStockQuote(symbol))
-    ).then(quotes => {
-      if (mounted) {
-        const dataMap = new Map<string, StockQuote>();
-        quotes.forEach(quote => {
-          if (quote) {
-            dataMap.set(quote.symbol, quote);
-          }
-        });
-        setWatchlistData(dataMap);
-        setLoading(false);
-      }
-    });
-
-    // Subscribe to updates for all symbols
-    symbols.forEach(symbol => {
-      const unsubscribe = subscribeToStock(symbol, (data) => {
-        if (mounted) {
-          setWatchlistData(prev => {
-            const updated = new Map(prev);
-            const existing = updated.get(symbol);
-            updated.set(symbol, existing ? { ...existing, ...data } : data);
-            return updated;
-          });
-        }
-      });
-      unsubscribers.push(unsubscribe);
-    });
-
-    return () => {
-      mounted = false;
-      unsubscribers.forEach(unsub => unsub());
-    };
-  }, [symbols.join(','), getStockQuote, subscribeToStock]);
-
-  return { watchlistData: Array.from(watchlistData.values()), loading };
 }

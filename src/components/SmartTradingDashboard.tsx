@@ -1,33 +1,29 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Activity, TrendingUp, TrendingDown, Zap, Filter, Download, Share2, Mic } from 'lucide-react';
+import { Activity, TrendingUp, Zap, Filter, Download, Share2, Mic, Loader2, Radio } from 'lucide-react';
 import { Button } from './ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { StrategyPerformanceDashboard } from './StrategyPerformanceDashboard';
 import { TradeAnalyticsPanel } from './TradeAnalyticsPanel';
-import { AIAdvisorPanel } from './AIAdvisorPanel';
+import { AIAdvisorChat } from './AIAdvisorChat';
 import { MarketSentimentDashboard } from './MarketSentimentDashboard';
 import { AnomalyDetectionPanel } from './AnomalyDetectionPanel';
 import { VoiceAssistant } from './VoiceAssistant';
 import { PerformanceComparison } from './PerformanceComparison';
 import { QuantConnectDashboard } from './QuantConnectDashboard';
+import { useTradingDashboard } from '../hooks/useTradingDashboard';
+import { useMarketData } from '../contexts/MarketDataContext';
+import { LiveIndicesBar } from './LiveIndicesBar';
 
 export function SmartTradingDashboard() {
   const [timeRange, setTimeRange] = useState('1M');
   const [strategyType, setStrategyType] = useState('all');
   const [marketSegment, setMarketSegment] = useState('all');
   const [showVoiceAssistant, setShowVoiceAssistant] = useState(false);
-
-  const summaryMetrics = {
-    totalPnL: 156780.50,
-    totalTrades: 342,
-    winRate: 67.5,
-    avgReturn: 2.34,
-    sharpeRatio: 1.89,
-    maxDrawdown: -8.2
-  };
+  const { summary, agents, orders, trades, loading } = useTradingDashboard(timeRange);
+  const { isLive, lastUpdated } = useMarketData();
 
   const handleExport = () => {
     console.log('Exporting data to CSV/Excel...');
@@ -90,32 +86,45 @@ export function SmartTradingDashboard() {
 
         {/* Summary Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">
+          {loading ? (
+            <div className="col-span-full flex justify-center py-6">
+              <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+            </div>
+          ) : (
+            <>
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
             <div className="text-xs text-gray-400 mb-1">Total P&L</div>
-            <div className="text-xl text-green-400">₹{summaryMetrics.totalPnL.toLocaleString()}</div>
+            <div className={`text-xl ${(summary?.totalPnL ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              ₹{(summary?.totalPnL ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </div>
           </div>
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
             <div className="text-xs text-gray-400 mb-1">Total Trades</div>
-            <div className="text-xl text-white">{summaryMetrics.totalTrades}</div>
+            <div className="text-xl text-white">{summary?.totalTrades ?? 0}</div>
           </div>
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
             <div className="text-xs text-gray-400 mb-1">Win Rate</div>
-            <div className="text-xl text-cyan-400">{summaryMetrics.winRate}%</div>
+            <div className="text-xl text-cyan-400">{(summary?.winRate ?? 0).toFixed(1)}%</div>
           </div>
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
             <div className="text-xs text-gray-400 mb-1">Avg Return</div>
-            <div className="text-xl text-green-400">+{summaryMetrics.avgReturn}%</div>
+            <div className="text-xl text-green-400">{(summary?.avgReturn ?? 0).toFixed(2)}%</div>
           </div>
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
             <div className="text-xs text-gray-400 mb-1">Sharpe Ratio</div>
-            <div className="text-xl text-purple-400">{summaryMetrics.sharpeRatio}</div>
+            <div className="text-xl text-purple-400">{(summary?.sharpeRatio ?? 0).toFixed(2)}</div>
           </div>
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            <div className="text-xs text-gray-400 mb-1">Max Drawdown</div>
-            <div className="text-xl text-red-400">{summaryMetrics.maxDrawdown}%</div>
+            <div className="text-xs text-gray-400 mb-1">Active Agents</div>
+            <div className="text-xl text-cyan-400">{summary?.activeAgents ?? 0}</div>
           </div>
+            </>
+          )}
         </div>
       </motion.div>
+
+      {/* Live market indices strip */}
+      <LiveIndicesBar />
 
       {/* Filters */}
       <motion.div
@@ -167,9 +176,14 @@ export function SmartTradingDashboard() {
           </SelectContent>
         </Select>
 
-        <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse mr-2"></div>
-          Live Data
+        <Badge className={isLive ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'}>
+          <Radio className={`w-3 h-3 mr-1 ${isLive ? 'animate-pulse' : ''}`} />
+          {isLive ? 'Live' : 'Polling'}
+          {lastUpdated && (
+            <span className="ml-1 text-[10px] opacity-70">
+              {lastUpdated.toLocaleTimeString()}
+            </span>
+          )}
         </Badge>
       </motion.div>
 
@@ -205,7 +219,7 @@ export function SmartTradingDashboard() {
         </TabsList>
 
         <TabsContent value="performance">
-          <StrategyPerformanceDashboard timeRange={timeRange} />
+          <StrategyPerformanceDashboard timeRange={timeRange} agents={agents} />
         </TabsContent>
 
         <TabsContent value="comparison">
@@ -213,11 +227,11 @@ export function SmartTradingDashboard() {
         </TabsContent>
 
         <TabsContent value="analytics">
-          <TradeAnalyticsPanel timeRange={timeRange} />
+          <TradeAnalyticsPanel timeRange={timeRange} trades={trades} orders={orders} />
         </TabsContent>
 
         <TabsContent value="ai-advisor">
-          <AIAdvisorPanel />
+          <AIAdvisorChat />
         </TabsContent>
 
         <TabsContent value="sentiment">

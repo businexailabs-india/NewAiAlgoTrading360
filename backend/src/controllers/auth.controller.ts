@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
+import { DemoSeedService } from '../services/demo-seed.service';
 import { asyncHandler } from '../middleware/error.middleware';
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
@@ -79,5 +80,14 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
   res.status(200).json({
     success: true,
     message: result.message
+  });
+});
+
+export const seedDemoUsers = asyncHandler(async (_req: Request, res: Response) => {
+  const result = await DemoSeedService.ensureDemoUsers();
+  res.status(200).json({
+    success: true,
+    message: 'Demo users ready',
+    data: result
   });
 });

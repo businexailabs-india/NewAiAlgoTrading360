@@ -11,6 +11,7 @@ import rateLimit from 'express-rate-limit';
 // Import services and logger before use
 import { initializeQuantConnect } from './services/quantconnect.service';
 import { startAgentScheduler } from './services/agent-scheduler.service';
+import { startMarketStream } from './services/market-stream.service';
 import { DemoSeedService } from './services/demo-seed.service';
 import { errorHandler } from './middleware/error.middleware';
 import { logger } from './utils/logger';
@@ -59,8 +60,21 @@ app.set('trust proxy', true);
 // Initialize Socket.IO
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST']
+    origin: (origin, callback) => {
+      const allowed = [
+        process.env.FRONTEND_URL,
+        process.env.CORS_ORIGIN,
+        'http://localhost:3000',
+        'https://smarttrade-portfolio.vercel.app'
+      ].filter(Boolean) as string[];
+      if (!origin || allowed.includes(origin) || /^https:\/\/[\w-]+\.vercel\.app$/.test(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
@@ -131,15 +145,15 @@ io.on('connection', (socket) => {
   logger.info(`Client connected: ${socket.id}`);
 
   // Subscribe to market data
-  socket.on('subscribe', (symbols: string[]) => {
-    logger.info(`Client ${socket.id} subscribed to: ${symbols.join(', ')}`);
-    socket.join(symbols);
+  socket.on('subscribe', (channels: string[]) => {
+    const list = Array.isArray(channels) ? channels : [channels];
+    logger.info(`Client ${socket.id} subscribed to: ${list.join(', ')}`);
+    list.forEach(ch => socket.join(ch));
   });
 
-  // Unsubscribe from market data
-  socket.on('unsubscribe', (symbols: string[]) => {
-    logger.info(`Client ${socket.id} unsubscribed from: ${symbols.join(', ')}`);
-    symbols.forEach(symbol => socket.leave(symbol));
+  socket.on('unsubscribe', (channels: string[]) => {
+    const list = Array.isArray(channels) ? channels : [channels];
+    list.forEach(ch => socket.leave(ch));
   });
 
   socket.on('disconnect', () => {
@@ -173,6 +187,8 @@ httpServer.listen(PORT, () => {
   if (process.env.ENABLE_AGENT_SCHEDULER !== 'false') {
     startAgentScheduler();
   }
+
+  startMarketStream(io);
 
   DemoSeedService.ensureDemoUsers().catch(err => {
     logger.warn('Demo user seed skipped or failed', err);

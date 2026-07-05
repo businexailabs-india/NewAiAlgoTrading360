@@ -16,6 +16,7 @@
   ],
   "env": {
     "VITE_API_URL": "/api",
+    "VITE_WS_URL": "http://smarttrade-alb-1574969447.ap-south-1.elb.amazonaws.com",
     "BACKEND_API_URL": "http://smarttrade-alb-1574969447.ap-south-1.elb.amazonaws.com"
   }
 }

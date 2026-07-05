@@ -9,6 +9,7 @@ import { OptimizationModal } from './OptimizationModal';
 
 interface StrategyPerformanceDashboardProps {
   timeRange: string;
+  agents?: Array<Record<string, unknown>>;
 }
 
 const performanceData = [
@@ -18,7 +19,7 @@ const performanceData = [
   { date: 'Week 4', pnl: 24500, expected: 16000, executed: 24500, trades: 61 }
 ];
 
-const strategiesBreakdown = [
+const defaultStrategiesBreakdown = [
   {
     id: 1,
     name: 'Momentum Breakout Pro',
@@ -73,10 +74,24 @@ const dailyPnL = [
   { day: 'Fri', pnl: 7800, target: 6000 }
 ];
 
-export function StrategyPerformanceDashboard({ timeRange }: StrategyPerformanceDashboardProps) {
+export function StrategyPerformanceDashboard({ timeRange, agents = [] }: StrategyPerformanceDashboardProps) {
+  const strategiesBreakdown = agents.length > 0
+    ? agents.map((a, i) => ({
+        id: String(a.id ?? i),
+        name: String(a.name ?? 'Trading Agent'),
+        type: String(a.mode ?? 'paper'),
+        segment: 'Equity',
+        pnl: Number((a.config as { totalPnL?: number })?.totalPnL ?? 0),
+        trades: Number((a.config as { trades?: number })?.trades ?? 0),
+        winRate: Number((a.config as { winRate?: number })?.winRate ?? 0),
+        avgReturn: 0,
+        status: String(a.status ?? 'active')
+      }))
+    : defaultStrategiesBreakdown;
+
   const [selectedStrategy, setSelectedStrategy] = useState<typeof strategiesBreakdown[0] | null>(null);
   const [optimizingStrategy, setOptimizingStrategy] = useState<typeof strategiesBreakdown[0] | null>(null);
-  const [pausedStrategies, setPausedStrategies] = useState<number[]>([]);
+  const [pausedStrategies, setPausedStrategies] = useState<string[]>([]);
 
   const handleViewDetails = (strategy: typeof strategiesBreakdown[0]) => {
     setSelectedStrategy(strategy);
@@ -86,13 +101,11 @@ export function StrategyPerformanceDashboard({ timeRange }: StrategyPerformanceD
     setOptimizingStrategy(strategy);
   };
 
-  const handlePause = (strategyId: number) => {
+  const handlePause = (strategyId: string) => {
     if (pausedStrategies.includes(strategyId)) {
       setPausedStrategies(pausedStrategies.filter(id => id !== strategyId));
-      console.log(`Resuming strategy ${strategyId}`);
     } else {
       setPausedStrategies([...pausedStrategies, strategyId]);
-      console.log(`Pausing strategy ${strategyId}`);
     }
   };
 

@@ -6,9 +6,11 @@ import { Badge } from './ui/badge';
 
 interface TradeAnalyticsPanelProps {
   timeRange: string;
+  trades?: Array<Record<string, unknown>>;
+  orders?: Array<Record<string, unknown>>;
 }
 
-const tradeExecutions = [
+const fallbackTrades = [
   {
     id: 1,
     symbol: 'RELIANCE',
@@ -81,16 +83,33 @@ const tradeExecutions = [
   }
 ];
 
-// Scatter plot data for risk-reward analysis
-const riskRewardData = tradeExecutions.map(trade => ({
-  risk: Math.abs(trade.entry - trade.stopLoss),
-  reward: trade.pnl,
-  symbol: trade.symbol,
-  result: trade.result
-}));
+function mapTrades(trades: Array<Record<string, unknown>>) {
+  return trades.map((t, i) => ({
+    id: String(t.id ?? i),
+    symbol: String(t.symbol ?? '—'),
+    type: String(t.tradeType ?? t.type ?? 'Long'),
+    entry: Number(t.entryPrice ?? t.price ?? 0),
+    exit: Number(t.exitPrice ?? t.price ?? 0),
+    stopLoss: Number(t.stopLoss ?? 0),
+    target: Number(t.target ?? 0),
+    pnl: Number(t.pnl ?? t.realizedPnL ?? 0),
+    result: String(t.result ?? t.status ?? 'manual'),
+    duration: String(t.duration ?? '—'),
+    slippage: Number(t.slippage ?? 0),
+    date: String(t.executedAt ?? t.createdAt ?? '').split('T')[0] || '—'
+  }));
+}
 
-export function TradeAnalyticsPanel({ timeRange }: TradeAnalyticsPanelProps) {
+export function TradeAnalyticsPanel({ timeRange, trades = [], orders = [] }: TradeAnalyticsPanelProps) {
+  const tradeExecutions = trades.length > 0 ? mapTrades(trades) : fallbackTrades;
   const [selectedTrade, setSelectedTrade] = useState<typeof tradeExecutions[0] | null>(null);
+
+  const riskRewardData = tradeExecutions.map(trade => ({
+    risk: Math.abs(trade.entry - trade.stopLoss) || 1,
+    reward: trade.pnl,
+    symbol: trade.symbol,
+    result: trade.result
+  }));
 
   return (
     <div className="space-y-6">

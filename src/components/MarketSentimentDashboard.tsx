@@ -2,65 +2,44 @@ import { motion } from 'motion/react';
 import { TrendingUp, TrendingDown, Activity, Newspaper } from 'lucide-react';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { Badge } from './ui/badge';
-
-const sentimentScore = 72; // 0-100 scale
-
-const sentimentTimeline = [
-  { time: '9:00', score: 65 },
-  { time: '10:00', score: 68 },
-  { time: '11:00', score: 72 },
-  { time: '12:00', score: 70 },
-  { time: '13:00', score: 74 },
-  { time: '14:00', score: 72 },
-  { time: '15:00', score: 75 }
-];
-
-const sectorSentiment = [
-  { sector: 'Banking', score: 78, change: 5 },
-  { sector: 'IT', score: 82, change: 3 },
-  { sector: 'Auto', score: 65, change: -2 },
-  { sector: 'Pharma', score: 71, change: 1 },
-  { sector: 'Energy', score: 58, change: -4 },
-  { sector: 'FMCG', score: 68, change: 2 }
-];
-
-const sentimentFactors = [
-  { factor: 'News', value: 75 },
-  { factor: 'Social Media', value: 68 },
-  { factor: 'Market Volume', value: 82 },
-  { factor: 'Price Action', value: 78 },
-  { factor: 'FII Activity', value: 71 },
-  { factor: 'Technical', value: 76 }
-];
-
-const newsItems = [
-  {
-    title: 'RBI Announces Policy Rate Decision',
-    source: 'Economic Times',
-    sentiment: 'positive',
-    score: 85,
-    impact: 'Banking sector expected to benefit',
-    time: '1 hour ago'
-  },
-  {
-    title: 'Tech Giants Report Strong Earnings',
-    source: 'Business Standard',
-    sentiment: 'positive',
-    score: 78,
-    impact: 'IT stocks rally expected to continue',
-    time: '2 hours ago'
-  },
-  {
-    title: 'Global Market Volatility Concerns',
-    source: 'Moneycontrol',
-    sentiment: 'negative',
-    score: 42,
-    impact: 'Defensive positioning recommended',
-    time: '3 hours ago'
-  }
-];
+import { useMarketData } from '../contexts/MarketDataContext';
 
 export function MarketSentimentDashboard() {
+  const { sectorPerformance, marketBreadth, indices, isLive } = useMarketData();
+
+  const sentimentScore = sectorPerformance.length
+    ? Math.round(50 + sectorPerformance.reduce((s, x) => s + x.change, 0) / sectorPerformance.length * 5)
+    : 50;
+
+  const sectorSentiment = sectorPerformance.map(s => ({
+    sector: s.sector,
+    score: Math.round(50 + s.change * 5),
+    change: s.change
+  }));
+
+  const sentimentTimeline = indices.slice(0, 7).map((idx, i) => ({
+    time: `${9 + i}:00`,
+    score: Math.round(50 + idx.changePercent * 5)
+  }));
+
+  const sentimentFactors = [
+    { factor: 'Advances', value: marketBreadth ? Math.min(100, marketBreadth.advances / 20) : 50 },
+    { factor: 'Declines', value: marketBreadth ? Math.min(100, marketBreadth.declines / 20) : 50 },
+    { factor: 'Sector Momentum', value: sentimentScore },
+    { factor: 'Price Action', value: Math.round(sentimentScore * 0.9) },
+    { factor: 'Breadth', value: marketBreadth ? Math.round((marketBreadth.advances / (marketBreadth.advances + marketBreadth.declines || 1)) * 100) : 50 },
+    { factor: 'Technical', value: sentimentScore }
+  ];
+
+  const newsItems = sectorPerformance.slice(0, 3).map((s, i) => ({
+    title: `${s.sector} sector ${s.change >= 0 ? 'outperforming' : 'under pressure'}`,
+    source: 'Live Market Feed',
+    sentiment: s.change >= 0 ? 'positive' : 'negative',
+    score: Math.round(50 + s.change * 5),
+    impact: `${s.advancers} advancers vs ${s.decliners} decliners`,
+    time: isLive ? 'Live' : 'Updated recently'
+  }));
+
   const getSentimentColor = (score: number) => {
     if (score >= 70) return 'text-green-400';
     if (score >= 50) return 'text-yellow-400';
