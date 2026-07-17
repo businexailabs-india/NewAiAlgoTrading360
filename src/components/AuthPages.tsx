@@ -41,7 +41,7 @@ export function LoginPage({ onSwitchToRegister }: AuthPageProps) {
             <TrendingUp className="w-7 h-7 text-white" />
           </div>
           <div>
-            <h1 className="text-xl text-white font-semibold">SmartTrade</h1>
+            <h1 className="text-xl text-white font-semibold">AlgoTradingV360</h1>
             <p className="text-sm text-gray-400">Portfolio Optimizer</p>
           </div>
         </div>
@@ -143,7 +143,7 @@ export function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
             <TrendingUp className="w-7 h-7 text-white" />
           </div>
           <div>
-            <h1 className="text-xl text-white font-semibold">SmartTrade</h1>
+            <h1 className="text-xl text-white font-semibold">AlgoTradingV360</h1>
             <p className="text-sm text-gray-400">Create your account</p>
           </div>
         </div>

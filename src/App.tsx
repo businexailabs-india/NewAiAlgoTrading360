@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { TopBar } from './components/TopBar';
 import { UserProfileHeader } from './components/UserProfileHeader';
 import { PortfolioSummaryCards } from './components/PortfolioSummaryCards';
 import { AIPortfolioAdvisor } from './components/AIPortfolioAdvisor';
@@ -34,6 +35,7 @@ export default function App() {
   const [showAccountManagement, setShowAccountManagement] = useState(false);
   const [, setCurrentPortfolio] = useState('');
   const [activeSection, setActiveSection] = useState('dashboard');
+  const [dhanLaxmiOpen, setDhanLaxmiOpen] = useState(false);
 
   const handlePortfolioChange = useCallback((portfolioId: string) => {
     setCurrentPortfolio(portfolioId);
@@ -118,7 +120,6 @@ export default function App() {
       default:
         return (
           <>
-            <LoginAdvisoryCard />
             <PortfolioSummaryCards />
             <SmartTradingDashboard />
             <AIPortfolioAdvisor />
@@ -145,9 +146,20 @@ export default function App() {
       {/* Sidebar */}
       <Sidebar activeSection={activeSection} onSectionChange={handleSectionChange} user={user} onLogout={logout} />
 
-      {/* Main Content with left margin for sidebar */}
-      <div className="ml-20 transition-all duration-300">
+      {/* Fixed, non-scrolling top menu bar */}
+      <TopBar activeSection={activeSection} onSectionChange={handleSectionChange}>
+        <DhanLaxmiAssistant
+          placement="top"
+          open={dhanLaxmiOpen}
+          onOpenChange={setDhanLaxmiOpen}
+        />
+      </TopBar>
+
+      {/* Main Content with left margin for sidebar and top padding for the fixed bar */}
+      <div className="ml-20 pt-16 transition-[margin] duration-300">
         <div className="max-w-[1800px] mx-auto p-6 space-y-6">
+          <LoginAdvisoryCard onOpenMarketplace={() => setActiveSection('ai-advisor')} />
+
           {/* User Profile & Portfolio Selector */}
           <UserProfileHeader 
             onPortfolioChange={handlePortfolioChange}
@@ -164,7 +176,6 @@ export default function App() {
           )}
         </div>
       </div>
-      <DhanLaxmiAssistant />
     </div>
   );
 }

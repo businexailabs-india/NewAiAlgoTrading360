@@ -30,7 +30,7 @@
     "upstox",
     "api"
   ],
-  "author": "BusineXAi Solutions Lab",
+  "author": "AlgoTradingV360",
   "license": "MIT",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",

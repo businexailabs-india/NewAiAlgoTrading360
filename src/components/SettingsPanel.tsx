@@ -642,7 +642,7 @@ export function SettingsPanel() {
         className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 text-center"
       >
         <p className="text-sm text-gray-400">
-          © 2025 BusineXAi Solutions Lab. All rights reserved.
+          © 2026 AlgoTradingV360. All rights reserved.
         </p>
       </motion.div>
     </div>

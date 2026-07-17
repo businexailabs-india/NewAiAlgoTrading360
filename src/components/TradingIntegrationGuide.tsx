@@ -1216,7 +1216,7 @@ useEffect(() => {
           </a>
         </div>
         <p className="text-sm text-gray-500 mt-4">
-          © 2025 BusineXAi Solutions Lab. All rights reserved.
+          © 2026 AlgoTradingV360. All rights reserved.
         </p>
       </motion.div>
     </div>

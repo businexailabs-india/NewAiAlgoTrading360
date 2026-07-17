@@ -188,8 +188,8 @@ export function Sidebar({ activeSection, onSectionChange, onLogout, user }: Side
                 exit={{ opacity: 0, x: -10 }}
                 transition={{ duration: 0.2 }}
               >
-                <div className="text-white font-semibold">BusineXAi</div>
-                <div className="text-xs text-gray-400">Solutions Lab</div>
+                <div className="text-white font-semibold leading-tight">AlgoTradingV360</div>
+                <div className="text-xs text-gray-400">AI Algo Trading</div>
               </motion.div>
             )}
           </AnimatePresence>

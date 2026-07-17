@@ -1,5 +1,5 @@
 {
-  "name": "smarttrade-portfolio",
+  "name": "algotrading-v360",
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "outputDirectory": "build",
