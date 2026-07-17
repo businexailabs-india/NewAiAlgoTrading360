@@ -20,10 +20,17 @@ export const getQuotes = asyncHandler(async (req: Request, res: Response) => {
 
 export const getHistoricalData = asyncHandler(async (req: Request, res: Response) => {
   const days = parseInt(req.query.days as string) || 30;
-  const data = await MarketService.getHistoricalData(req.params.symbol, days);
+  const series = await MarketService.getHistoricalSeries(req.params.symbol, days);
   res.status(200).json({
     success: true,
-    data: { symbol: req.params.symbol, interval: req.query.interval || 'day', data }
+    data: {
+      symbol: req.params.symbol,
+      interval: req.query.interval || 'day',
+      data: series.bars,
+      source: series.source,
+      stale: series.stale,
+      asOf: series.asOf
+    }
   });
 });
 
@@ -49,6 +56,8 @@ export const getMarketStatus = asyncHandler(async (_req: Request, res: Response)
     data: {
       isOpen,
       status: isOpen ? 'OPEN' : 'CLOSED',
+      timezone: 'Asia/Kolkata',
+      session: '09:15-15:30 IST',
       nextOpen: isOpen ? null : 'Next trading day 9:15 AM IST',
       timestamp: new Date().toISOString()
     }
@@ -57,28 +66,57 @@ export const getMarketStatus = asyncHandler(async (_req: Request, res: Response)
 
 export const getTopGainers = asyncHandler(async (req: Request, res: Response) => {
   const count = parseInt(req.query.count as string) || 10;
-  const data = await MarketService.getTopMovers('gainers', count);
-  res.status(200).json({ success: true, data });
+  const result = await MarketService.getTopMovers('gainers', count);
+  res.status(200).json({
+    success: true,
+    data: result.data,
+    source: result.source,
+    sampleSize: result.sampleSize,
+    universeSize: result.universeSize
+  });
 });
 
 export const getTopLosers = asyncHandler(async (req: Request, res: Response) => {
   const count = parseInt(req.query.count as string) || 10;
-  const data = await MarketService.getTopMovers('losers', count);
-  res.status(200).json({ success: true, data });
+  const result = await MarketService.getTopMovers('losers', count);
+  res.status(200).json({
+    success: true,
+    data: result.data,
+    source: result.source,
+    sampleSize: result.sampleSize,
+    universeSize: result.universeSize
+  });
 });
 
 export const getSmallCapStocks = asyncHandler(async (req: Request, res: Response) => {
   const count = parseInt(req.query.count as string) || 20;
-  const data = await MarketService.getSmallCapStocks(count);
-  res.status(200).json({ success: true, data });
+  const result = await MarketService.getSmallCapStocks(count);
+  res.status(200).json({
+    success: true,
+    data: result.data,
+    source: result.source,
+    sampleSize: result.sampleSize,
+    universeSize: result.universeSize
+  });
 });
 
 export const getSectorPerformance = asyncHandler(async (_req: Request, res: Response) => {
-  const data = await MarketService.getSectorPerformance();
-  res.status(200).json({ success: true, data });
+  const result = await MarketService.getSectorPerformance();
+  res.status(200).json({
+    success: true,
+    data: result.data,
+    source: result.source,
+    coverage: result.coverage
+  });
 });
 
 export const getMarketBreadth = asyncHandler(async (_req: Request, res: Response) => {
   const data = await MarketService.getMarketBreadth();
+  res.status(200).json({ success: true, data });
+});
+
+export const getDhanStatus = asyncHandler(async (_req: Request, res: Response) => {
+  const { DhanService } = await import('../services/dhan.service');
+  const data = await DhanService.status();
   res.status(200).json({ success: true, data });
 });

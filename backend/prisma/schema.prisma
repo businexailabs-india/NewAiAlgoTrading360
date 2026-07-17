@@ -34,14 +34,87 @@ model User {
   knowledgeChunks    KnowledgeChunk[]
   llmAdapters        LlmAdapter[]
   llmTrainingJobs    LlmTrainingJob[]
+  mcpServerConfigs   McpServerConfig[]
+  executionContext   UserExecutionContext?
+  tradingControls    TradingControl[]
+  executionAttempts  ExecutionAttempt[]
+  tenantMemberships  TenantMembership[]
+  ownedTenants       Tenant[]             @relation("TenantOwner")
 
   @@map("users")
+}
+
+/// Personal tenant — one immutable personal tenant per user (orgs later)
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  kind      String   @default("personal") // personal | organization
+  ownerId   String   @map("owner_id")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner       User               @relation("TenantOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  memberships TenantMembership[]
+
+  @@index([ownerId])
+  @@map("tenants")
+}
+
+model TenantMembership {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  role      String   @default("owner") // owner | admin | member | viewer
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@map("tenant_memberships")
+}
+
+/// Reliable async event outbox (Kafka/Redpanda dispatcher)
+model EventOutbox {
+  id             String    @id @default(uuid())
+  topic          String
+  eventId        String    @unique @map("event_id")
+  idempotencyKey String    @map("idempotency_key")
+  tenantId       String?   @map("tenant_id")
+  userId         String?   @map("user_id")
+  payload        Json
+  status         String    @default("PENDING") // PENDING | PUBLISHED | FAILED | DEAD
+  attempts       Int       @default(0)
+  lastError      String?   @map("last_error") @db.Text
+  publishedAt    DateTime? @map("published_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([userId, topic])
+  @@map("event_outbox")
 }
 
 model BrokerConnection {
   id                    String   @id @default(uuid())
   userId                String   @map("user_id")
-  broker                String   // zerodha, upstox, angelone
+  broker                String   // zerodha, upstox, angelone, dhan
+  displayName           String?  @map("display_name")
+  externalAccountId     String?  @map("external_account_id")
+  clientIdEncrypted     String?  @map("client_id_encrypted")
+  credentialsEncrypted  String?  @map("credentials_encrypted") @db.Text
+  credentialKeyVersion  Int      @default(1) @map("credential_key_version")
+  providerType          String   @default("DIRECT") @map("provider_type") // DIRECT | MCP
+  mcpServerConfigId     String?  @map("mcp_server_config_id")
+  status                String   @default("PENDING") // PENDING | CONNECTED | EXPIRED | ERROR | DISABLED
+  isEnabled             Boolean  @default(true) @map("is_enabled")
+  capabilities          Json?    // discovered feature matrix
+  lastValidatedAt       DateTime? @map("last_validated_at")
+  lastError             String?  @map("last_error") @db.Text
+  metadata              Json?
   apiKeyEncrypted       String?  @map("api_key_encrypted")
   accessTokenEncrypted  String?  @map("access_token_encrypted")
   refreshTokenEncrypted String?  @map("refresh_token_encrypted")
@@ -51,12 +124,120 @@ model BrokerConnection {
   updatedAt             DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  holdings Holding[]
-  trades   Trade[]
-  orders   Order[]
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mcpServerConfig  McpServerConfig?  @relation(fields: [mcpServerConfigId], references: [id])
+  holdings         Holding[]
+  trades           Trade[]
+  orders           Order[]
+  selectedBy       UserExecutionContext[] @relation("SelectedBroker")
+  tradingControls  TradingControl[]
+  executionAttempts ExecutionAttempt[]
 
+  @@index([userId, broker, isActive])
+  @@index([userId, status, isEnabled])
   @@map("broker_connections")
+}
+
+model McpServerConfig {
+  id                   String   @id @default(uuid())
+  userId               String   @map("user_id")
+  name                 String
+  provider             String   @default("dhan")
+  transport            String   @default("HTTP") // HTTP | SSE | STDIO
+  endpoint             String
+  command              String?
+  args                 Json?
+  headersEncrypted     String?  @map("headers_encrypted") @db.Text
+  environmentEncrypted String?  @map("environment_encrypted") @db.Text
+  authConfigEncrypted  String?  @map("auth_config_encrypted") @db.Text
+  credentialKeyVersion Int      @default(1) @map("credential_key_version")
+  isEnabled            Boolean  @default(true) @map("is_enabled")
+  lastHealthStatus     String?  @map("last_health_status")
+  lastHealthCheckedAt  DateTime? @map("last_health_checked_at")
+  lastError            String?  @map("last_error") @db.Text
+  discoveredTools      Json?    @map("discovered_tools")
+  capabilities         Json?
+  latencyMs            Int?     @map("latency_ms")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerConnections BrokerConnection[]
+  selectedBy        UserExecutionContext[] @relation("SelectedMcp")
+
+  @@index([userId, provider, isEnabled])
+  @@map("mcp_server_configs")
+}
+
+model UserExecutionContext {
+  id                      String   @id @default(uuid())
+  userId                  String   @unique @map("user_id")
+  activeBrokerConnectionId String? @map("active_broker_connection_id")
+  activeMcpServerConfigId String?  @map("active_mcp_server_config_id")
+  executionMode           String   @default("PAPER") @map("execution_mode") // PAPER | LIVE
+  version                 Int      @default(1)
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  user                     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeBrokerConnection   BrokerConnection? @relation("SelectedBroker", fields: [activeBrokerConnectionId], references: [id])
+  activeMcpServerConfig    McpServerConfig?  @relation("SelectedMcp", fields: [activeMcpServerConfigId], references: [id])
+
+  @@map("user_execution_contexts")
+}
+
+model TradingControl {
+  id                   String   @id @default(uuid())
+  scope                String   // GLOBAL | USER | ACCOUNT
+  userId               String?  @map("user_id")
+  brokerConnectionId   String?  @map("broker_connection_id")
+  liveTradingEnabled   Boolean  @default(false) @map("live_trading_enabled")
+  killSwitch           Boolean  @default(false) @map("kill_switch")
+  approvalState        String   @default("NONE") @map("approval_state") // NONE | PENDING | APPROVED | REVOKED
+  maxOrderValue        Decimal? @map("max_order_value") @db.Decimal(14, 2)
+  maxDailyOrderValue   Decimal? @map("max_daily_order_value") @db.Decimal(14, 2)
+  maxDailyLoss         Decimal? @map("max_daily_loss") @db.Decimal(14, 2)
+  maxOpenExposure      Decimal? @map("max_open_exposure") @db.Decimal(14, 2)
+  requirePaperQualify  Boolean  @default(true) @map("require_paper_qualify")
+  approvedAt           DateTime? @map("approved_at")
+  approvedBy           String?  @map("approved_by")
+  notes                String?  @db.Text
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user             User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerConnection BrokerConnection? @relation(fields: [brokerConnectionId], references: [id], onDelete: Cascade)
+
+  @@unique([scope, userId, brokerConnectionId])
+  @@index([scope, liveTradingEnabled])
+  @@map("trading_controls")
+}
+
+model ExecutionAttempt {
+  id                   String   @id @default(uuid())
+  userId               String   @map("user_id")
+  orderId              String?  @map("order_id")
+  brokerConnectionId   String?  @map("broker_connection_id")
+  mcpServerConfigId    String?  @map("mcp_server_config_id")
+  idempotencyKey       String   @map("idempotency_key")
+  source               String   // MANUAL | AGENT | STRATEGY | MCP | SCHEDULER
+  requestRedacted      Json?    @map("request_redacted")
+  responseRedacted     Json?    @map("response_redacted")
+  brokerStatus         String?  @map("broker_status")
+  correlationId        String?  @map("correlation_id")
+  errorCode            String?  @map("error_code")
+  errorMessage         String?  @map("error_message") @db.Text
+  reconciledAt         DateTime? @map("reconciled_at")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerConnection BrokerConnection? @relation(fields: [brokerConnectionId], references: [id])
+
+  @@unique([userId, idempotencyKey])
+  @@index([orderId])
+  @@index([correlationId])
+  @@map("execution_attempts")
 }
 
 model Holding {

@@ -221,6 +221,29 @@ export const deployLive = async (req: Request, res: Response) => {
       });
     }
 
+    // Same RMS live gate as OMS — advisory and QC cannot bypass
+    if (process.env.LIVE_TRADING_ENABLED !== 'true') {
+      return res.status(403).json({
+        success: false,
+        error: 'Live trading disabled. LIVE_TRADING_ENABLED must be true and RMS approved.'
+      });
+    }
+    const { RiskGateService } = await import('../services/risk-gate.service');
+    await RiskGateService.ensureGlobalControl();
+    const { prisma } = await import('../config/database');
+    const globalCtrl = await prisma.tradingControl.findFirst({
+      where: { scope: 'GLOBAL', userId: null }
+    });
+    if (globalCtrl?.killSwitch) {
+      return res.status(403).json({ success: false, error: 'Kill switch is active' });
+    }
+    if (!globalCtrl?.liveTradingEnabled || globalCtrl.approvalState !== 'APPROVED') {
+      return res.status(403).json({
+        success: false,
+        error: 'Live deployment requires admin RMS approval'
+      });
+    }
+
     const qcService = getQuantConnectService();
     const result = await qcService.deployLive(
       parseInt(projectId),

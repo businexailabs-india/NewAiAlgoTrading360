@@ -1,0 +1,49 @@
+# DhanLaxmi multilingual assistant stack — from repo root:
+# docker compose -f docker-compose.dhanlaxmi.yml up -d --build
+services:
+  dhanlaxmi-assistant-service:
+    build:
+      context: .
+      dockerfile: services/dhanlaxmi-assistant-service/Dockerfile
+    container_name: bxai-dhanlaxmi
+    ports:
+      - "8095:8095"
+    environment:
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET:-dev-service-hmac-secret-change-me}
+      DEFAULT_LLM_PROVIDER: ${DEFAULT_LLM_PROVIDER:-mock}
+      FALLBACK_LLM_PROVIDER: ${FALLBACK_LLM_PROVIDER:-local}
+
+  voice-gateway-service:
+    build:
+      context: .
+      dockerfile: services/voice-gateway-service/Dockerfile
+    container_name: bxai-voice-gateway
+    ports:
+      - "8096:8096"
+    environment:
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET:-dev-service-hmac-secret-change-me}
+      DHANLAXMI_SERVICE_URL: http://dhanlaxmi-assistant-service:8095
+      DEFAULT_STT_PROVIDER: ${DEFAULT_STT_PROVIDER:-mock}
+      DEFAULT_TTS_PROVIDER: ${DEFAULT_TTS_PROVIDER:-mock}
+    depends_on:
+      - dhanlaxmi-assistant-service
+
+  language-intent-service:
+    build:
+      context: .
+      dockerfile: services/language-intent-service/Dockerfile
+    container_name: bxai-language-intent
+    ports:
+      - "8097:8097"
+    environment:
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET:-dev-service-hmac-secret-change-me}
+
+  trade-approval-service:
+    build:
+      context: .
+      dockerfile: services/trade-approval-service/Dockerfile
+    container_name: bxai-trade-approval
+    ports:
+      - "8098:8098"
+    environment:
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET:-dev-service-hmac-secret-change-me}

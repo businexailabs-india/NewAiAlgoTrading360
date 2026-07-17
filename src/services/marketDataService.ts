@@ -11,10 +11,10 @@ export interface StockQuote {
   change: number;
   changePercent: number;
   volume: number;
-  high: number;
-  low: number;
-  open: number;
-  previousClose: number;
+  high: number | null;
+  low: number | null;
+  open: number | null;
+  previousClose: number | null;
   marketCap?: number;
   timestamp: Date | string;
 }
@@ -24,10 +24,10 @@ export interface IndexData {
   value: number;
   change: number;
   changePercent: number;
-  high: number;
-  low: number;
-  open: number;
-  previousClose: number;
+  high: number | null;
+  low: number | null;
+  open: number | null;
+  previousClose: number | null;
   timestamp: Date;
   data?: number[];
 }
@@ -59,7 +59,9 @@ class MarketDataService {
     try {
       const res = await fetch(`${this.apiBaseUrl}${path}`);
       if (!res.ok) return null;
-      const json = await res.json();
+      const text = await res.text();
+      if (!text.trim()) return null;
+      const json = JSON.parse(text);
       return json.data as T;
     } catch (err) {
       console.error(`Market API error (${path}):`, err);
@@ -72,23 +74,23 @@ class MarketDataService {
     const cached = this.getFromCache<IndexData[]>(cacheKey);
     if (cached) return cached;
 
-    const data = await this.fetchJson<Array<{ name: string; value: number; change: number; changePercent: number }>>('/market/indices');
+    const data = await this.fetchJson<Array<{ name: string; value: number; change: number; changePercent: number; high?: number; low?: number; open?: number; previousClose?: number; timestamp?: string }>>('/market/indices');
     if (data?.length) {
       const indices = data.map(item => ({
         name: item.name,
         value: item.value,
         change: item.change,
         changePercent: item.changePercent,
-        high: item.value,
-        low: item.value,
-        open: item.value,
-        previousClose: item.value - item.change,
-        timestamp: new Date()
+        high: item.high ?? null,
+        low: item.low ?? null,
+        open: item.open ?? null,
+        previousClose: item.previousClose ?? null,
+        timestamp: item.timestamp ? new Date(item.timestamp) : new Date()
       }));
       this.setCache(cacheKey, indices);
       return indices;
     }
-    return this.getFallbackIndices();
+    return [];
   }
 
   async fetchBSEIndices(): Promise<IndexData[]> {
@@ -116,10 +118,10 @@ class MarketDataService {
         change: data.change,
         changePercent: data.changePercent,
         volume: data.volume || 0,
-        high: data.high || data.price,
-        low: data.low || data.price,
-        open: data.open || data.price,
-        previousClose: data.price - data.change,
+        high: data.high ?? null,
+        low: data.low ?? null,
+        open: data.open ?? null,
+        previousClose: data.previousClose ?? null,
         timestamp: new Date(data.timestamp)
       };
       this.setCache(cacheKey, quote);
@@ -150,20 +152,12 @@ class MarketDataService {
 
   async fetchSectorPerformance(): Promise<SectorPerformance[]> {
     const data = await this.fetchJson<SectorPerformance[]>('/market/sectors');
-    return data?.length ? data : this.getFallbackSectorPerformance();
+    return data?.length ? data : [];
   }
 
-  async fetchMarketBreadth(): Promise<MarketBreadth> {
+  async fetchMarketBreadth(): Promise<MarketBreadth | null> {
     const data = await this.fetchJson<MarketBreadth>('/market/breadth');
-    return data || {
-      advances: 1234,
-      declines: 867,
-      unchanged: 145,
-      fiftyTwoWeekHighs: 89,
-      fiftyTwoWeekLows: 23,
-      fiiActivity: 0,
-      diiActivity: 0
-    };
+    return data || null;
   }
 
   async searchStocks(query: string): Promise<Array<{ symbol: string; name: string; exchange: string }>> {
@@ -183,28 +177,6 @@ class MarketDataService {
 
   private setCache(key: string, data: unknown): void {
     this.cache.set(key, { data, timestamp: Date.now() });
-  }
-
-  private getFallbackIndices(): IndexData[] {
-    return [
-      { name: 'NIFTY 50', value: 21845.75, change: 245.3, changePercent: 1.13, high: 21900, low: 21600, open: 21650, previousClose: 21600.45, timestamp: new Date() },
-      { name: 'SENSEX', value: 72456.45, change: 412.8, changePercent: 0.57, high: 72500, low: 72000, open: 72100, previousClose: 72043.65, timestamp: new Date() },
-      { name: 'NIFTY BANK', value: 46234.2, change: -123.45, changePercent: -0.27, high: 46400, low: 46200, open: 46350, previousClose: 46357.65, timestamp: new Date() },
-      { name: 'NIFTY IT', value: 34567.9, change: 567.8, changePercent: 1.67, high: 34600, low: 34000, open: 34100, previousClose: 34000.1, timestamp: new Date() }
-    ];
-  }
-
-  private getFallbackSectorPerformance(): SectorPerformance[] {
-    return [
-      { sector: 'IT', change: 2.3, stocks: 50, advancers: 35, decliners: 15 },
-      { sector: 'Banking', change: 1.8, stocks: 40, advancers: 28, decliners: 12 },
-      { sector: 'Auto', change: 1.2, stocks: 30, advancers: 20, decliners: 10 },
-      { sector: 'Pharma', change: 0.5, stocks: 35, advancers: 18, decliners: 17 },
-      { sector: 'FMCG', change: -0.3, stocks: 25, advancers: 10, decliners: 15 },
-      { sector: 'Energy', change: -0.8, stocks: 20, advancers: 8, decliners: 12 },
-      { sector: 'Metals', change: -1.2, stocks: 28, advancers: 10, decliners: 18 },
-      { sector: 'Realty', change: -1.5, stocks: 22, advancers: 7, decliners: 15 }
-    ];
   }
 }
 

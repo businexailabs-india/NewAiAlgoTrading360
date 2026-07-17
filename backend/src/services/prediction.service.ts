@@ -30,7 +30,9 @@ interface PredictionOutput {
   symbol: string;
   direction: 'BUY' | 'SELL' | 'HOLD';
   confidence: number;
-  targetPrice: number;
+  /** Present when model or an explicitly labeled heuristic produced it */
+  targetPrice?: number;
+  targetPriceSource?: 'model' | 'heuristic' | 'omitted';
   currentPrice: number;
   horizonDays: number;
   signals: Record<string, number>;
@@ -474,6 +476,7 @@ export class PredictionService {
         direction: pred.direction,
         confidence: pred.confidence,
         targetPrice: pred.target_price,
+        targetPriceSource: 'model',
         currentPrice: pred.current_price,
         horizonDays: pred.horizon_days,
         signals: pred.signals,
@@ -547,7 +550,8 @@ export class PredictionService {
       return {
         direction: 'HOLD',
         confidence: 0,
-        targetPrice: currentPrice,
+        targetPrice: undefined,
+        targetPriceSource: 'omitted',
         currentPrice,
         horizonDays,
         signals: {},
@@ -569,12 +573,14 @@ export class PredictionService {
       direction = 'HOLD';
     }
 
-    const targetPrice = Number((currentPrice * (1 + score * horizonDays * 0.01)).toFixed(2));
+    // Heuristic projection — not a trained model output; labeled explicitly
+    const heuristicTarget = Number((currentPrice * (1 + score * horizonDays * 0.01)).toFixed(2));
 
     return {
       direction,
       confidence,
-      targetPrice,
+      targetPrice: heuristicTarget,
+      targetPriceSource: 'heuristic',
       currentPrice,
       horizonDays,
       signals,

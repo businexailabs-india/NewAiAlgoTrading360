@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { X, Play, Copy, Code, Download, TrendingUp, Calendar, DollarSign, Activity, Target } from 'lucide-react';
+import { X, Play, Copy, Code, Download, TrendingUp, DollarSign, Activity, Target } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -23,6 +23,11 @@ interface Strategy {
   reviews: number;
   deployed: number;
   chartData: number[];
+  performanceData?: Array<{ date: string; equity: number; benchmark: number; drawdown: number }>;
+  monthlyReturns?: Array<{ month: string; returns: number }>;
+  codeSnippet?: string;
+  riskMetrics?: Record<string, string>;
+  tradingStats?: Record<string, string>;
 }
 
 interface StrategyDetailModalProps {
@@ -30,82 +35,13 @@ interface StrategyDetailModalProps {
   onClose: () => void;
 }
 
-// Extended performance data
-const performanceData = [
-  { date: 'Jan', equity: 100000, benchmark: 100000, drawdown: 0 },
-  { date: 'Feb', equity: 108000, benchmark: 102000, drawdown: -2 },
-  { date: 'Mar', equity: 112000, benchmark: 105000, drawdown: -1 },
-  { date: 'Apr', equity: 118000, benchmark: 107000, drawdown: -3 },
-  { date: 'May', equity: 115000, benchmark: 108000, drawdown: -5 },
-  { date: 'Jun', equity: 125000, benchmark: 112000, drawdown: -2 },
-  { date: 'Jul', equity: 130000, benchmark: 115000, drawdown: -1 },
-  { date: 'Aug', equity: 128000, benchmark: 116000, drawdown: -3 },
-  { date: 'Sep', equity: 136000, benchmark: 120000, drawdown: -2 },
-  { date: 'Oct', equity: 142000, benchmark: 123000, drawdown: -1 },
-  { date: 'Nov', equity: 145000, benchmark: 125000, drawdown: 0 },
-  { date: 'Dec', equity: 151000, benchmark: 128000, drawdown: 0 }
-];
-
-const monthlyReturns = [
-  { month: 'Jan', returns: 8.0 },
-  { month: 'Feb', returns: 3.7 },
-  { month: 'Mar', returns: 5.4 },
-  { month: 'Apr', returns: 5.4 },
-  { month: 'May', returns: -2.5 },
-  { month: 'Jun', returns: 8.7 },
-  { month: 'Jul', returns: 4.0 },
-  { month: 'Aug', returns: -1.5 },
-  { month: 'Sep', returns: 6.2 },
-  { month: 'Oct', returns: 4.4 },
-  { month: 'Nov', returns: 2.1 },
-  { month: 'Dec', returns: 4.1 }
-];
-
-const codeSnippet = `class NiftyMomentumBreakout(QCAlgorithm):
-    
-    def Initialize(self):
-        # Set start date, end date and cash
-        self.SetStartDate(2020, 1, 1)
-        self.SetEndDate(2024, 12, 31)
-        self.SetCash(1000000)
-        
-        # Add NSE equity data
-        self.symbols = [
-            self.AddEquity("RELIANCE", Resolution.Daily).Symbol,
-            self.AddEquity("TCS", Resolution.Daily).Symbol,
-            self.AddEquity("HDFCBANK", Resolution.Daily).Symbol,
-            # Add more Nifty 50 stocks...
-        ]
-        
-        # Set indicators
-        self.rsi = {}
-        self.sma_fast = {}
-        self.sma_slow = {}
-        
-        for symbol in self.symbols:
-            self.rsi[symbol] = self.RSI(symbol, 14)
-            self.sma_fast[symbol] = self.SMA(symbol, 50)
-            self.sma_slow[symbol] = self.SMA(symbol, 200)
-    
-    def OnData(self, data):
-        for symbol in self.symbols:
-            # Check if indicators are ready
-            if not (self.rsi[symbol].IsReady and 
-                    self.sma_fast[symbol].IsReady):
-                continue
-            
-            # Momentum breakout signal
-            if (self.sma_fast[symbol].Current.Value > 
-                self.sma_slow[symbol].Current.Value and
-                self.rsi[symbol].Current.Value > 60):
-                
-                self.SetHoldings(symbol, 0.1)
-            
-            # Exit signal
-            elif self.rsi[symbol].Current.Value < 40:
-                self.Liquidate(symbol)`;
-
 export function StrategyDetailModal({ strategy, onClose }: StrategyDetailModalProps) {
+  const performanceData = strategy.performanceData ?? [];
+  const monthlyReturns = strategy.monthlyReturns ?? [];
+  const codeSnippet = strategy.codeSnippet ?? '';
+  const riskMetrics = strategy.riskMetrics ?? {};
+  const tradingStats = strategy.tradingStats ?? {};
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -121,7 +57,6 @@ export function StrategyDetailModal({ strategy, onClose }: StrategyDetailModalPr
         className="bg-gray-900 border border-gray-800 rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="sticky top-0 bg-gray-900 border-b border-gray-800 p-6 z-10">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
@@ -146,7 +81,6 @@ export function StrategyDetailModal({ strategy, onClose }: StrategyDetailModalPr
             </Button>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex gap-3 mt-4">
             <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white">
               <Play className="w-4 h-4 mr-2" />
@@ -163,44 +97,41 @@ export function StrategyDetailModal({ strategy, onClose }: StrategyDetailModalPr
           </div>
         </div>
 
-        {/* Content */}
         <div className="p-6">
-          {/* Key Metrics Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp className="w-4 h-4 text-green-400" />
                 <span className="text-sm text-gray-400">Total Returns</span>
               </div>
-              <div className="text-2xl text-green-400">{strategy.returns}</div>
+              <div className="text-2xl text-green-400">{strategy.returns || '—'}</div>
             </div>
             <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Activity className="w-4 h-4 text-cyan-400" />
                 <span className="text-sm text-gray-400">Sharpe Ratio</span>
               </div>
-              <div className="text-2xl text-cyan-400">{strategy.sharpe}</div>
+              <div className="text-2xl text-cyan-400">{strategy.sharpe || '—'}</div>
             </div>
             <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Target className="w-4 h-4 text-blue-400" />
                 <span className="text-sm text-gray-400">Win Rate</span>
               </div>
-              <div className="text-2xl text-blue-400">{strategy.winRate}</div>
+              <div className="text-2xl text-blue-400">{strategy.winRate || '—'}</div>
             </div>
             <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <DollarSign className="w-4 h-4 text-red-400" />
                 <span className="text-sm text-gray-400">Max Drawdown</span>
               </div>
-              <div className="text-2xl text-red-400">{strategy.drawdown}</div>
+              <div className="text-2xl text-red-400">{strategy.drawdown || '—'}</div>
             </div>
           </div>
 
-          {/* Description */}
           <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-4 mb-6">
             <h3 className="text-white mb-2">Strategy Description</h3>
-            <p className="text-gray-400">{strategy.description}</p>
+            <p className="text-gray-400">{strategy.description || 'No description available.'}</p>
             
             <div className="flex flex-wrap gap-2 mt-4">
               {strategy.tags.map((tag) => (
@@ -211,7 +142,6 @@ export function StrategyDetailModal({ strategy, onClose }: StrategyDetailModalPr
             </div>
           </div>
 
-          {/* Tabs */}
           <Tabs defaultValue="performance" className="w-full">
             <TabsList className="bg-gray-800 mb-6">
               <TabsTrigger value="performance" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">
@@ -226,49 +156,55 @@ export function StrategyDetailModal({ strategy, onClose }: StrategyDetailModalPr
             </TabsList>
 
             <TabsContent value="performance" className="space-y-6">
-              {/* Equity Curve */}
               <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-4">
                 <h3 className="text-white mb-4">Equity Curve vs Benchmark</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={performanceData}>
-                    <defs>
-                      <linearGradient id="colorEquity" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorBenchmark" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6b7280" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#6b7280" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="date" stroke="#9ca3af" />
-                    <YAxis stroke="#9ca3af" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
-                    />
-                    <Area type="monotone" dataKey="equity" stroke="#10b981" fillOpacity={1} fill="url(#colorEquity)" name="Strategy" />
-                    <Area type="monotone" dataKey="benchmark" stroke="#6b7280" fillOpacity={1} fill="url(#colorBenchmark)" name="Nifty 50" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {performanceData.length === 0 ? (
+                  <div className="flex items-center justify-center h-[300px] text-gray-400">No data available</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <AreaChart data={performanceData}>
+                      <defs>
+                        <linearGradient id="colorEquity" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorBenchmark" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6b7280" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#6b7280" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis dataKey="date" stroke="#9ca3af" />
+                      <YAxis stroke="#9ca3af" />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                        itemStyle={{ color: '#fff' }}
+                      />
+                      <Area type="monotone" dataKey="equity" stroke="#10b981" fillOpacity={1} fill="url(#colorEquity)" name="Strategy" />
+                      <Area type="monotone" dataKey="benchmark" stroke="#6b7280" fillOpacity={1} fill="url(#colorBenchmark)" name="Benchmark" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
               </div>
 
-              {/* Monthly Returns */}
               <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-4">
                 <h3 className="text-white mb-4">Monthly Returns Distribution</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={monthlyReturns}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="month" stroke="#9ca3af" />
-                    <YAxis stroke="#9ca3af" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff' }}
-                    />
-                    <Line type="monotone" dataKey="returns" stroke="#06b6d4" strokeWidth={2} dot={{ fill: '#06b6d4', r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                {monthlyReturns.length === 0 ? (
+                  <div className="flex items-center justify-center h-[250px] text-gray-400">No data available</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={monthlyReturns}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis dataKey="month" stroke="#9ca3af" />
+                      <YAxis stroke="#9ca3af" />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                        itemStyle={{ color: '#fff' }}
+                      />
+                      <Line type="monotone" dataKey="returns" stroke="#06b6d4" strokeWidth={2} dot={{ fill: '#06b6d4', r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </TabsContent>
 
@@ -279,14 +215,20 @@ export function StrategyDetailModal({ strategy, onClose }: StrategyDetailModalPr
                     <Code className="w-4 h-4 text-orange-400" />
                     Strategy Implementation
                   </h3>
-                  <Button variant="outline" size="sm" className="border-gray-700">
-                    <Copy className="w-3 h-3 mr-2" />
-                    Copy Code
-                  </Button>
+                  {codeSnippet && (
+                    <Button variant="outline" size="sm" className="border-gray-700">
+                      <Copy className="w-3 h-3 mr-2" />
+                      Copy Code
+                    </Button>
+                  )}
                 </div>
-                <pre className="text-sm text-gray-300 font-mono">
-                  <code>{codeSnippet}</code>
-                </pre>
+                {codeSnippet ? (
+                  <pre className="text-sm text-gray-300 font-mono">
+                    <code>{codeSnippet}</code>
+                  </pre>
+                ) : (
+                  <div className="text-center py-12 text-gray-400">No code available</div>
+                )}
               </div>
             </TabsContent>
 
@@ -294,32 +236,18 @@ export function StrategyDetailModal({ strategy, onClose }: StrategyDetailModalPr
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-4">
                   <h3 className="text-white mb-4">Risk Metrics</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Volatility (Annual)</span>
-                      <span className="text-white">18.4%</span>
+                  {Object.keys(riskMetrics).length === 0 ? (
+                    <div className="text-center py-8 text-gray-400">No data available</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {Object.entries(riskMetrics).map(([label, value]) => (
+                        <div key={label} className="flex justify-between">
+                          <span className="text-gray-400">{label}</span>
+                          <span className="text-white">{value}</span>
+                        </div>
+                      ))}
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Sortino Ratio</span>
-                      <span className="text-white">2.91</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Calmar Ratio</span>
-                      <span className="text-white">2.76</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Max Drawdown Duration</span>
-                      <span className="text-white">45 days</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Beta</span>
-                      <span className="text-white">0.82</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Alpha</span>
-                      <span className="text-white">3.2%</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-4">
@@ -327,28 +255,18 @@ export function StrategyDetailModal({ strategy, onClose }: StrategyDetailModalPr
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span className="text-gray-400">Total Trades</span>
-                      <span className="text-white">{strategy.trades}</span>
+                      <span className="text-white">{strategy.trades || 0}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Avg Trade Duration</span>
-                      <span className="text-white">12.4 days</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Profit Factor</span>
-                      <span className="text-white">2.34</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Avg Win</span>
-                      <span className="text-green-400">+4.2%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Avg Loss</span>
-                      <span className="text-red-400">-1.8%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Expectancy</span>
-                      <span className="text-white">2.1%</span>
-                    </div>
+                    {Object.keys(tradingStats).length === 0 ? (
+                      <div className="text-center py-4 text-gray-400 text-sm">No additional stats available</div>
+                    ) : (
+                      Object.entries(tradingStats).map(([label, value]) => (
+                        <div key={label} className="flex justify-between">
+                          <span className="text-gray-400">{label}</span>
+                          <span className="text-white">{value}</span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

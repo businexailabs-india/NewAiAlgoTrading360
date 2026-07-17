@@ -1,0 +1,86 @@
+# AI Algo Advisory stack — run from repo root:
+# docker compose -f docker-compose.advisory.yml up -d
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.4
+    container_name: bxai-redpanda
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 512M
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - INTERNAL://redpanda:9092,EXTERNAL://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v2.7.2
+    container_name: bxai-redpanda-console
+    depends_on:
+      - redpanda
+    ports:
+      - "8085:8080"
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+
+  ai-advisory-service:
+    build:
+      context: .
+      dockerfile: services/ai-advisory-service/Dockerfile
+    container_name: bxai-ai-advisory
+    ports:
+      - "8091:8091"
+    environment:
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET:-dev-service-hmac-secret-change-me}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      DATABASE_URL: postgresql+asyncpg://smarttrade:smarttrade_password@host.docker.internal:5432/smarttrade
+      REDIS_URL: redis://host.docker.internal:6379/0
+    depends_on:
+      - redpanda
+
+  paper-test-orchestrator:
+    build:
+      context: .
+      dockerfile: services/paper-test-orchestrator/Dockerfile
+    container_name: bxai-paper-test
+    ports:
+      - "8092:8092"
+    environment:
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET:-dev-service-hmac-secret-change-me}
+
+  external-algo-discovery-service:
+    build:
+      context: .
+      dockerfile: services/external-algo-discovery-service/Dockerfile
+    container_name: bxai-external-algo
+    ports:
+      - "8093:8093"
+    environment:
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET:-dev-service-hmac-secret-change-me}
+
+  mcp-connector-service:
+    build:
+      context: .
+      dockerfile: services/mcp-connector-service/Dockerfile
+    container_name: bxai-mcp-connector
+    ports:
+      - "8094:8094"
+    environment:
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET:-dev-service-hmac-secret-change-me}

@@ -22,9 +22,29 @@ export const authenticate = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Get token from header
     const authHeader = req.headers.authorization;
-    
+
+    // Local/dev: allow trading without login screen when bypass is enabled
+    if (
+      (!authHeader || !authHeader.startsWith('Bearer ')) &&
+      process.env.LOCAL_AUTH_BYPASS === 'true'
+    ) {
+      const localUser = await prisma.user.findFirst({
+        where: { email: process.env.LOCAL_USER_EMAIL || 'local@smarttrade.test' },
+        select: { id: true, email: true, role: true, isActive: true }
+      });
+      if (localUser?.isActive) {
+        req.user = { id: localUser.id, email: localUser.email, role: localUser.role };
+        next();
+        return;
+      }
+      res.status(401).json({
+        success: false,
+        message: 'Local user missing. Call POST /api/auth/local-guest first.'
+      });
+      return;
+    }
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       res.status(401).json({
         success: false,
@@ -33,16 +53,14 @@ export const authenticate = async (
       return;
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const token = authHeader.substring(7);
 
-    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       id: string;
       email: string;
       role: string;
     };
 
-    // Check if user exists and is active
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
       select: { id: true, email: true, role: true, isActive: true }
@@ -56,7 +74,6 @@ export const authenticate = async (
       return;
     }
 
-    // Attach user to request
     req.user = {
       id: user.id,
       email: user.email,
@@ -72,7 +89,7 @@ export const authenticate = async (
       });
       return;
     }
-    
+
     if (error instanceof jwt.TokenExpiredError) {
       res.status(401).json({
         success: false,

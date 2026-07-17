@@ -1,8 +1,7 @@
 import { motion } from 'motion/react';
 import { TrendingUp, TrendingDown, Activity, RefreshCw, AlertCircle } from 'lucide-react';
-import { LineChart, Line, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { useMarketData } from '../contexts/MarketDataContext';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 // Color mapping for sectors
 const sectorColors: Record<string, string> = {
@@ -22,38 +21,6 @@ const sectorColors: Record<string, string> = {
   'Realty': '#b91c1c'
 };
 
-// Generate intraday data from indices
-const generateIntradayData = (indices: any[]) => {
-  const nifty = indices.find(idx => idx.name === 'NIFTY 50');
-  const sensex = indices.find(idx => idx.name === 'SENSEX');
-  
-  if (!nifty || !sensex) {
-    return [
-      { time: '9:15', nifty: 21600, sensex: 72000 },
-      { time: '10:00', nifty: 21650, sensex: 72100 },
-      { time: '11:00', nifty: 21700, sensex: 72200 },
-      { time: '12:00', nifty: 21750, sensex: 72300 },
-      { time: '1:00', nifty: 21720, sensex: 72250 },
-      { time: '2:00', nifty: 21800, sensex: 72400 },
-      { time: '3:00', nifty: 21846, sensex: 72456 }
-    ];
-  }
-
-  // Generate intraday progression
-  const times = ['9:15', '10:00', '11:00', '12:00', '1:00', '2:00', '3:00', '3:30'];
-  const niftyStart = nifty.open || nifty.previousClose;
-  const sensexStart = sensex.open || sensex.previousClose;
-  
-  return times.map((time, idx) => {
-    const progress = idx / (times.length - 1);
-    return {
-      time,
-      nifty: niftyStart + (nifty.value - niftyStart) * progress,
-      sensex: sensexStart + (sensex.value - sensexStart) * progress
-    };
-  });
-};
-
 export function LiveMarketData() {
   const { 
     indices, 
@@ -65,13 +32,6 @@ export function LiveMarketData() {
   } = useMarketData();
   
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [intradayData, setIntradayData] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (indices.length > 0) {
-      setIntradayData(generateIntradayData(indices));
-    }
-  }, [indices]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -125,14 +85,11 @@ export function LiveMarketData() {
           Major Indices
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {indices.slice(0, 4).map((index, i) => {
+          {indices.length === 0 ? (
+            <div className="col-span-full text-center py-8 text-gray-400">No data available</div>
+          ) : (
+            indices.slice(0, 4).map((index, i) => {
             const isPositive = index.change >= 0;
-            // Generate simple chart data from current value
-            const chartData = Array.from({ length: 6 }, (_, idx) => ({
-              value: index.previousClose + ((index.value - index.previousClose) / 5) * idx,
-              index: idx
-            }));
-            
             return (
               <motion.div
                 key={index.name}
@@ -150,56 +107,32 @@ export function LiveMarketData() {
                     <span>({isPositive ? '+' : ''}{index.changePercent.toFixed(2)}%)</span>
                   </div>
                 </div>
-                <ResponsiveContainer width="100%" height={60}>
-                  <LineChart data={chartData}>
-                    <Line 
-                      type="monotone" 
-                      dataKey="value" 
-                      stroke={isPositive ? "#10b981" : "#ef4444"}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div className="text-xs text-gray-500 mt-3">
+                  High {index.high == null ? '—' : index.high.toLocaleString('en-IN')} · Low {index.low == null ? '—' : index.low.toLocaleString('en-IN')}
+                </div>
               </motion.div>
             );
-          })}
+          })
+          )}
         </div>
       </div>
 
       {/* Intraday Chart */}
       <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-6">
         <h3 className="text-white mb-4">Intraday Performance</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={intradayData}>
-            <defs>
-              <linearGradient id="colorNifty" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
-              </linearGradient>
-              <linearGradient id="colorSensex" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="time" stroke="#9ca3af" />
-            <YAxis stroke="#9ca3af" />
-            <Tooltip 
-              contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-              itemStyle={{ color: '#fff' }}
-            />
-            <Area type="monotone" dataKey="nifty" stroke="#06b6d4" fillOpacity={1} fill="url(#colorNifty)" name="NIFTY 50" />
-            <Area type="monotone" dataKey="sensex" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorSensex)" name="SENSEX" />
-          </AreaChart>
-        </ResponsiveContainer>
+        <div className="flex items-center justify-center h-[180px] text-center text-gray-400">
+          Historical intraday series is not available from the current market API.
+        </div>
       </div>
 
       {/* Sector Performance Heatmap */}
       <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-6">
         <h3 className="text-white mb-4">Sector Performance Heatmap</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {sectorPerformance.map((sector, i) => {
+          {sectorPerformance.length === 0 ? (
+            <div className="col-span-full text-center py-8 text-gray-400">No data available</div>
+          ) : (
+            sectorPerformance.map((sector, i) => {
             const color = sectorColors[sector.sector] || '#6b7280';
             return (
               <motion.div
@@ -228,12 +161,13 @@ export function LiveMarketData() {
                 ></div>
               </motion.div>
             );
-          })}
+          })
+          )}
         </div>
       </div>
 
       {/* Market Breadth */}
-      {marketBreadth && (
+      {marketBreadth && (marketBreadth.advances + marketBreadth.declines + marketBreadth.unchanged > 0) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-4">
             <div className="text-sm text-gray-400 mb-2">Advances / Declines</div>
@@ -246,7 +180,7 @@ export function LiveMarketData() {
               <div 
                 className="h-full bg-green-400" 
                 style={{ 
-                  width: `${(marketBreadth.advances / (marketBreadth.advances + marketBreadth.declines)) * 100}%` 
+                  width: `${marketBreadth.advances + marketBreadth.declines > 0 ? (marketBreadth.advances / (marketBreadth.advances + marketBreadth.declines)) * 100 : 0}%`
                 }}
               ></div>
             </div>

@@ -9,10 +9,12 @@ import { LiveTradeMonitor } from './trading/LiveTradeMonitor';
 import { PerformanceMetrics } from './trading/PerformanceMetrics';
 import { AIInsightsEngine } from './trading/AIInsightsEngine';
 import { Badge } from './ui/badge';
+import { useTradingDashboard } from '../hooks/useTradingDashboard';
 
 export function TradingDashboard() {
   const [dateRange, setDateRange] = useState('1M');
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
+  const { summary } = useTradingDashboard(dateRange);
 
   const handleExportCSV = () => {
     console.log('Exporting to CSV...');
@@ -39,8 +41,8 @@ export function TradingDashboard() {
                 <Activity className="w-6 h-6 text-blue-400" />
               </div>
               <div>
-                <h1 className="text-2xl text-white">Smart AI Trading Analytics</h1>
-                <p className="text-sm text-gray-400">EdgeXAi Labs - Real-time Strategy Performance & AI Insights</p>
+                <h1 className="text-2xl text-white">Trading Analytics</h1>
+                <p className="text-sm text-gray-400">Account and strategy performance from connected services</p>
               </div>
             </div>
           </div>
@@ -70,23 +72,20 @@ export function TradingDashboard() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           <div className="bg-gray-800/50 rounded-lg p-4">
             <div className="text-sm text-gray-400 mb-1">Total P&L (MTD)</div>
-            <div className="text-2xl text-green-400">+₹2,45,680</div>
-            <div className="text-xs text-green-400 mt-1">+18.4%</div>
+            <div className="text-2xl text-green-400">{summary ? `₹${summary.totalPnL.toLocaleString('en-IN')}` : '—'}</div>
           </div>
           <div className="bg-gray-800/50 rounded-lg p-4">
             <div className="text-sm text-gray-400 mb-1">Active Strategies</div>
-            <div className="text-2xl text-cyan-400">12</div>
-            <div className="text-xs text-gray-400 mt-1">8 profitable</div>
+            <div className="text-2xl text-cyan-400">{summary ? summary.activeAgents : '—'}</div>
           </div>
           <div className="bg-gray-800/50 rounded-lg p-4">
             <div className="text-sm text-gray-400 mb-1">Win Rate</div>
-            <div className="text-2xl text-blue-400">73.5%</div>
-            <div className="text-xs text-gray-400 mt-1">156/212 trades</div>
+            <div className="text-2xl text-blue-400">{summary ? `${summary.winRate.toFixed(1)}%` : '—'}</div>
+            <div className="text-xs text-gray-400 mt-1">{summary ? `${summary.totalTrades} trades` : 'No trade data'}</div>
           </div>
           <div className="bg-gray-800/50 rounded-lg p-4">
-            <div className="text-sm text-gray-400 mb-1">AI Confidence</div>
-            <div className="text-2xl text-purple-400">89%</div>
-            <div className="text-xs text-gray-400 mt-1">High accuracy</div>
+            <div className="text-sm text-gray-400 mb-1">Open Orders</div>
+            <div className="text-2xl text-purple-400">{summary ? summary.openOrders : '—'}</div>
           </div>
         </div>
       </div>

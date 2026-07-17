@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { TrendingDown, Calendar, DollarSign, BarChart3, Activity, Target, Loader2 } from 'lucide-react';
+import { TrendingDown, Calendar, DollarSign, BarChart3, Target, Loader2 } from 'lucide-react';
 import { Card } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Badge } from './ui/badge';
 import { portfolioService, AdvancedMetricsResponse } from '../services/portfolioService';
 
 interface AdvancedPerformanceMetricsProps {
@@ -21,7 +20,7 @@ export function AdvancedPerformanceMetrics({ strategyId, portfolioId }: Advanced
       setLoading(true);
       try {
         const response = await portfolioService.getAdvancedMetrics(selectedPeriod, strategyId);
-        setMetricsData(response.data);
+        setMetricsData(response.success ? response.data : null);
       } catch (error) {
         console.error('Error loading advanced metrics:', error);
       } finally {
@@ -237,12 +236,12 @@ export function AdvancedPerformanceMetrics({ strategyId, portfolioId }: Advanced
           <div className="bg-gray-900/50 rounded-lg p-4">
             <div className="text-sm text-gray-400 mb-1">Short-Term Gains</div>
             <div className="text-xl text-white">₹{metricsData.taxImpact.shortTermGains.toLocaleString()}</div>
-            <div className="text-xs text-orange-400">Tax @ 15%: ₹{metricsData.taxImpact.shortTermTax.toLocaleString()}</div>
+            <div className="text-xs text-orange-400">Tax: ₹{metricsData.taxImpact.shortTermTax.toLocaleString()}</div>
           </div>
           <div className="bg-gray-900/50 rounded-lg p-4">
             <div className="text-sm text-gray-400 mb-1">Long-Term Gains</div>
             <div className="text-xl text-white">₹{metricsData.taxImpact.longTermGains.toLocaleString()}</div>
-            <div className="text-xs text-green-400">Tax @ 10%: ₹{metricsData.taxImpact.longTermTax.toLocaleString()}</div>
+            <div className="text-xs text-green-400">Tax: ₹{metricsData.taxImpact.longTermTax.toLocaleString()}</div>
           </div>
           <div className="bg-gray-900/50 rounded-lg p-4">
             <div className="text-sm text-gray-400 mb-1">Total Tax Liability</div>
@@ -256,18 +255,6 @@ export function AdvancedPerformanceMetrics({ strategyId, portfolioId }: Advanced
           </div>
         </div>
 
-        <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-          <div className="flex items-start gap-3">
-            <Activity className="w-5 h-5 text-blue-400 mt-0.5" />
-            <div>
-              <div className="text-sm text-blue-400 font-semibold mb-1">Tax Optimization Tip</div>
-              <div className="text-xs text-gray-400">
-                Consider holding positions for more than 1 year to benefit from lower LTCG rates. 
-                Current portfolio has {((metricsData.taxImpact.longTermGains / (metricsData.taxImpact.shortTermGains + metricsData.taxImpact.longTermGains)) * 100).toFixed(1)}% long-term holdings.
-              </div>
-            </div>
-          </div>
-        </div>
       </motion.div>
 
       {/* Strategy Details Summary */}
@@ -293,23 +280,19 @@ export function AdvancedPerformanceMetrics({ strategyId, portfolioId }: Advanced
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card className="bg-gray-900/50 border-gray-700 p-4">
                 <div className="text-xs text-gray-400 mb-1">Strategy Type</div>
-                <div className="text-sm text-white font-semibold">Momentum + Mean Reversion</div>
+                <div className="text-sm text-white font-semibold">—</div>
               </Card>
               <Card className="bg-gray-900/50 border-gray-700 p-4">
                 <div className="text-xs text-gray-400 mb-1">Market Segment</div>
-                <div className="text-sm text-white font-semibold">Equity + F&O</div>
+                <div className="text-sm text-white font-semibold">—</div>
               </Card>
               <Card className="bg-gray-900/50 border-gray-700 p-4">
                 <div className="text-xs text-gray-400 mb-1">Risk Level</div>
-                <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
-                  Moderate
-                </Badge>
+                <span className="text-white">—</span>
               </Card>
               <Card className="bg-gray-900/50 border-gray-700 p-4">
                 <div className="text-xs text-gray-400 mb-1">Status</div>
-                <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                  Active
-                </Badge>
+                <span className="text-white">—</span>
               </Card>
             </div>
           </TabsContent>
@@ -324,15 +307,15 @@ export function AdvancedPerformanceMetrics({ strategyId, portfolioId }: Advanced
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <Card className="bg-gray-900/50 border-gray-700 p-4">
                 <div className="text-xs text-gray-400 mb-1">Profit Factor</div>
-                <div className="text-lg text-green-400 font-semibold">2.34</div>
+                <div className="text-lg text-white font-semibold">—</div>
               </Card>
               <Card className="bg-gray-900/50 border-gray-700 p-4">
                 <div className="text-xs text-gray-400 mb-1">Recovery Factor</div>
-                <div className="text-lg text-cyan-400 font-semibold">3.12</div>
+                <div className="text-lg text-white font-semibold">—</div>
               </Card>
               <Card className="bg-gray-900/50 border-gray-700 p-4">
                 <div className="text-xs text-gray-400 mb-1">Calmar Ratio</div>
-                <div className="text-lg text-purple-400 font-semibold">1.98</div>
+                <div className="text-lg text-white font-semibold">—</div>
               </Card>
             </div>
           </TabsContent>

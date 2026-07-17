@@ -1,12 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Slider } from './ui/slider';
-import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Button } from './ui/button';
 import { Brain, PlayCircle, Loader2 } from 'lucide-react';
 import { AIRecommendationsTable } from './AIRecommendationsTable';
 import { tradingService } from '../services/tradingService';
+import { integrationService, BrokerAccountView } from '../services/integrationService';
 
 interface RebalancingConsoleProps {
   autoExecute: boolean;
@@ -18,6 +17,12 @@ interface RebalancingConsoleProps {
 export function RebalancingConsole({ autoExecute, setAutoExecute, selectedBroker, setSelectedBroker }: RebalancingConsoleProps) {
   const [executing, setExecuting] = useState(false);
   const [lastResult, setLastResult] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<BrokerAccountView[]>([]);
+
+  useEffect(() => {
+    setAutoExecute(false);
+    integrationService.listAccounts().then(setAccounts).catch(() => setAccounts([]));
+  }, [setAutoExecute]);
 
   const handleExecuteRebalance = async () => {
     setExecuting(true);
@@ -25,18 +30,16 @@ export function RebalancingConsole({ autoExecute, setAutoExecute, selectedBroker
     try {
       const screener = await tradingService.runScreener({ topN: 5 });
       const buys = screener.topBuys || screener.stocks?.filter((s: { signal: string }) => s.signal === 'BUY').slice(0, 3) || [];
-      const isPaper = !autoExecute;
-
       for (const stock of buys) {
         await tradingService.placeOrder({
           symbol: stock.symbol,
           tradeType: 'BUY',
           quantity: 1,
-          isPaper
+          isPaper: true
         });
       }
 
-      setLastResult(`Executed ${buys.length} ${isPaper ? 'paper' : 'live'} buy orders from screener picks`);
+      setLastResult(`Executed ${buys.length} paper buy orders from screener results`);
     } catch (err) {
       setLastResult(err instanceof Error ? err.message : 'Rebalance failed');
     } finally {
@@ -60,84 +63,26 @@ export function RebalancingConsole({ autoExecute, setAutoExecute, selectedBroker
         {/* Target Allocation Rules */}
         <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
           <h3 className="text-cyan-400 mb-4">Target Allocation (%)</h3>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between mb-2">
-                <span className="text-sm text-gray-400">Technology</span>
-                <span className="text-sm text-white">30%</span>
-              </div>
-              <Slider defaultValue={[30]} max={100} step={1} className="w-full" />
-            </div>
-            <div>
-              <div className="flex justify-between mb-2">
-                <span className="text-sm text-gray-400">Finance</span>
-                <span className="text-sm text-white">25%</span>
-              </div>
-              <Slider defaultValue={[25]} max={100} step={1} className="w-full" />
-            </div>
-            <div>
-              <div className="flex justify-between mb-2">
-                <span className="text-sm text-gray-400">Healthcare</span>
-                <span className="text-sm text-white">20%</span>
-              </div>
-              <Slider defaultValue={[20]} max={100} step={1} className="w-full" />
-            </div>
-            <div>
-              <div className="flex justify-between mb-2">
-                <span className="text-sm text-gray-400">Energy</span>
-                <span className="text-sm text-white">15%</span>
-              </div>
-              <Slider defaultValue={[15]} max={100} step={1} className="w-full" />
-            </div>
-            <div>
-              <div className="flex justify-between mb-2">
-                <span className="text-sm text-gray-400">Consumer</span>
-                <span className="text-sm text-white">10%</span>
-              </div>
-              <Slider defaultValue={[10]} max={100} step={1} className="w-full" />
-            </div>
-          </div>
+          <div className="text-center py-12 text-gray-400">No target allocation configuration is available.</div>
         </div>
 
         {/* Rebalance Settings */}
         <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
           <h3 className="text-cyan-400 mb-4">Rebalance Settings</h3>
           <div className="space-y-4">
-            <div>
-              <label className="text-sm text-gray-400 block mb-2">Frequency</label>
-              <Select defaultValue="monthly">
-                <SelectTrigger className="bg-gray-900 border-gray-700">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                  <SelectItem value="quarterly">Quarterly</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="text-sm text-gray-400 block mb-2">Risk Profile</label>
-              <div className="flex justify-between text-xs text-gray-500 mb-2">
-                <span>Conservative</span>
-                <span>Aggressive</span>
-              </div>
-              <Slider defaultValue={[60]} max={100} step={1} className="w-full" />
-              <div className="text-center mt-2 text-cyan-400">Moderate-Aggressive</div>
-            </div>
+            <div className="text-sm text-gray-400">Frequency: <span className="text-white">—</span></div>
+            <div className="text-sm text-gray-400">Risk profile: <span className="text-white">—</span></div>
 
             <div>
               <label className="text-sm text-gray-400 block mb-2">Broker API</label>
               <Select value={selectedBroker} onValueChange={setSelectedBroker}>
                 <SelectTrigger className="bg-gray-900 border-gray-700">
-                  <SelectValue />
+                  <SelectValue placeholder="No account selected" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Zerodha">Zerodha</SelectItem>
-                  <SelectItem value="AngelOne">AngelOne</SelectItem>
-                  <SelectItem value="Interactive Brokers">Interactive Brokers</SelectItem>
+                  {accounts.map(account => (
+                    <SelectItem key={account.id} value={account.id}>{account.displayName || account.broker}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -150,24 +95,11 @@ export function RebalancingConsole({ autoExecute, setAutoExecute, selectedBroker
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg">
               <div>
-                <div className="text-white">Auto Execute Trades</div>
-                <div className="text-xs text-gray-500">Via {selectedBroker} API</div>
+                <div className="text-white">Execution Mode</div>
+                <div className="text-xs text-gray-500">Paper trading only</div>
               </div>
-              <Switch checked={autoExecute} onCheckedChange={setAutoExecute} />
+              <span className="text-sm text-cyan-400">Paper</span>
             </div>
-            
-            {autoExecute && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3"
-              >
-                <div className="text-sm text-yellow-400">⚠️ Warning</div>
-                <div className="text-xs text-gray-400 mt-1">
-                  Trades will be executed automatically. Ensure sufficient funds and review tax implications.
-                </div>
-              </motion.div>
-            )}
 
             <Button
               onClick={handleExecuteRebalance}
@@ -175,7 +107,7 @@ export function RebalancingConsole({ autoExecute, setAutoExecute, selectedBroker
               className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
             >
               {executing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <PlayCircle className="w-4 h-4 mr-2" />}
-              {autoExecute ? 'Execute Live Rebalance' : 'Execute Paper Rebalance'}
+              Execute Paper Rebalance
             </Button>
             {lastResult && (
               <p className="text-xs text-gray-400 mt-2">{lastResult}</p>

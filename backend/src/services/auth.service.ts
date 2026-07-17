@@ -2,6 +2,7 @@ import { prisma } from '../config/database';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { AppError } from '../middleware/error.middleware';
+import { TenantService } from './tenant.service';
 
 export class AuthService {
   static async register(email: string, password: string, name: string) {
@@ -32,6 +33,8 @@ export class AuthService {
         createdAt: true
       }
     });
+
+    await TenantService.ensurePersonalTenant(user.id, user.email, user.name);
 
     // Generate tokens
     const accessToken = this.generateAccessToken(user);
@@ -65,6 +68,8 @@ export class AuthService {
     if (!isPasswordValid) {
       throw new AppError('Invalid credentials', 401);
     }
+
+    await TenantService.ensurePersonalTenant(user.id, user.email, user.name);
 
     // Generate tokens
     const accessToken = this.generateAccessToken(user);

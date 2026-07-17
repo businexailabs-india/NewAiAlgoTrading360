@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, logout, refreshToken, getProfile, updateProfile, seedDemoUsers } from '../controllers/auth.controller';
+import { register, login, logout, refreshToken, getProfile, updateProfile, localGuest } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -8,7 +8,7 @@ const router = Router();
 router.post('/register', register);
 router.post('/login', login);
 router.post('/refresh', refreshToken);
-router.post('/seed-demo', seedDemoUsers);
+router.post('/local-guest', localGuest);
 
 // Protected routes
 router.post('/logout', authenticate, logout);

@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Settings,
   Database,
+  Server,
   Shield,
   BarChart3,
   Clock,
@@ -15,25 +16,21 @@ import {
   XCircle,
   Eye,
   UserPlus,
-  Ban,
   Mail,
-  Bell,
   Download,
   Upload,
   RefreshCw,
   Search,
   Filter,
   MoreVertical,
-  Edit,
-  Trash2,
-  Lock,
-  Unlock
+  Edit
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { DhanIntegrationPanel } from './DhanIntegrationPanel';
 import {
   LineChart,
   Line,
@@ -50,67 +47,65 @@ import {
   Legend
 } from 'recharts';
 
-// Mock data for admin dashboard
-const systemStats = {
-  totalUsers: 12847,
-  activeUsers: 8234,
-  totalRevenue: 45678900,
-  activeSubscriptions: 9876,
-  apiCalls: 2847392,
-  systemUptime: 99.98,
-  avgResponseTime: 145,
-  errorRate: 0.02
+interface AdminConsoleProps {
+  systemStats?: {
+    totalUsers: number;
+    activeUsers: number;
+    totalRevenue: number;
+    activeSubscriptions: number;
+    apiCalls: number;
+    systemUptime: number;
+    avgResponseTime: number;
+    errorRate: number;
+  };
+  revenueData?: Array<{ month: string; revenue: number; users: number }>;
+  userActivityData?: Array<{ time: string; active: number }>;
+  subscriptionDistribution?: Array<{ name: string; value: number; color: string }>;
+  recentUsers?: Array<{
+    id: number | string;
+    name: string;
+    email: string;
+    plan: string;
+    status: string;
+    joined: string;
+    revenue: number;
+  }>;
+  systemAlerts?: Array<{
+    id: number | string;
+    type: string;
+    message: string;
+    time: string;
+    severity: string;
+  }>;
+  apiEndpoints?: Array<{
+    endpoint: string;
+    calls: number;
+    avgTime: number;
+    errorRate: number;
+    status: string;
+  }>;
+}
+
+const emptyStats = {
+  totalUsers: 0,
+  activeUsers: 0,
+  totalRevenue: 0,
+  activeSubscriptions: 0,
+  apiCalls: 0,
+  systemUptime: 0,
+  avgResponseTime: 0,
+  errorRate: 0
 };
 
-const revenueData = [
-  { month: 'Jan', revenue: 3200000, users: 1200 },
-  { month: 'Feb', revenue: 3800000, users: 1450 },
-  { month: 'Mar', revenue: 4200000, users: 1680 },
-  { month: 'Apr', revenue: 3900000, users: 1590 },
-  { month: 'May', revenue: 4500000, users: 1820 },
-  { month: 'Jun', revenue: 4800000, users: 1950 }
-];
-
-const userActivityData = [
-  { time: '00:00', active: 1200 },
-  { time: '04:00', active: 800 },
-  { time: '08:00', active: 3500 },
-  { time: '12:00', active: 5200 },
-  { time: '16:00', active: 4800 },
-  { time: '20:00', active: 3200 }
-];
-
-const subscriptionDistribution = [
-  { name: 'Free', value: 3500, color: '#6b7280' },
-  { name: 'Basic', value: 4200, color: '#3b82f6' },
-  { name: 'Pro', value: 2800, color: '#8b5cf6' },
-  { name: 'Enterprise', value: 1376, color: '#06b6d4' }
-];
-
-const recentUsers = [
-  { id: 1, name: 'Rajesh Kumar', email: 'rajesh.k@email.com', plan: 'Pro', status: 'active', joined: '2 hours ago', revenue: 2999 },
-  { id: 2, name: 'Priya Sharma', email: 'priya.s@email.com', plan: 'Basic', status: 'active', joined: '5 hours ago', revenue: 999 },
-  { id: 3, name: 'Amit Patel', email: 'amit.p@email.com', plan: 'Enterprise', status: 'active', joined: '1 day ago', revenue: 9999 },
-  { id: 4, name: 'Sneha Reddy', email: 'sneha.r@email.com', plan: 'Pro', status: 'pending', joined: '2 days ago', revenue: 2999 },
-  { id: 5, name: 'Vikram Singh', email: 'vikram.s@email.com', plan: 'Free', status: 'active', joined: '3 days ago', revenue: 0 }
-];
-
-const systemAlerts = [
-  { id: 1, type: 'warning', message: 'High API usage detected on server-3', time: '5 mins ago', severity: 'medium' },
-  { id: 2, type: 'error', message: 'Database backup failed', time: '15 mins ago', severity: 'high' },
-  { id: 3, type: 'info', message: 'New feature deployed successfully', time: '1 hour ago', severity: 'low' },
-  { id: 4, type: 'warning', message: 'SSL certificate expires in 7 days', time: '2 hours ago', severity: 'medium' }
-];
-
-const apiEndpoints = [
-  { endpoint: '/api/portfolio/holdings', calls: 145678, avgTime: 120, errorRate: 0.01, status: 'healthy' },
-  { endpoint: '/api/market/data', calls: 892341, avgTime: 85, errorRate: 0.02, status: 'healthy' },
-  { endpoint: '/api/trading/orders', calls: 67234, avgTime: 210, errorRate: 0.05, status: 'warning' },
-  { endpoint: '/api/user/profile', calls: 234567, avgTime: 95, errorRate: 0.01, status: 'healthy' },
-  { endpoint: '/api/broker/connect', calls: 12456, avgTime: 450, errorRate: 0.15, status: 'critical' }
-];
-
-export function AdminConsole() {
+export function AdminConsole({
+  systemStats = emptyStats,
+  revenueData = [],
+  userActivityData = [],
+  subscriptionDistribution = [],
+  recentUsers = [],
+  systemAlerts = [],
+  apiEndpoints = []
+}: AdminConsoleProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
   const [refreshing, setRefreshing] = useState(false);
@@ -120,9 +115,14 @@ export function AdminConsole() {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
+  const filteredUsers = recentUsers.filter(u =>
+    !searchQuery ||
+    u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -163,13 +163,12 @@ export function AdminConsole() {
         </div>
       </motion.div>
 
-      {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Users', value: systemStats.totalUsers.toLocaleString(), change: '+12.5%', icon: Users, color: 'cyan' },
-          { label: 'Active Users', value: systemStats.activeUsers.toLocaleString(), change: '+8.3%', icon: Activity, color: 'green' },
-          { label: 'Total Revenue', value: `₹${(systemStats.totalRevenue / 10000000).toFixed(2)}Cr`, change: '+15.7%', icon: DollarSign, color: 'purple' },
-          { label: 'API Calls', value: `${(systemStats.apiCalls / 1000000).toFixed(2)}M`, change: '+23.1%', icon: BarChart3, color: 'blue' }
+          { label: 'Total Users', value: systemStats.totalUsers.toLocaleString(), icon: Users, color: 'cyan' },
+          { label: 'Active Users', value: systemStats.activeUsers.toLocaleString(), icon: Activity, color: 'green' },
+          { label: 'Total Revenue', value: `₹${(systemStats.totalRevenue / 10000000).toFixed(2)}Cr`, icon: DollarSign, color: 'purple' },
+          { label: 'API Calls', value: systemStats.apiCalls.toLocaleString(), icon: BarChart3, color: 'blue' }
         ].map((metric, i) => (
           <motion.div
             key={metric.label}
@@ -180,9 +179,6 @@ export function AdminConsole() {
           >
             <div className="flex items-center justify-between mb-4">
               <metric.icon className={`w-8 h-8 text-${metric.color}-400`} />
-              <Badge className={`bg-${metric.color}-500/20 text-${metric.color}-400 border-${metric.color}-500/30`}>
-                {metric.change}
-              </Badge>
             </div>
             <div className="text-3xl font-bold text-white mb-1">{metric.value}</div>
             <div className="text-sm text-gray-400">{metric.label}</div>
@@ -190,7 +186,6 @@ export function AdminConsole() {
         ))}
       </div>
 
-      {/* Main Content Tabs */}
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="bg-gray-800 mb-6">
           <TabsTrigger value="overview" className="data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-400">
@@ -209,92 +204,102 @@ export function AdminConsole() {
             <Activity className="w-4 h-4 mr-2" />
             API Monitor
           </TabsTrigger>
+          <TabsTrigger value="dhan" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
+            <Server className="w-4 h-4 mr-2" />
+            Dhan MCP
+          </TabsTrigger>
           <TabsTrigger value="alerts" className="data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-400">
             <AlertTriangle className="w-4 h-4 mr-2" />
             Alerts
           </TabsTrigger>
         </TabsList>
 
-        {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
-          {/* Revenue Chart */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-gray-800/30 border border-gray-700 rounded-xl p-6"
           >
             <h3 className="text-white text-xl mb-4">Revenue & User Growth</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="month" stroke="#9ca3af" />
-                <YAxis stroke="#9ca3af" />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                  itemStyle={{ color: '#fff' }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="revenue" stroke="#8b5cf6" strokeWidth={3} name="Revenue (₹)" />
-                <Line type="monotone" dataKey="users" stroke="#06b6d4" strokeWidth={3} name="New Users" />
-              </LineChart>
-            </ResponsiveContainer>
+            {revenueData.length === 0 ? (
+              <div className="text-center py-16 text-gray-400">No data available</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={revenueData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="month" stroke="#9ca3af" />
+                  <YAxis stroke="#9ca3af" />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                    itemStyle={{ color: '#fff' }}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="revenue" stroke="#8b5cf6" strokeWidth={3} name="Revenue (₹)" />
+                  <Line type="monotone" dataKey="users" stroke="#06b6d4" strokeWidth={3} name="New Users" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </motion.div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* User Activity */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className="bg-gray-800/30 border border-gray-700 rounded-xl p-6"
             >
               <h3 className="text-white text-xl mb-4">User Activity (24h)</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={userActivityData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="time" stroke="#9ca3af" />
-                  <YAxis stroke="#9ca3af" />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Bar dataKey="active" fill="#06b6d4" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {userActivityData.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">No data available</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={userActivityData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="time" stroke="#9ca3af" />
+                    <YAxis stroke="#9ca3af" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                      itemStyle={{ color: '#fff' }}
+                    />
+                    <Bar dataKey="active" fill="#06b6d4" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </motion.div>
 
-            {/* Subscription Distribution */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className="bg-gray-800/30 border border-gray-700 rounded-xl p-6"
             >
               <h3 className="text-white text-xl mb-4">Subscription Distribution</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={subscriptionDistribution}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {subscriptionDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              {subscriptionDistribution.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">No data available</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart>
+                    <Pie
+                      data={subscriptionDistribution}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {subscriptionDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </motion.div>
           </div>
         </TabsContent>
 
-        {/* Users Tab */}
         <TabsContent value="users" className="space-y-6">
-          {/* Search and Filters */}
           <div className="flex items-center gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -315,80 +320,70 @@ export function AdminConsole() {
             </Button>
           </div>
 
-          {/* Users Table */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-gray-800/30 border border-gray-700 rounded-xl overflow-hidden"
           >
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-900/50">
-                  <tr>
-                    <th className="text-left p-4 text-gray-400 font-medium">User</th>
-                    <th className="text-left p-4 text-gray-400 font-medium">Plan</th>
-                    <th className="text-left p-4 text-gray-400 font-medium">Status</th>
-                    <th className="text-left p-4 text-gray-400 font-medium">Revenue</th>
-                    <th className="text-left p-4 text-gray-400 font-medium">Joined</th>
-                    <th className="text-right p-4 text-gray-400 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentUsers.map((user) => (
-                    <tr key={user.id} className="border-t border-gray-700 hover:bg-gray-800/50">
-                      <td className="p-4">
-                        <div>
-                          <div className="text-white font-medium">{user.name}</div>
-                          <div className="text-sm text-gray-400">{user.email}</div>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <Badge className={`
-                          ${user.plan === 'Enterprise' ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : ''}
-                          ${user.plan === 'Pro' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : ''}
-                          ${user.plan === 'Basic' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : ''}
-                          ${user.plan === 'Free' ? 'bg-gray-500/20 text-gray-400 border-gray-500/30' : ''}
-                        `}>
-                          {user.plan}
-                        </Badge>
-                      </td>
-                      <td className="p-4">
-                        <Badge className={`
-                          ${user.status === 'active' ? 'bg-green-500/20 text-green-400 border-green-500/30' : ''}
-                          ${user.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' : ''}
-                        `}>
-                          {user.status}
-                        </Badge>
-                      </td>
-                      <td className="p-4 text-white">₹{user.revenue.toLocaleString()}</td>
-                      <td className="p-4 text-gray-400">{user.joined}</td>
-                      <td className="p-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button size="sm" variant="ghost">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button size="sm" variant="ghost">
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button size="sm" variant="ghost">
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
+            {filteredUsers.length === 0 ? (
+              <div className="text-center py-16 text-gray-400">No data available</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-900/50">
+                    <tr>
+                      <th className="text-left p-4 text-gray-400 font-medium">User</th>
+                      <th className="text-left p-4 text-gray-400 font-medium">Plan</th>
+                      <th className="text-left p-4 text-gray-400 font-medium">Status</th>
+                      <th className="text-left p-4 text-gray-400 font-medium">Revenue</th>
+                      <th className="text-left p-4 text-gray-400 font-medium">Joined</th>
+                      <th className="text-right p-4 text-gray-400 font-medium">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.map((user) => (
+                      <tr key={user.id} className="border-t border-gray-700 hover:bg-gray-800/50">
+                        <td className="p-4">
+                          <div>
+                            <div className="text-white font-medium">{user.name}</div>
+                            <div className="text-sm text-gray-400">{user.email}</div>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">{user.plan}</Badge>
+                        </td>
+                        <td className="p-4">
+                          <Badge className={
+                            user.status === 'active'
+                              ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                              : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                          }>
+                            {user.status}
+                          </Badge>
+                        </td>
+                        <td className="p-4 text-white">₹{user.revenue.toLocaleString()}</td>
+                        <td className="p-4 text-gray-400">{user.joined}</td>
+                        <td className="p-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button size="sm" variant="ghost"><Eye className="w-4 h-4" /></Button>
+                            <Button size="sm" variant="ghost"><Edit className="w-4 h-4" /></Button>
+                            <Button size="sm" variant="ghost"><MoreVertical className="w-4 h-4" /></Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </motion.div>
         </TabsContent>
 
-        {/* System Tab */}
         <TabsContent value="system" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'System Uptime', value: `${systemStats.systemUptime}%`, icon: CheckCircle, color: 'green' },
-              { label: 'Avg Response Time', value: `${systemStats.avgResponseTime}ms`, icon: Clock, color: 'blue' },
+              { label: 'System Uptime', value: systemStats.systemUptime ? `${systemStats.systemUptime}%` : '—', icon: CheckCircle, color: 'green' },
+              { label: 'Avg Response Time', value: systemStats.avgResponseTime ? `${systemStats.avgResponseTime}ms` : '—', icon: Clock, color: 'blue' },
               { label: 'Error Rate', value: `${systemStats.errorRate}%`, icon: AlertTriangle, color: 'yellow' },
               { label: 'Active Subscriptions', value: systemStats.activeSubscriptions.toLocaleString(), icon: TrendingUp, color: 'purple' }
             ].map((stat, i) => (
@@ -408,7 +403,6 @@ export function AdminConsole() {
             ))}
           </div>
 
-          {/* System Actions */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -444,7 +438,6 @@ export function AdminConsole() {
           </motion.div>
         </TabsContent>
 
-        {/* API Monitor Tab */}
         <TabsContent value="api" className="space-y-6">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -454,77 +447,82 @@ export function AdminConsole() {
             <div className="p-6 border-b border-gray-700">
               <h3 className="text-white text-xl">API Endpoints Performance</h3>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-900/50">
-                  <tr>
-                    <th className="text-left p-4 text-gray-400 font-medium">Endpoint</th>
-                    <th className="text-left p-4 text-gray-400 font-medium">Calls</th>
-                    <th className="text-left p-4 text-gray-400 font-medium">Avg Time</th>
-                    <th className="text-left p-4 text-gray-400 font-medium">Error Rate</th>
-                    <th className="text-left p-4 text-gray-400 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {apiEndpoints.map((endpoint, i) => (
-                    <tr key={i} className="border-t border-gray-700 hover:bg-gray-800/50">
-                      <td className="p-4 text-white font-mono text-sm">{endpoint.endpoint}</td>
-                      <td className="p-4 text-gray-300">{endpoint.calls.toLocaleString()}</td>
-                      <td className="p-4 text-gray-300">{endpoint.avgTime}ms</td>
-                      <td className="p-4 text-gray-300">{(endpoint.errorRate * 100).toFixed(2)}%</td>
-                      <td className="p-4">
-                        <Badge className={`
-                          ${endpoint.status === 'healthy' ? 'bg-green-500/20 text-green-400 border-green-500/30' : ''}
-                          ${endpoint.status === 'warning' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' : ''}
-                          ${endpoint.status === 'critical' ? 'bg-red-500/20 text-red-400 border-red-500/30' : ''}
-                        `}>
-                          {endpoint.status}
-                        </Badge>
-                      </td>
+            {apiEndpoints.length === 0 ? (
+              <div className="text-center py-16 text-gray-400">No data available</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-900/50">
+                    <tr>
+                      <th className="text-left p-4 text-gray-400 font-medium">Endpoint</th>
+                      <th className="text-left p-4 text-gray-400 font-medium">Calls</th>
+                      <th className="text-left p-4 text-gray-400 font-medium">Avg Time</th>
+                      <th className="text-left p-4 text-gray-400 font-medium">Error Rate</th>
+                      <th className="text-left p-4 text-gray-400 font-medium">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {apiEndpoints.map((endpoint, i) => (
+                      <tr key={i} className="border-t border-gray-700 hover:bg-gray-800/50">
+                        <td className="p-4 text-white font-mono text-sm">{endpoint.endpoint}</td>
+                        <td className="p-4 text-gray-300">{endpoint.calls.toLocaleString()}</td>
+                        <td className="p-4 text-gray-300">{endpoint.avgTime}ms</td>
+                        <td className="p-4 text-gray-300">{(endpoint.errorRate * 100).toFixed(2)}%</td>
+                        <td className="p-4">
+                          <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+                            {endpoint.status}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </motion.div>
         </TabsContent>
 
-        {/* Alerts Tab */}
+        <TabsContent value="dhan" className="space-y-4">
+          <DhanIntegrationPanel />
+        </TabsContent>
+
         <TabsContent value="alerts" className="space-y-4">
-          {systemAlerts.map((alert) => (
-            <motion.div
-              key={alert.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className={`bg-gray-800/30 border rounded-xl p-4 ${
-                alert.severity === 'high' ? 'border-red-500/50' :
-                alert.severity === 'medium' ? 'border-yellow-500/50' :
-                'border-blue-500/50'
-              }`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className={`w-5 h-5 mt-0.5 ${
-                    alert.severity === 'high' ? 'text-red-400' :
-                    alert.severity === 'medium' ? 'text-yellow-400' :
-                    'text-blue-400'
-                  }`} />
-                  <div>
-                    <p className="text-white font-medium">{alert.message}</p>
-                    <p className="text-sm text-gray-400 mt-1">{alert.time}</p>
+          {systemAlerts.length === 0 ? (
+            <div className="text-center py-16 text-gray-400 bg-gray-800/30 border border-gray-700 rounded-xl">
+              No data available
+            </div>
+          ) : (
+            systemAlerts.map((alert) => (
+              <motion.div
+                key={alert.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className={`bg-gray-800/30 border rounded-xl p-4 ${
+                  alert.severity === 'high' ? 'border-red-500/50' :
+                  alert.severity === 'medium' ? 'border-yellow-500/50' :
+                  'border-blue-500/50'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className={`w-5 h-5 mt-0.5 ${
+                      alert.severity === 'high' ? 'text-red-400' :
+                      alert.severity === 'medium' ? 'text-yellow-400' :
+                      'text-blue-400'
+                    }`} />
+                    <div>
+                      <p className="text-white font-medium">{alert.message}</p>
+                      <p className="text-sm text-gray-400 mt-1">{alert.time}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="ghost"><Eye className="w-4 h-4" /></Button>
+                    <Button size="sm" variant="ghost"><XCircle className="w-4 h-4" /></Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="ghost">
-                    <Eye className="w-4 h-4" />
-                  </Button>
-                  <Button size="sm" variant="ghost">
-                    <XCircle className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            ))
+          )}
         </TabsContent>
       </Tabs>
     </div>

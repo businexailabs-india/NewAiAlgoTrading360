@@ -4,24 +4,68 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { BarChart3, FileText, Radio } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const backtestData = [
-  { date: '2020', value: 100000 },
-  { date: '2021', value: 145000 },
-  { date: '2022', value: 132000 },
-  { date: '2023', value: 178000 },
-  { date: '2024', value: 224000 },
-  { date: '2025', value: 284000 }
+interface CurvePoint {
+  date: string;
+  value: number;
+}
+
+interface MetricRow {
+  label: string;
+  backtest: string;
+  paper: string;
+  live: string;
+}
+
+interface TradingTabsProps {
+  backtestData?: CurvePoint[];
+  performanceMetrics?: MetricRow[];
+}
+
+const emptyMetrics: MetricRow[] = [
+  { label: 'Annualized Return', backtest: '—', paper: '—', live: '—' },
+  { label: 'Sharpe Ratio', backtest: '—', paper: '—', live: '—' },
+  { label: 'Max Drawdown', backtest: '—', paper: '—', live: '—' },
+  { label: 'Win Rate', backtest: '—', paper: '—', live: '—' }
 ];
 
-const performanceMetrics = [
-  { label: 'Annualized Return', backtest: '22.4%', paper: '18.7%', live: '24.1%' },
-  { label: 'Sharpe Ratio', backtest: '1.82', paper: '1.65', live: '1.84' },
-  { label: 'Max Drawdown', backtest: '-18.2%', paper: '-12.5%', live: '-15.8%' },
-  { label: 'Win Rate', backtest: '67%', paper: '62%', live: '69%' }
-];
+function EmptyChart({ title }: { title: string }) {
+  return (
+    <div>
+      <h3 className="text-xl text-white mb-4">{title}</h3>
+      <div className="flex items-center justify-center h-[300px] text-gray-400 border border-gray-700 rounded-lg bg-gray-800/30">
+        No data available
+      </div>
+    </div>
+  );
+}
 
-export function TradingTabs() {
+function CurveChart({ data, gradientId, stroke }: { data: CurvePoint[]; gradientId: string; stroke: string }) {
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <AreaChart data={data}>
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={stroke} stopOpacity={0.3}/>
+            <stop offset="95%" stopColor={stroke} stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+        <XAxis dataKey="date" stroke="#9ca3af" />
+        <YAxis stroke="#9ca3af" />
+        <Tooltip 
+          contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+          itemStyle={{ color: '#fff' }}
+        />
+        <Area type="monotone" dataKey="value" stroke={stroke} strokeWidth={2} fillOpacity={1} fill={`url(#${gradientId})`} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+export function TradingTabs({ backtestData = [], performanceMetrics = emptyMetrics }: TradingTabsProps) {
   const [activeTab, setActiveTab] = useState('backtest');
+  const metrics = performanceMetrics.length > 0 ? performanceMetrics : emptyMetrics;
+  const hasCurve = backtestData.length > 0;
 
   return (
     <motion.div
@@ -48,30 +92,16 @@ export function TradingTabs() {
 
         <TabsContent value="backtest" className="mt-0">
           <div className="space-y-6">
-            <div>
-              <h3 className="text-xl text-white mb-4">QuantConnect Backtest Results</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={backtestData}>
-                  <defs>
-                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="date" stroke="#9ca3af" />
-                  <YAxis stroke="#9ca3af" />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Area type="monotone" dataKey="value" stroke="#06b6d4" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-
+            {hasCurve ? (
+              <div>
+                <h3 className="text-xl text-white mb-4">QuantConnect Backtest Results</h3>
+                <CurveChart data={backtestData} gradientId="colorValue" stroke="#06b6d4" />
+              </div>
+            ) : (
+              <EmptyChart title="QuantConnect Backtest Results" />
+            )}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {performanceMetrics.map((metric) => (
+              {metrics.map((metric) => (
                 <div key={metric.label} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
                   <div className="text-sm text-gray-400 mb-1">{metric.label}</div>
                   <div className="text-2xl text-cyan-400">{metric.backtest}</div>
@@ -83,30 +113,16 @@ export function TradingTabs() {
 
         <TabsContent value="paper" className="mt-0">
           <div className="space-y-6">
-            <div>
-              <h3 className="text-xl text-white mb-4">Paper Trading Performance</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={backtestData}>
-                  <defs>
-                    <linearGradient id="colorPaper" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="date" stroke="#9ca3af" />
-                  <YAxis stroke="#9ca3af" />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorPaper)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-
+            {hasCurve ? (
+              <div>
+                <h3 className="text-xl text-white mb-4">Paper Trading Performance</h3>
+                <CurveChart data={backtestData} gradientId="colorPaper" stroke="#3b82f6" />
+              </div>
+            ) : (
+              <EmptyChart title="Paper Trading Performance" />
+            )}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {performanceMetrics.map((metric) => (
+              {metrics.map((metric) => (
                 <div key={metric.label} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
                   <div className="text-sm text-gray-400 mb-1">{metric.label}</div>
                   <div className="text-2xl text-blue-400">{metric.paper}</div>
@@ -122,28 +138,15 @@ export function TradingTabs() {
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
               <h3 className="text-xl text-white">Live Trading (Active)</h3>
             </div>
-            
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={backtestData}>
-                <defs>
-                  <linearGradient id="colorLive" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="date" stroke="#9ca3af" />
-                <YAxis stroke="#9ca3af" />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                  itemStyle={{ color: '#fff' }}
-                />
-                <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorLive)" />
-              </AreaChart>
-            </ResponsiveContainer>
-
+            {hasCurve ? (
+              <CurveChart data={backtestData} gradientId="colorLive" stroke="#10b981" />
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-gray-400 border border-gray-700 rounded-lg bg-gray-800/30">
+                No data available
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {performanceMetrics.map((metric) => (
+              {metrics.map((metric) => (
                 <div key={metric.label} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
                   <div className="text-sm text-gray-400 mb-1">{metric.label}</div>
                   <div className="text-2xl text-green-400">{metric.live}</div>
@@ -154,7 +157,6 @@ export function TradingTabs() {
         </TabsContent>
       </Tabs>
 
-      {/* Comparison Table */}
       <div className="mt-6 bg-gray-800/30 rounded-xl p-4 border border-gray-700">
         <h3 className="text-white mb-4">Performance Comparison</h3>
         <div className="overflow-x-auto">
@@ -168,7 +170,7 @@ export function TradingTabs() {
               </tr>
             </thead>
             <tbody>
-              {performanceMetrics.map((metric) => (
+              {metrics.map((metric) => (
                 <tr key={metric.label} className="border-b border-gray-800">
                   <td className="py-3 text-gray-300">{metric.label}</td>
                   <td className="py-3 text-right text-cyan-400">{metric.backtest}</td>

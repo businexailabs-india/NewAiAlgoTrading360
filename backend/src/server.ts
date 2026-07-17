@@ -10,9 +10,8 @@ import rateLimit from 'express-rate-limit';
 
 // Import services and logger before use
 import { initializeQuantConnect } from './services/quantconnect.service';
-import { startAgentScheduler } from './services/agent-scheduler.service';
+import { startAgentScheduler, stopAgentScheduler } from './services/agent-scheduler.service';
 import { startMarketStream } from './services/market-stream.service';
-import { DemoSeedService } from './services/demo-seed.service';
 import { errorHandler } from './middleware/error.middleware';
 import { logger } from './utils/logger';
 
@@ -49,13 +48,19 @@ import dataRoutes from './routes/data.routes';
 import advisorRoutes from './routes/advisor.routes';
 import knowledgeRoutes from './routes/knowledge.routes';
 import llmRoutes from './routes/llm.routes';
+import integrationRoutes from './routes/integration.routes';
+import advisoryMarketplaceRoutes from './routes/advisory-marketplace.routes';
+import dhanlaxmiRoutes from './routes/dhanlaxmi.routes';
+import { RiskGateService } from './services/risk-gate.service';
+import { OutboxService } from './events/outbox.service';
 
 // Initialize Express app
 const app: Application = express();
 const httpServer = createServer(app);
 
 // Trust proxy - required for Cloud Run and rate limiting
-app.set('trust proxy', true);
+// Only trust proxy in production (ALB); local rate-limit breaks with trust proxy=true
+app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
 
 // Initialize Socket.IO
 const io = new SocketIOServer(httpServer, {
@@ -106,8 +111,11 @@ app.use(morgan('combined', { stream: { write: (message) => logger.info(message.t
 // Rate limiting
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'),
-  message: 'Too many requests from this IP, please try again later.'
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '2000'),
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { trustProxy: false }
 });
 app.use('/api/', limiter);
 
@@ -139,6 +147,9 @@ app.use('/api/data', dataRoutes);
 app.use('/api/advisor', advisorRoutes);
 app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/llm', llmRoutes);
+app.use('/api/integrations', integrationRoutes);
+app.use('/api', advisoryMarketplaceRoutes);
+app.use('/api', dhanlaxmiRoutes);
 
 // WebSocket connection handling
 io.on('connection', (socket) => {
@@ -190,14 +201,22 @@ httpServer.listen(PORT, () => {
 
   startMarketStream(io);
 
-  DemoSeedService.ensureDemoUsers().catch(err => {
-    logger.warn('Demo user seed skipped or failed', err);
+  RiskGateService.ensureGlobalControl().catch(err => {
+    logger.warn(`Trading control seed failed: ${err instanceof Error ? err.message : String(err)}`);
   });
+
+  // Non-blocking outbox dispatcher for login → advisory events
+  setInterval((): void => {
+    void OutboxService.dispatchPending(25).catch((): undefined => undefined);
+  }, Number(process.env.OUTBOX_DISPATCH_INTERVAL_MS || 5000));
+
+  logger.info(`Live trading env gate: LIVE_TRADING_ENABLED=${process.env.LIVE_TRADING_ENABLED === 'true'}`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM signal received: closing HTTP server');
+  stopAgentScheduler();
   httpServer.close(() => {
     logger.info('HTTP server closed');
     process.exit(0);

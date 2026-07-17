@@ -163,19 +163,26 @@ export const calculateMaxDrawdown = (values: number[]): number => {
   return maxDrawdown * 100; // Return as percentage
 };
 
+/** NSE regular session in Asia/Kolkata (IST): Mon–Fri 09:15–15:30 */
 export const isMarketOpen = (): boolean => {
-  const now = new Date();
-  const day = now.getDay();
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    hour: 'numeric',
+    minute: 'numeric',
+    hourCycle: 'h23'
+  }).formatToParts(new Date());
+
+  const get = (type: string) => parts.find(p => p.type === type)?.value || '';
+  const weekday = get('weekday');
+  if (weekday === 'Sat' || weekday === 'Sun') return false;
+
+  const hours = parseInt(get('hour'), 10);
+  const minutes = parseInt(get('minute'), 10);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return false;
+
   const time = hours * 60 + minutes;
-
-  // Market closed on weekends
-  if (day === 0 || day === 6) return false;
-
-  // Market hours: 9:15 AM to 3:30 PM IST
-  const marketOpen = 9 * 60 + 15; // 9:15 AM
-  const marketClose = 15 * 60 + 30; // 3:30 PM
-
+  const marketOpen = 9 * 60 + 15;
+  const marketClose = 15 * 60 + 30;
   return time >= marketOpen && time <= marketClose;
 };

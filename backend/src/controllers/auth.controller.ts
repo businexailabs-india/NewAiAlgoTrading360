@@ -1,7 +1,29 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
-import { DemoSeedService } from '../services/demo-seed.service';
+import { TenantService } from '../services/tenant.service';
+import { OutboxService } from '../events/outbox.service';
 import { asyncHandler } from '../middleware/error.middleware';
+
+async function emitLoginEvent(
+  req: Request,
+  user: { id: string; email: string },
+  authMethod: 'password' | 'local_guest'
+) {
+  try {
+    const tenant = await TenantService.ensurePersonalTenant(user.id, user.email);
+    // Non-blocking: enqueue only; never await advisory generation
+    void OutboxService.emitLoginSuccess({
+      userId: user.id,
+      tenantId: tenant.id,
+      email: user.email,
+      authMethod,
+      ip: req.ip,
+      userAgent: req.get('user-agent') || undefined
+    });
+  } catch {
+    // Login must succeed even if event infrastructure is down
+  }
+}
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { email, password, name } = req.body;
@@ -19,11 +41,15 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   const result = await AuthService.login(email, password);
+  await emitLoginEvent(req, result.user, 'password');
 
   res.status(200).json({
     success: true,
     message: 'Login successful',
-    data: result
+    data: {
+      ...result,
+      advisory: { status: 'preparing', message: 'AI advisory is being prepared' }
+    }
   });
 });
 
@@ -83,11 +109,36 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
   });
 });
 
-export const seedDemoUsers = asyncHandler(async (_req: Request, res: Response) => {
-  const result = await DemoSeedService.ensureDemoUsers();
+/** Local/dev guest session — no password UI required */
+export const localGuest = asyncHandler(async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production' && process.env.LOCAL_AUTH_BYPASS !== 'true') {
+    res.status(403).json({ success: false, message: 'Local guest auth disabled in production' });
+    return;
+  }
+
+  const email = process.env.LOCAL_USER_EMAIL || 'local@smarttrade.test';
+  const password = process.env.LOCAL_USER_PASSWORD || 'LocalDemo2026!';
+  const name = process.env.LOCAL_USER_NAME || 'Local Trader';
+
+  let result;
+  try {
+    result = await AuthService.login(email, password);
+  } catch {
+    try {
+      result = await AuthService.register(email, password, name);
+    } catch {
+      result = await AuthService.login(email, password);
+    }
+  }
+
+  await emitLoginEvent(req, result.user, 'local_guest');
+
   res.status(200).json({
     success: true,
-    message: 'Demo users ready',
-    data: result
+    message: 'Local guest session ready',
+    data: {
+      ...result,
+      advisory: { status: 'preparing', message: 'AI advisory is being prepared' }
+    }
   });
 });

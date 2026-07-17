@@ -1,20 +1,39 @@
 import { motion } from 'motion/react';
 import { TrendingUp, Activity, DollarSign, PiggyBank } from 'lucide-react';
 
-const performanceData = [
+interface PerformanceMetric {
+  label: string;
+  value: string;
+  positive?: boolean;
+}
+
+interface PerformanceCard {
+  title: string;
+  value?: string;
+  subtitle?: string;
+  metrics?: PerformanceMetric[];
+  icon: typeof TrendingUp;
+  color: 'cyan' | 'blue' | 'purple' | 'green';
+}
+
+interface PerformanceCardsProps {
+  data?: PerformanceCard[];
+}
+
+const emptyPerformanceData: PerformanceCard[] = [
   {
     title: 'CAGR',
     metrics: [
-      { label: '1Y', value: '24.5%' },
-      { label: '3Y', value: '18.2%' },
-      { label: '5Y', value: '15.8%' }
+      { label: '1Y', value: '—' },
+      { label: '3Y', value: '—' },
+      { label: '5Y', value: '—' }
     ],
     icon: TrendingUp,
     color: 'cyan'
   },
   {
     title: 'Sharpe Ratio',
-    value: '1.84',
+    value: '—',
     subtitle: 'Risk-adjusted return',
     icon: Activity,
     color: 'blue'
@@ -22,8 +41,8 @@ const performanceData = [
   {
     title: 'Alpha / Beta',
     metrics: [
-      { label: 'Alpha', value: '2.4%' },
-      { label: 'Beta', value: '0.92' }
+      { label: 'Alpha', value: '—' },
+      { label: 'Beta', value: '—' }
     ],
     icon: DollarSign,
     color: 'purple'
@@ -31,8 +50,8 @@ const performanceData = [
   {
     title: 'Gains',
     metrics: [
-      { label: 'Unrealized', value: '₹4.2L', positive: true },
-      { label: 'Realized', value: '₹8.7L', positive: true }
+      { label: 'Unrealized', value: '—' },
+      { label: 'Realized', value: '—' }
     ],
     icon: PiggyBank,
     color: 'green'
@@ -53,7 +72,9 @@ const iconColorClasses = {
   green: 'text-green-400'
 };
 
-export function PerformanceCards() {
+export function PerformanceCards({ data }: PerformanceCardsProps) {
+  const performanceData = data && data.length > 0 ? data : emptyPerformanceData;
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {performanceData.map((card, index) => (
@@ -62,16 +83,16 @@ export function PerformanceCards() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: index * 0.1 }}
-          className={`bg-gradient-to-br ${colorClasses[card.color as keyof typeof colorClasses]} border rounded-2xl p-5 shadow-xl hover:shadow-2xl transition-shadow`}
+          className={`bg-gradient-to-br ${colorClasses[card.color]} border rounded-2xl p-5 shadow-xl hover:shadow-2xl transition-shadow`}
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-gray-300">{card.title}</h3>
-            <card.icon className={`w-5 h-5 ${iconColorClasses[card.color as keyof typeof iconColorClasses]}`} />
+            <card.icon className={`w-5 h-5 ${iconColorClasses[card.color]}`} />
           </div>
           
           {card.value && (
             <div>
-              <div className={`text-3xl ${iconColorClasses[card.color as keyof typeof iconColorClasses]}`}>{card.value}</div>
+              <div className={`text-3xl ${iconColorClasses[card.color]}`}>{card.value}</div>
               {card.subtitle && <div className="text-sm text-gray-500 mt-1">{card.subtitle}</div>}
             </div>
           )}

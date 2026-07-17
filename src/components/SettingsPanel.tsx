@@ -15,9 +15,6 @@ import {
   MessageSquare,
   DollarSign,
   Lock,
-  Eye,
-  EyeOff,
-  Check,
   Save,
   CheckCircle
 } from 'lucide-react';
@@ -28,20 +25,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { integrationService, BrokerAccountView } from '../services/integrationService';
 
 // Settings storage key
-const SETTINGS_STORAGE_KEY = 'smarttrade_settings';
+const SETTINGS_STORAGE_KEY = 'smarttrade_settings_v2';
 
 // Default settings
 const DEFAULT_SETTINGS = {
   notifications: {
-    emailAlerts: true,
-    pushNotifications: true,
-    tradeExecutions: true,
-    priceAlerts: true,
-    anomalyDetection: true,
+    emailAlerts: false,
+    pushNotifications: false,
+    tradeExecutions: false,
+    priceAlerts: false,
+    anomalyDetection: false,
     dailyReports: false,
-    weeklyReports: true
+    weeklyReports: false
   },
   general: {
     language: 'en',
@@ -53,14 +51,14 @@ const DEFAULT_SETTINGS = {
     chartColorScheme: 'green-red'
   },
   trading: {
-    defaultOrderType: 'market',
-    defaultQuantity: 100,
-    maxPositionSize: 100000,
-    defaultStopLoss: 3.5,
-    defaultTarget: 5.0
+    defaultOrderType: '',
+    defaultQuantity: null as number | null,
+    maxPositionSize: null as number | null,
+    defaultStopLoss: null as number | null,
+    defaultTarget: null as number | null
   },
   security: {
-    twoFactorEnabled: true
+    twoFactorEnabled: false
   }
 };
 
@@ -86,10 +84,16 @@ export function SettingsPanel() {
   const [currency, setCurrency] = useState(loadSettings().general.currency);
   const [timezone, setTimezone] = useState(loadSettings().general.timezone);
   const [tradingSettings, setTradingSettings] = useState(loadSettings().trading);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(loadSettings().security.twoFactorEnabled);
-  
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [accounts, setAccounts] = useState<BrokerAccountView[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    integrationService.listAccounts()
+      .then(setAccounts)
+      .catch(() => setAccounts([]))
+      .finally(() => setAccountsLoading(false));
+  }, []);
 
   // Update global theme when changed
   const handleThemeChange = (newTheme: 'dark' | 'light') => {
@@ -114,9 +118,6 @@ export function SettingsPanel() {
         chartColorScheme
       },
       trading: tradingSettings,
-      security: {
-        twoFactorEnabled
-      },
       lastUpdated: new Date().toISOString()
     };
 
@@ -146,7 +147,7 @@ export function SettingsPanel() {
     }, 1000); // Debounce auto-save by 1 second
 
     return () => clearTimeout(timer);
-  }, [notifications, theme, language, currency, timezone, chartColorScheme, tradingSettings, twoFactorEnabled]);
+  }, [notifications, theme, language, currency, timezone, chartColorScheme, tradingSettings]);
 
   return (
     <div className="space-y-6">
@@ -200,7 +201,7 @@ export function SettingsPanel() {
           </TabsTrigger>
           <TabsTrigger value="api" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
             <Key className="w-4 h-4 mr-2" />
-            API Keys
+            Connected Accounts
           </TabsTrigger>
           <TabsTrigger value="trading" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
             <Zap className="w-4 h-4 mr-2" />
@@ -410,16 +411,7 @@ export function SettingsPanel() {
                       <div className="text-sm text-gray-400">Add extra security layer</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                      <Check className="w-3 h-3 mr-1" />
-                      Enabled
-                    </Badge>
-                    <Switch 
-                      checked={twoFactorEnabled}
-                      onCheckedChange={setTwoFactorEnabled}
-                    />
-                  </div>
+                  <Badge className="bg-gray-700 text-gray-300 border-gray-600">Status unavailable</Badge>
                 </div>
 
                 <div className="p-4 bg-gray-900/50 rounded-lg">
@@ -451,24 +443,7 @@ export function SettingsPanel() {
 
             <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-6">
               <h3 className="text-white mb-4">Active Sessions</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg">
-                  <div>
-                    <div className="text-white">Chrome on Windows</div>
-                    <div className="text-sm text-gray-400">Mumbai, India • Active now</div>
-                  </div>
-                  <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Current</Badge>
-                </div>
-                <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg">
-                  <div>
-                    <div className="text-white">Mobile App on Android</div>
-                    <div className="text-sm text-gray-400">Mumbai, India • 2 hours ago</div>
-                  </div>
-                  <Button size="sm" variant="outline" className="border-red-700 text-red-400 hover:bg-red-900/20">
-                    Revoke
-                  </Button>
-                </div>
-              </div>
+              <div className="text-center py-6 text-gray-400">Session data is not available from the current API.</div>
             </div>
           </motion.div>
         </TabsContent>
@@ -480,7 +455,7 @@ export function SettingsPanel() {
             animate={{ opacity: 1, y: 0 }}
             className="bg-gray-800/30 border border-gray-700 rounded-xl p-6"
           >
-            <h3 className="text-white mb-4">API Key Management</h3>
+            <h3 className="text-white mb-4">Connected Accounts</h3>
             
             <div className="space-y-4">
               <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
@@ -488,64 +463,26 @@ export function SettingsPanel() {
                   <Shield className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <div className="text-yellow-400 mb-1">Security Notice</div>
-                    <div className="text-sm text-gray-300">Never share your API keys. They provide full access to your trading account.</div>
+                    <div className="text-sm text-gray-300">Credentials are managed securely and are never displayed here.</div>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <div className="p-4 bg-gray-900/50 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
+                {accountsLoading ? (
+                  <div className="text-center py-6 text-gray-400">Loading connected accounts…</div>
+                ) : accounts.length === 0 ? (
+                  <div className="text-center py-6 text-gray-400">No broker accounts connected.</div>
+                ) : accounts.map(account => (
+                  <div key={account.id} className="p-4 bg-gray-900/50 rounded-lg flex items-center justify-between">
                     <div>
-                      <div className="text-white">Zerodha API Key</div>
-                      <div className="text-sm text-gray-400">Created: Jan 5, 2025</div>
+                      <div className="text-white">{account.displayName || account.broker}</div>
+                      <div className="text-sm text-gray-400">{account.maskedClientId || 'Account identifier unavailable'}</div>
                     </div>
-                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Active</Badge>
+                    <Badge className="bg-gray-700 text-gray-300 border-gray-600">{account.status}</Badge>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Input 
-                      type={showApiKey ? "text" : "password"}
-                      value="ak_live_xxxxxxxxxxxxxxxxxxxxxx"
-                      readOnly
-                      className="bg-gray-800 border-gray-700 font-mono text-sm"
-                    />
-                    <Button 
-                      size="icon"
-                      variant="outline"
-                      className="border-gray-700"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                    >
-                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gray-900/50 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="text-white">AngelOne API Key</div>
-                      <div className="text-sm text-gray-400">Created: Dec 28, 2024</div>
-                    </div>
-                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Active</Badge>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Input 
-                      type="password"
-                      value="ak_live_xxxxxxxxxxxxxxxxxxxxxx"
-                      readOnly
-                      className="bg-gray-800 border-gray-700 font-mono text-sm"
-                    />
-                    <Button size="icon" variant="outline" className="border-gray-700">
-                      <Eye className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
+                ))}
               </div>
-
-              <Button className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600">
-                <Key className="w-4 h-4 mr-2" />
-                Generate New API Key
-              </Button>
             </div>
           </motion.div>
         </TabsContent>
@@ -583,8 +520,8 @@ export function SettingsPanel() {
                   <Input 
                     id="default-quantity"
                     type="number"
-                    value={tradingSettings.defaultQuantity}
-                    onChange={(e) => setTradingSettings({...tradingSettings, defaultQuantity: parseInt(e.target.value) || 0})}
+                    value={tradingSettings.defaultQuantity ?? ''}
+                    onChange={(e) => setTradingSettings({...tradingSettings, defaultQuantity: e.target.value ? parseInt(e.target.value) : null})}
                     className="bg-gray-800 border-gray-700 mt-2"
                   />
                 </div>
@@ -594,8 +531,8 @@ export function SettingsPanel() {
                   <Input 
                     id="max-position-size"
                     type="number"
-                    value={tradingSettings.maxPositionSize}
-                    onChange={(e) => setTradingSettings({...tradingSettings, maxPositionSize: parseInt(e.target.value) || 0})}
+                    value={tradingSettings.maxPositionSize ?? ''}
+                    onChange={(e) => setTradingSettings({...tradingSettings, maxPositionSize: e.target.value ? parseInt(e.target.value) : null})}
                     className="bg-gray-800 border-gray-700 mt-2"
                   />
                 </div>
@@ -606,8 +543,8 @@ export function SettingsPanel() {
                     id="default-stop-loss"
                     type="number"
                     step="0.1"
-                    value={tradingSettings.defaultStopLoss}
-                    onChange={(e) => setTradingSettings({...tradingSettings, defaultStopLoss: parseFloat(e.target.value) || 0})}
+                    value={tradingSettings.defaultStopLoss ?? ''}
+                    onChange={(e) => setTradingSettings({...tradingSettings, defaultStopLoss: e.target.value ? parseFloat(e.target.value) : null})}
                     className="bg-gray-800 border-gray-700 mt-2"
                   />
                 </div>
@@ -618,8 +555,8 @@ export function SettingsPanel() {
                     id="default-target"
                     type="number"
                     step="0.1"
-                    value={tradingSettings.defaultTarget}
-                    onChange={(e) => setTradingSettings({...tradingSettings, defaultTarget: parseFloat(e.target.value) || 0})}
+                    value={tradingSettings.defaultTarget ?? ''}
+                    onChange={(e) => setTradingSettings({...tradingSettings, defaultTarget: e.target.value ? parseFloat(e.target.value) : null})}
                     className="bg-gray-800 border-gray-700 mt-2"
                   />
                 </div>

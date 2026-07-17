@@ -1,0 +1,48 @@
+[project]
+name = "bxai-tradeos-advisory"
+version = "0.1.0"
+description = "AI Algo Advisory & DhanLaxmi Assistant for BusineXAi TradeOS"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+  "libs/advisory-core",
+  "libs/mcp-connectors",
+  "libs/strategy-normalizer",
+  "libs/risk-explainability",
+  "libs/market-regime-detector",
+  "libs/language-core",
+  "libs/voice-core",
+  "libs/intent-core",
+  "libs/trade-command-parser",
+  "libs/safety-guardrails",
+  "libs/localized-response-templates",
+  "services/ai-advisory-service",
+  "services/mcp-connector-service",
+  "services/external-algo-discovery-service",
+  "services/paper-test-orchestrator",
+  "services/dhanlaxmi-assistant-service",
+  "services/voice-gateway-service",
+  "services/language-intent-service",
+  "services/trade-approval-service",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = [
+  "libs/advisory-core/tests",
+  "libs/mcp-connectors/tests",
+  "libs/strategy-normalizer/tests",
+  "libs/risk-explainability/tests",
+  "libs/market-regime-detector/tests",
+  "services/ai-advisory-service/tests",
+  "services/mcp-connector-service/tests",
+  "services/external-algo-discovery-service/tests",
+  "services/paper-test-orchestrator/tests",
+  "services/dhanlaxmi-assistant-service/tests",
+]

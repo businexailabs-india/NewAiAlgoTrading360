@@ -3,10 +3,12 @@ import { AppError } from '../middleware/error.middleware';
 import { PredictionService } from './prediction.service';
 import { OrderExecutionService } from './order-execution.service';
 import { ScreenerService } from './screener.service';
-import { DatabaseService } from './database.service';
 import { MarketService } from './market.service';
 
 import { StrategyService } from './strategy.service';
+import { ExecutionTargetResolver } from './execution-target.resolver';
+import { RiskGateService } from './risk-gate.service';
+import { randomUUID } from 'crypto';
 
 export interface AgentConfig {
   minConfidence?: number;
@@ -18,6 +20,8 @@ export interface AgentConfig {
   strategyIds?: string[];
   symbols?: string[];
   product?: 'CNC' | 'MIS';
+  /** Pin execution to a specific owned account; otherwise uses UserExecutionContext */
+  brokerConnectionId?: string;
   [key: string]: unknown;
 }
 
@@ -99,6 +103,10 @@ export class TradingAgentService {
     const config = agent.config as AgentConfig;
     const isPaper = agent.mode === 'paper';
 
+    if (!isPaper) {
+      await RiskGateService.ensureGlobalControl();
+    }
+
     const run = await prisma.agentRun.create({
       data: { agentId, status: 'running' }
     });
@@ -112,20 +120,29 @@ export class TradingAgentService {
 
       let brokerConnectionId: string | undefined;
       if (!isPaper) {
-        const connections = await DatabaseService.getBrokerConnections(userId);
-        if (!connections.length) throw new AppError('Connect a broker for live trading', 400);
-        brokerConnectionId = connections[0].id;
+        const pinned = typeof config.brokerConnectionId === 'string' ? config.brokerConnectionId : undefined;
+        const target = await ExecutionTargetResolver.resolve(userId, {
+          brokerConnectionId: pinned,
+          requireLive: true
+        });
+        brokerConnectionId = target.brokerConnectionId || undefined;
+        if (!brokerConnectionId) throw new AppError('No active broker account selected for live agent', 400);
       }
 
       for (const signal of signals.slice(0, maxOrders)) {
         if (signal.direction === 'HOLD' || signal.confidence < minConfidence) continue;
 
-        const quote = await MarketService.getQuote(signal.symbol, userId);
+        let quote;
+        try {
+          quote = await MarketService.getQuote(signal.symbol, userId);
+        } catch {
+          continue;
+        }
+        if (!(quote.price > 0)) continue;
         const maxValue = config.maxPositionValue || 50000;
-        const qty = Math.max(1, Math.min(
-          defaultQty,
-          Math.floor(maxValue / (quote.price || 1))
-        ));
+        let qty = Math.floor(maxValue / quote.price);
+        if (qty < 1) continue;
+        qty = Math.min(defaultQty, qty);
 
         const order = await OrderExecutionService.placeOrder({
           userId,
@@ -136,7 +153,9 @@ export class TradingAgentService {
           product: config.product || 'CNC',
           isPaper,
           brokerConnectionId,
-          agentId
+          agentId,
+          source: 'AGENT',
+          idempotencyKey: `agent-${agentId}-${signal.symbol}-${signal.direction}-${run.id}-${randomUUID().slice(0, 8)}`
         });
 
         ordersPlaced.push({
@@ -145,7 +164,8 @@ export class TradingAgentService {
           direction: signal.direction,
           quantity: qty,
           confidence: signal.confidence,
-          status: order.status
+          status: order.status,
+          brokerConnectionId
         });
       }
 
@@ -232,18 +252,21 @@ export class TradingAgentService {
     if (config.symbols?.length) {
       for (const symbol of config.symbols) {
         if (!signals.find(s => s.symbol === symbol)) {
-          const historical = await MarketService.getHistoricalData(symbol, 30);
-          const quote = await MarketService.getQuote(symbol, userId);
-          const closes = historical.map(h => h.close);
-          const momentum = closes.length > 5
-            ? (closes[closes.length - 1] - closes[closes.length - 6]) / closes[closes.length - 6]
-            : 0;
-          signals.push({
-            symbol,
-            direction: momentum > 0.02 ? 'BUY' : momentum < -0.02 ? 'SELL' : 'HOLD',
-            confidence: Math.min(90, 50 + Math.abs(momentum) * 500),
-            source: 'momentum_scan'
-          });
+          try {
+            const historical = await MarketService.getHistoricalData(symbol, 30);
+            const quote = await MarketService.getQuote(symbol, userId);
+            if (!(quote.price > 0) || historical.length < 6) continue;
+            const closes = historical.map(h => h.close);
+            const momentum = (closes[closes.length - 1] - closes[closes.length - 6]) / closes[closes.length - 6];
+            signals.push({
+              symbol,
+              direction: momentum > 0.02 ? 'BUY' : momentum < -0.02 ? 'SELL' : 'HOLD',
+              confidence: Math.min(90, 50 + Math.abs(momentum) * 500),
+              source: 'momentum_scan'
+            });
+          } catch {
+            // skip symbols without usable market data
+          }
         }
       }
     }

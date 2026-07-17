@@ -39,7 +39,7 @@ const menuItems = [
     id: 'smart-trading',
     label: 'Smart Trading',
     icon: Zap,
-    badge: { text: 'Live', color: 'green' }
+    badge: null
   },
   {
     id: 'portfolio',
@@ -51,7 +51,7 @@ const menuItems = [
     id: 'ai-advisor',
     label: 'AI Advisor',
     icon: Brain,
-    badge: { text: '4', color: 'purple' }
+    badge: null
   },
   {
     id: 'strategies',
@@ -69,7 +69,7 @@ const menuItems = [
     id: 'anomalies',
     label: 'Anomalies',
     icon: AlertCircle,
-    badge: { text: '3', color: 'red' }
+    badge: null
   },
   {
     id: 'tax-reports',
@@ -325,34 +325,15 @@ export function Sidebar({ activeSection, onSectionChange, onLogout, user }: Side
           );
         })}
 
-        {/* Logout Button */}
-        <motion.button
-          onClick={onLogout}
-          className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-red-400 hover:bg-red-500/10 transition-all relative group border border-transparent hover:border-red-500/30"
-        >
-          <LogOut className="w-5 h-5 flex-shrink-0" />
-
-          <AnimatePresence>
-            {isExpanded && (
-              <motion.span
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                transition={{ duration: 0.2 }}
-                className="text-sm whitespace-nowrap"
-              >
-                Logout
-              </motion.span>
-            )}
-          </AnimatePresence>
-
-          {/* Tooltip for collapsed state */}
-          {!isExpanded && (
-            <div className="absolute left-full ml-4 px-3 py-2 bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-gray-700">
-              Logout
-            </div>
-          )}
-        </motion.button>
+        {onLogout && (
+          <motion.button
+            onClick={onLogout}
+            className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-red-400 hover:bg-red-500/10 transition-all relative group border border-transparent hover:border-red-500/30"
+          >
+            <LogOut className="w-5 h-5 flex-shrink-0" />
+            {isExpanded && <span className="text-sm whitespace-nowrap">Logout</span>}
+          </motion.button>
+        )}
       </div>
 
       {/* User Info at Bottom */}
@@ -376,7 +357,7 @@ export function Sidebar({ activeSection, onSectionChange, onLogout, user }: Side
                 className="flex-1 min-w-0"
               >
                 <div className="text-sm text-white truncate">{user?.name || 'Trader'}</div>
-                <div className="text-xs text-gray-400 truncate">{user?.email || 'Premium Trader'}</div>
+                <div className="text-xs text-gray-400 truncate">{user?.email || 'Not signed in'}</div>
               </motion.div>
             )}
           </AnimatePresence>

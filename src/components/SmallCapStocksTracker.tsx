@@ -143,8 +143,8 @@ export function SmallCapStocksTracker() {
                   </td>
                   <td className="py-3 px-4 text-right text-gray-400 text-sm">
                     <div className="flex flex-col">
-                      <span className="text-green-400">H: {stock.high.toFixed(2)}</span>
-                      <span className="text-red-400">L: {stock.low.toFixed(2)}</span>
+                      <span className="text-green-400">H: {stock.high == null ? '—' : stock.high.toFixed(2)}</span>
+                      <span className="text-red-400">L: {stock.low == null ? '—' : stock.low.toFixed(2)}</span>
                     </div>
                   </td>
                 </motion.tr>

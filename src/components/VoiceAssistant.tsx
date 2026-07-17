@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'motion/react';
-import { X, Mic, MicOff, Volume2 } from 'lucide-react';
+import { X, Mic, MicOff, Volume2, Loader2 } from 'lucide-react';
 import { Button } from './ui/button';
+import { advisorService } from '../services/advisorService';
 
 interface VoiceAssistantProps {
   onClose: () => void;
@@ -20,51 +21,28 @@ export function VoiceAssistant({ onClose }: VoiceAssistantProps) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [response, setResponse] = useState('');
-  const [waveAnimation, setWaveAnimation] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (isListening) {
-      setWaveAnimation(true);
-      // Simulate voice recognition
-      const timeout = setTimeout(() => {
-        setIsListening(false);
-        setWaveAnimation(false);
-      }, 3000);
-      return () => clearTimeout(timeout);
-    }
-  }, [isListening]);
-
-  const handleVoiceCommand = (command: string) => {
+  const handleVoiceCommand = async (command: string) => {
     setTranscript(command);
+    setResponse('');
+    setLoading(true);
     setIsListening(true);
-    
-    // Simulate AI response based on command
-    setTimeout(() => {
-      let aiResponse = '';
-      
-      if (command.includes('P&L') || command.includes('profit')) {
-        aiResponse = "Your total P&L for this month is ₹1,56,780.50 with 342 executed trades. You're up 8.2% compared to last month. Your best performing strategy is Momentum Breakout Pro with ₹45,670 profit.";
-      } else if (command.includes('expected return') || command.includes('forecast')) {
-        aiResponse = "Based on AI analysis, your expected return for next quarter is between ₹2.2 lakhs to ₹3.6 lakhs with 82% confidence. The model predicts a most likely outcome of ₹2.9 lakhs based on current market conditions.";
-      } else if (command.includes('sentiment')) {
-        aiResponse = "Current market sentiment index is 72 out of 100, indicating a moderately bullish trend. Banking sector shows strong positive sentiment at 78, while energy sector is relatively weak at 58.";
-      } else if (command.includes('strategies') || command.includes('performing')) {
-        aiResponse = "Your top performing strategy is Momentum Breakout Pro with ₹45,670 profit and 72.4% win rate. Second is Options Iron Condor with ₹32,400 profit. Mean Reversion Alpha is underperforming with -₹5,200 loss.";
-      } else if (command.includes('anomalies')) {
-        aiResponse = "12 anomalies detected this week. 3 are high severity including unusual slippage on RELIANCE trade and price deviation on HDFCBANK. Total impact: ₹15,888. I recommend using limit orders during high volatility.";
-      } else if (command.includes('win rate')) {
-        aiResponse = "Your current win rate is 67.5% across all strategies with an average return of 2.34% per trade. Your Sharpe ratio is 1.89, which is above the benchmark of 1.5.";
-      } else {
-        aiResponse = "I'm your EdgeX Voice assistant. I can help you with portfolio performance, market analysis, strategy insights, and anomaly reports. What would you like to know?";
-      }
-      
-      setResponse(aiResponse);
+
+    try {
+      const result = await advisorService.chat(command);
+      setResponse(result.reply || 'No response available.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setResponse(`Could not reach the advisor API. Ensure you are signed in and the backend is running.\n\n${msg}`);
+    } finally {
+      setLoading(false);
       setIsListening(false);
-      setWaveAnimation(false);
-    }, 2000);
+    }
   };
 
   const toggleListening = () => {
+    if (loading) return;
     setIsListening(!isListening);
     setTranscript('');
     setResponse('');
@@ -85,7 +63,6 @@ export function VoiceAssistant({ onClose }: VoiceAssistantProps) {
         className="bg-gray-900 border border-gray-800 rounded-2xl max-w-2xl w-full"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="border-b border-gray-800 p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -103,44 +80,34 @@ export function VoiceAssistant({ onClose }: VoiceAssistantProps) {
           </div>
         </div>
 
-        {/* Voice Interface */}
         <div className="p-8">
           <div className="flex flex-col items-center mb-8">
-            {/* Microphone Button with Wave Animation */}
-            <div className="relative">
-              {waveAnimation && (
-                <>
-                  <div className="absolute inset-0 -m-4 rounded-full bg-purple-500/20 animate-ping"></div>
-                  <div className="absolute inset-0 -m-8 rounded-full bg-purple-500/10 animate-ping" style={{ animationDelay: '0.5s' }}></div>
-                  <div className="absolute inset-0 -m-12 rounded-full bg-purple-500/5 animate-ping" style={{ animationDelay: '1s' }}></div>
-                </>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={toggleListening}
+              className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all ${
+                isListening || loading
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500'
+                  : 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-2 border-purple-500/50'
+              }`}
+            >
+              {loading ? (
+                <Loader2 className="w-12 h-12 text-white animate-spin" />
+              ) : isListening ? (
+                <Mic className="w-12 h-12 text-white" />
+              ) : (
+                <MicOff className="w-12 h-12 text-purple-400" />
               )}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={toggleListening}
-                className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all ${
-                  isListening
-                    ? 'bg-gradient-to-r from-purple-500 to-pink-500'
-                    : 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-2 border-purple-500/50'
-                }`}
-              >
-                {isListening ? (
-                  <Mic className="w-12 h-12 text-white" />
-                ) : (
-                  <MicOff className="w-12 h-12 text-purple-400" />
-                )}
-              </motion.button>
-            </div>
+            </motion.button>
 
             <div className="mt-4 text-center">
               <div className="text-sm text-gray-400 mb-1">
-                {isListening ? 'Listening...' : 'Tap to speak'}
+                {loading ? 'Thinking...' : isListening ? 'Listening...' : 'Select a command below'}
               </div>
             </div>
           </div>
 
-          {/* Transcript */}
           {transcript && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -157,7 +124,6 @@ export function VoiceAssistant({ onClose }: VoiceAssistantProps) {
             </motion.div>
           )}
 
-          {/* Response */}
           {response && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -170,13 +136,12 @@ export function VoiceAssistant({ onClose }: VoiceAssistantProps) {
                 </div>
                 <div>
                   <div className="text-xs text-purple-400 mb-1">EdgeX Voice:</div>
-                  <div className="text-white text-sm leading-relaxed">{response}</div>
+                  <div className="text-white text-sm leading-relaxed whitespace-pre-wrap">{response}</div>
                 </div>
               </div>
             </motion.div>
           )}
 
-          {/* Quick Commands */}
           <div>
             <div className="text-sm text-gray-400 mb-3">Try these commands:</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -184,7 +149,8 @@ export function VoiceAssistant({ onClose }: VoiceAssistantProps) {
                 <button
                   key={i}
                   onClick={() => handleVoiceCommand(command)}
-                  className="text-left text-sm bg-gray-800/50 hover:bg-gray-800 border border-gray-700 text-gray-300 px-3 py-2 rounded-lg transition-colors"
+                  disabled={loading}
+                  className="text-left text-sm bg-gray-800/50 hover:bg-gray-800 border border-gray-700 text-gray-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
                 >
                   {command}
                 </button>
@@ -193,10 +159,9 @@ export function VoiceAssistant({ onClose }: VoiceAssistantProps) {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="border-t border-gray-800 p-4 bg-gray-900/50">
           <div className="text-xs text-gray-500 text-center">
-            Voice recognition powered by EdgeXAi Labs • Secure & Private
+            Responses from advisor API • Secure & Private
           </div>
         </div>
       </motion.div>

@@ -9,14 +9,36 @@ const logFormat = winston.format.combine(
   winston.format.json()
 );
 
+function safeMeta(meta: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(meta, (_key, value) => {
+      if (value instanceof Error) {
+        return { name: value.name, message: value.message, stack: value.stack };
+      }
+      if (value && typeof value === 'object') {
+        const ctor = (value as { constructor?: { name?: string } }).constructor?.name;
+        if (ctor && /Socket|ClientRequest|IncomingMessage|Agent|TLSSocket/.test(ctor)) {
+          return `[${ctor}]`;
+        }
+      }
+      return value;
+    });
+  } catch {
+    return '[unserializable meta]';
+  }
+}
+
 // Console format for development
 const consoleFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
     let msg = `${timestamp} [${level}]: ${message}`;
-    if (Object.keys(meta).length > 0) {
-      msg += ` ${JSON.stringify(meta)}`;
+    const { service, ...rest } = meta as Record<string, unknown>;
+    if (Object.keys(rest).length > 0) {
+      msg += ` ${safeMeta({ service, ...rest })}`;
+    } else if (service) {
+      msg += ` ${safeMeta({ service })}`;
     }
     return msg;
   })

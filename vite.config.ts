@@ -62,7 +62,7 @@
       open: true,
       proxy: {
         '/api': {
-          target: process.env.VITE_BACKEND_URL || 'http://smarttrade-alb-1574969447.ap-south-1.elb.amazonaws.com',
+          target: process.env.VITE_BACKEND_URL || 'http://localhost:3001',
           changeOrigin: true,
           secure: false
         }

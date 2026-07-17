@@ -10,7 +10,8 @@ import {
   getTopLosers,
   getSmallCapStocks,
   getSectorPerformance,
-  getMarketBreadth
+  getMarketBreadth,
+  getDhanStatus
 } from '../controllers/market.controller';
 import { authenticate, optionalAuth } from '../middleware/auth.middleware';
 import { validateSymbolParam } from '../middleware/validation.middleware';
@@ -26,6 +27,7 @@ router.get('/losers', getTopLosers);
 router.get('/smallcap', getSmallCapStocks);
 router.get('/sectors', getSectorPerformance);
 router.get('/breadth', getMarketBreadth);
+router.get('/dhan-status', getDhanStatus);
 
 // Authenticated routes
 router.get('/quote/:symbol', optionalAuth, validateSymbolParam, getQuote);

@@ -5,12 +5,8 @@ import {
   createPortfolio,
   updatePortfolio,
   getHoldings,
-  createHolding,
-  updateHolding,
-  deleteHolding,
   getPortfolioSummary,
   getTrades,
-  createTrade,
   getPerformanceComparison,
   getAdvancedMetrics
 } from '../controllers/portfolio.controller';
@@ -22,24 +18,20 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
-// Portfolio routes
+// Portfolio routes (user-owned containers — not broker executions)
 router.get('/portfolios', getPortfolios);
 router.get('/portfolios/:id', getPortfolioById);
 router.post('/portfolios', createPortfolio);
 router.put('/portfolios/:id', updatePortfolio);
 
-// Holdings routes
+// Holdings — read only on public path (mutations via broker sync / paper / admin import)
 router.get('/holdings', getHoldings);
-router.post('/holdings', createHolding);
-router.put('/holdings/:id', updateHolding);
-router.delete('/holdings/:id', deleteHolding);
 
 // Summary
 router.get('/summary', getPortfolioSummary);
 
-// Trades routes
+// Trades — read only (writes via order execution / admin import)
 router.get('/trades', validatePagination, getTrades);
-router.post('/trades', createTrade);
 
 // Performance comparison
 router.get('/performance-comparison', getPerformanceComparison);

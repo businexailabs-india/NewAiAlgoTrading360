@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authService, User } from '../services/authService';
+import { API_BASE_URL } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -13,13 +14,28 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+async function ensureLocalGuestSession(): Promise<User | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/local-guest`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || !data?.data?.accessToken) return null;
+    localStorage.setItem('authToken', data.data.accessToken);
+    if (data.data.refreshToken) localStorage.setItem('refreshToken', data.data.refreshToken);
+    localStorage.setItem('user', JSON.stringify(data.data.user));
+    return data.data.user as User;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(authService.getStoredUser());
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshProfile = useCallback(async () => {
     if (!authService.isAuthenticated()) {
-      setUser(null);
+      const guest = await ensureLocalGuestSession();
+      setUser(guest);
       return;
     }
     try {
@@ -27,8 +43,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(profile);
       localStorage.setItem('user', JSON.stringify(profile));
     } catch {
-      authService.logout();
-      setUser(null);
+      const guest = await ensureLocalGuestSession();
+      if (!guest) {
+        authService.logout();
+        setUser(null);
+      } else {
+        setUser(guest);
+      }
     }
   }, []);
 
@@ -56,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         isLoading,
-        isAuthenticated: !!user,
+        isAuthenticated: !!user || !!localStorage.getItem('authToken'),
         login,
         register,
         logout,

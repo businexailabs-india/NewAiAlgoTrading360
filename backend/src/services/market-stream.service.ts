@@ -20,24 +20,31 @@ export function startMarketStream(io: Server): void {
       ]);
 
       io.emit('market:indices', indices);
-      io.emit('market:gainers', gainers);
-      io.emit('market:losers', losers);
-      io.emit('market:sectors', sectors);
+      io.emit('market:gainers', gainers.data);
+      io.emit('market:losers', losers.data);
+      io.emit('market:sectors', sectors.data);
       io.emit('market:breadth', breadth);
 
       for (const idx of indices) {
         io.to(`index:${idx.name}`).emit('market:tick', { type: 'index', ...idx });
       }
 
-      for (const quote of [...gainers, ...losers]) {
+      for (const quote of [...gainers.data, ...losers.data]) {
         io.to(`stock:${quote.symbol}`).emit('market:tick', { type: 'stock', ...quote });
       }
     } catch (err) {
-      logger.warn('Market stream tick failed', err);
+      logger.warn(`Market stream tick failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
   interval = setInterval(broadcast, STREAM_INTERVAL_MS);
   broadcast();
   logger.info(`Market live stream started (${STREAM_INTERVAL_MS}ms interval)`);
+}
+
+export function stopMarketStream(): void {
+  if (interval) {
+    clearInterval(interval);
+    interval = null;
+  }
 }

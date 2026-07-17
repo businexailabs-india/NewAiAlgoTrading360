@@ -1,13 +1,28 @@
 import axios from 'axios';
+import { getLlmRegistry } from './llm/registry';
+import { LocalLLMProvider } from './llm/providers/local.provider';
+import { ChatMessage, LlmProviderId } from './llm/types';
 import { logger } from '../utils/logger';
 
-export type LlmProvider = 'openai' | 'ollama' | 'lora' | 'synthesis';
+/** @deprecated Prefer LlmProviderId — kept for Advisor API compatibility */
+export type LlmProvider = 'openai' | 'ollama' | 'lora' | 'synthesis' | LlmProviderId;
 
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+export type { ChatMessage };
+
+function mapProviderForLegacy(id: LlmProviderId | 'synthesis'): LlmProvider {
+  if (id === 'openai') return 'openai';
+  if (id === 'local') {
+    const mode = (process.env.LOCAL_LLM_MODE || '').toLowerCase();
+    if (mode === 'lora') return 'lora';
+    return 'ollama';
+  }
+  return id;
 }
 
+/**
+ * Compatibility façade over the pluggable LLM provider registry.
+ * Preserves checkOllama / checkLlmService / chat({text, provider}) for existing callers.
+ */
 export class LlmClientService {
   private static ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
   private static llmServiceUrl = process.env.LLM_SERVICE_URL || 'http://localhost:8082';
@@ -30,79 +45,83 @@ export class LlmClientService {
     }
   }
 
+  static listProviders() {
+    return getLlmRegistry().list();
+  }
+
+  /**
+   * Free-form chat used by legacy callers. Routes through structured advisory when possible.
+   */
   static async chat(
     messages: ChatMessage[],
     options?: { adapterJobId?: string; model?: string }
-  ): Promise<{ text: string; provider: LlmProvider }> {
-    const system = messages.find(m => m.role === 'system')?.content || '';
-    const userMsgs = messages.filter(m => m.role !== 'system');
-    const lastUser = [...userMsgs].reverse().find(m => m.role === 'user')?.content || '';
-    const prompt = `${system}\n\n${userMsgs.map(m => `${m.role}: ${m.content}`).join('\n')}`;
+  ): Promise<{ text: string; provider: LlmProvider; usage?: unknown; model?: string }> {
+    const system = messages.find((m) => m.role === 'system')?.content || '';
+    const userMsgs = messages.filter((m) => m.role !== 'system');
+    const lastUser = [...userMsgs].reverse().find((m) => m.role === 'user')?.content || '';
 
-    if (process.env.OPENAI_API_KEY) {
-      try {
-        const text = await this.callOpenAI(messages, options?.model);
-        return { text, provider: 'openai' };
-      } catch (err) {
-        logger.warn('OpenAI failed, trying fallback', err);
-      }
+    try {
+      const result = await getLlmRegistry().generate_advisory(
+        lastUser || userMsgs.map((m) => m.content).join('\n'),
+        { system, messages: userMsgs },
+        { adapterJobId: options?.adapterJobId, model: options?.model }
+      );
+
+      const text = formatAdvisoryAsMarkdown(result.data);
+      return {
+        text,
+        provider: mapProviderForLegacy(result.provider),
+        usage: result.usage,
+        model: result.model
+      };
+    } catch (err) {
+      logger.warn('LlmClientService.chat providers failed', {
+        error: err instanceof Error ? err.message : 'unknown'
+      });
+      return { text: '', provider: 'synthesis' };
     }
-
-    if (await this.checkOllama()) {
-      try {
-        const text = await this.callOllama(messages, options?.model);
-        return { text, provider: 'ollama' };
-      } catch (err) {
-        logger.warn('Ollama failed, trying LLM service', err);
-      }
-    }
-
-    if (await this.checkLlmService()) {
-      try {
-        const res = await axios.post(
-          `${this.llmServiceUrl}/generate`,
-          { prompt: lastUser || prompt, adapter_job_id: options?.adapterJobId, max_tokens: 800 },
-          { timeout: 120000 }
-        );
-        return { text: res.data.data.text, provider: 'lora' };
-      } catch (err) {
-        logger.warn('LLM service inference failed', err);
-      }
-    }
-
-    return { text: '', provider: 'synthesis' };
   }
 
-  private static async callOpenAI(messages: ChatMessage[], model?: string): Promise<string> {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        messages,
-        temperature: 0.4,
-        max_tokens: 800
-      })
-    });
-    if (!res.ok) throw new Error(`OpenAI error: ${res.status}`);
-    const data = await res.json() as { choices: Array<{ message: { content: string } }> };
-    return data.choices[0]?.message?.content || '';
-  }
-
-  private static async callOllama(messages: ChatMessage[], model?: string): Promise<string> {
-    const res = await axios.post(
-      `${this.ollamaUrl}/api/chat`,
-      {
-        model: model || process.env.OLLAMA_MODEL || 'llama3.2',
-        messages,
-        stream: false,
-        options: { temperature: 0.4 }
-      },
-      { timeout: 120000 }
-    );
-    return res.data.message?.content || res.data.response || '';
+  static async advisory(
+    prompt: string,
+    context: unknown,
+    options?: { adapterJobId?: string; model?: string }
+  ) {
+    return getLlmRegistry().generate_advisory(prompt, context, options);
   }
 }
+
+export function formatAdvisoryAsMarkdown(data: {
+  summary: string;
+  recommendations: Array<{
+    action: string;
+    symbol?: string;
+    rationale: string;
+    confidence: number;
+    riskNotes?: string;
+  }>;
+  risks: string[];
+  disclaimer: string;
+}): string {
+  const lines: string[] = [`**${data.summary}**\n`];
+  if (data.recommendations?.length) {
+    lines.push('**Recommendations:**');
+    for (const r of data.recommendations) {
+      lines.push(
+        `- **${r.action}**${r.symbol ? ` ${r.symbol}` : ''} (${r.confidence}%): ${r.rationale}` +
+          (r.riskNotes ? ` — _${r.riskNotes}_` : '')
+      );
+    }
+    lines.push('');
+  }
+  if (data.risks?.length) {
+    lines.push('**Risks:**');
+    data.risks.forEach((risk) => lines.push(`- ${risk}`));
+    lines.push('');
+  }
+  lines.push(`_${data.disclaimer}_`);
+  return lines.join('\n');
+}
+
+// Re-export LocalLLMProvider health helpers for status endpoints if needed
+export { LocalLLMProvider };

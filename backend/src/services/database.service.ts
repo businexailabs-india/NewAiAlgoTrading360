@@ -72,7 +72,11 @@ export class DatabaseService {
     });
   }
 
-  static async updateHolding(id: string, updates: Prisma.HoldingUpdateInput) {
+  static async updateHolding(id: string, updates: Prisma.HoldingUpdateInput, userId?: string) {
+    if (userId) {
+      const existing = await prisma.holding.findFirst({ where: { id, userId } });
+      if (!existing) throw new AppError('Holding not found', 404);
+    }
     try {
       return await prisma.holding.update({ where: { id }, data: updates });
     } catch {
@@ -80,7 +84,11 @@ export class DatabaseService {
     }
   }
 
-  static async deleteHolding(id: string) {
+  static async deleteHolding(id: string, userId?: string) {
+    if (userId) {
+      const existing = await prisma.holding.findFirst({ where: { id, userId } });
+      if (!existing) throw new AppError('Holding not found', 404);
+    }
     await prisma.holding.delete({ where: { id } });
     return { message: 'Holding deleted successfully' };
   }
@@ -113,9 +121,10 @@ export class DatabaseService {
     });
   }
 
-  static async getPortfolioById(portfolioId: string) {
+  static async getPortfolioById(portfolioId: string, userId?: string) {
     const portfolio = await prisma.portfolio.findUnique({ where: { id: portfolioId } });
     if (!portfolio) throw new AppError('Portfolio not found', 404);
+    if (userId && portfolio.userId !== userId) throw new AppError('Portfolio not found', 404);
     return portfolio;
   }
 
@@ -139,7 +148,11 @@ export class DatabaseService {
     });
   }
 
-  static async updatePortfolio(id: string, updates: Prisma.PortfolioUpdateInput) {
+  static async updatePortfolio(id: string, updates: Prisma.PortfolioUpdateInput, userId?: string) {
+    if (userId) {
+      const existing = await prisma.portfolio.findFirst({ where: { id, userId } });
+      if (!existing) throw new AppError('Portfolio not found', 404);
+    }
     return prisma.portfolio.update({ where: { id }, data: updates });
   }
 

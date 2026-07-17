@@ -87,8 +87,8 @@ export function PortfolioSummaryCards() {
   ] : [
     { title: 'Total AUM', value: '—', subtitle: 'Connect broker to sync', icon: Wallet, color: 'cyan' as const },
     { title: 'Combined Returns', value: '—', subtitle: 'No data yet', icon: TrendingUp, color: 'green' as const },
-    { title: 'Active Accounts', value: '0', subtitle: 'Connect a broker', icon: Users, color: 'blue' as const },
-    { title: 'Live Engines', value: '0', subtitle: 'Create prediction engine', icon: Zap, color: 'orange' as const }
+    { title: 'Active Accounts', value: '—', subtitle: 'Connect a broker', icon: Users, color: 'blue' as const },
+    { title: 'Live Engines', value: '—', subtitle: 'No data yet', icon: Zap, color: 'orange' as const }
   ];
 
   return (

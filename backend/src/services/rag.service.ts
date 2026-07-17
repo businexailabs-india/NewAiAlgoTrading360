@@ -184,51 +184,9 @@ export class RagService {
     return result;
   }
 
-  static async seedDefaults(userId: string) {
-    const count = await prisma.knowledgeDocument.count({ where: { userId } });
-    if (count > 0) return;
-
-    const defaults = [
-      {
-        title: 'NIFTY Banking Sector Outlook',
-        content:
-          'Indian banking sector shows resilient credit growth. PSU banks benefit from government capex. ' +
-          'Monitor RBI policy and NPA trends. SBIN and HDFCBANK remain core holdings for diversified portfolios.',
-        docType: 'research',
-        symbol: 'SBIN',
-        tags: ['banking', 'nifty']
-      },
-      {
-        title: 'IT Sector Risk Factors',
-        content:
-          'Technology sector faces headwinds from USD strength and client spending cuts. ' +
-          'Mean reversion strategies may work after sharp drawdowns. TCS and INFY offer defensive quality.',
-        docType: 'research',
-        symbol: 'TCS',
-        tags: ['it', 'risk']
-      },
-      {
-        title: 'Portfolio Rebalancing Guidelines',
-        content:
-          'Rebalance when sector allocation drifts more than 5% from target. ' +
-          'Trim overweight momentum names after 20%+ quarterly gains. Increase allocation to underweight defensive sectors.',
-        docType: 'strategy',
-        tags: ['rebalancing', 'risk']
-      },
-      {
-        title: 'LoRA Fine-tuning Best Practices',
-        content:
-          'Use QLoRA with 4-bit quantization for 7B models on single GPU. ' +
-          'Rank 8-16 LoRA adapters work well for domain-specific financial Q&A. ' +
-          'Combine RAG retrieval with fine-tuned adapters for best advisor accuracy.',
-        docType: 'strategy',
-        tags: ['llm', 'lora', 'qlora']
-      }
-    ];
-
-    for (const d of defaults) {
-      await this.createDocument(userId, d);
-    }
+  static async seedDefaults(_userId: string) {
+    // No auto-seeded knowledge docs — users must upload real content
+    return;
   }
 }
 

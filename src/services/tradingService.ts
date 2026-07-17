@@ -20,14 +20,32 @@ export const tradingService = {
     isPaper?: boolean;
     instrumentType?: 'EQUITY' | 'OPTION';
     optionDetails?: { strike: number; expiry: string; optionType: 'CE' | 'PE' };
+    brokerConnectionId?: string;
+    idempotencyKey?: string;
+    source?: string;
   }) {
+    const payload = {
+      ...order,
+      isPaper: order.isPaper !== false,
+      idempotencyKey: order.idempotencyKey || `ui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    };
     const res = await fetch(`${API_BASE_URL}/orders/place`, {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify(order)
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Order failed');
+    return data.data;
+  },
+
+  async reconcileOrder(orderId: string) {
+    const res = await fetch(`${API_BASE_URL}/orders/${orderId}/reconcile`, {
+      method: 'POST',
+      headers: headers()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Reconcile failed');
     return data.data;
   },
 

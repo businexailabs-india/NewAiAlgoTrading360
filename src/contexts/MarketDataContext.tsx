@@ -45,17 +45,20 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const mapIndices = (data: Array<{ name: string; value: number; change: number; changePercent: number }>): IndexData[] =>
+  const mapIndices = (data: Array<{
+    name: string; value: number; change: number; changePercent: number;
+    high?: number; low?: number; open?: number; previousClose?: number; timestamp?: string;
+  }>): IndexData[] =>
     data.map(item => ({
       name: item.name,
       value: item.value,
       change: item.change,
       changePercent: item.changePercent,
-      high: item.value,
-      low: item.value,
-      open: item.value,
-      previousClose: item.value - item.change,
-      timestamp: new Date()
+      high: item.high ?? null,
+      low: item.low ?? null,
+      open: item.open ?? null,
+      previousClose: item.previousClose ?? null,
+      timestamp: item.timestamp ? new Date(item.timestamp) : new Date()
     }));
 
   const fetchMarketData = useCallback(async () => {
@@ -98,7 +101,10 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
     const unsubs = [
       liveMarketSocket.onIndices((data) => {
         if (Array.isArray(data)) {
-          setIndices(mapIndices(data as Array<{ name: string; value: number; change: number; changePercent: number }>));
+          setIndices(mapIndices(data as Array<{
+            name: string; value: number; change: number; changePercent: number;
+            high?: number; low?: number; open?: number; previousClose?: number; timestamp?: string;
+          }>));
           setLastUpdated(new Date());
           setIsLive(true);
         }

@@ -1,8 +1,10 @@
 import { prisma } from '../config/database';
 import { RagService } from './rag.service';
-import { LlmClientService } from './llm-client.service';
+import { formatAdvisoryAsMarkdown, LlmClientService } from './llm-client.service';
 import { LlmTrainingService } from './llm-training.service';
 import { MlClientService } from './ml-client.service';
+import { getLlmRegistry } from './llm/registry';
+import { logger } from '../utils/logger';
 
 export class AdvisorService {
   static async chat(
@@ -11,8 +13,6 @@ export class AdvisorService {
     symbol?: string,
     adapterJobId?: string
   ) {
-    await RagService.seedDefaults(userId);
-
     const { hits, context: ragContext, mode } = await RagService.query(userId, message, symbol, 5);
 
     const engines = await prisma.predictionEngine.findMany({
@@ -21,8 +21,8 @@ export class AdvisorService {
       take: 5
     });
 
-    const predictionSummary = engines.flatMap(e =>
-      e.predictions.map(p => ({
+    const predictionSummary = engines.flatMap((e) =>
+      e.predictions.map((p) => ({
         engine: e.name,
         engineType: e.engineType,
         symbol: p.symbol,
@@ -32,30 +32,33 @@ export class AdvisorService {
       }))
     );
 
-    const systemPrompt = `You are SmartTrade AI Portfolio Advisor for Indian equities (NSE/BSE).
-Use research context and ML predictions. Be specific and actionable. Mention risks. Currency: INR.
-Never guarantee returns.`;
+    const context = {
+      symbol: symbol || null,
+      ragMode: mode,
+      ragContext: ragContext || null,
+      predictions: predictionSummary
+    };
 
-    const userPrompt = `Question: ${message}
-${symbol ? `Focus symbol: ${symbol}` : ''}
+    let reply: string;
+    let provider: string = 'synthesis';
+    let model: string | undefined;
+    let usage: unknown;
+    let usedFallback = false;
 
-Research context (RAG mode: ${mode}):
-${ragContext || 'None'}
-
-ML predictions:
-${JSON.stringify(predictionSummary, null, 2)}`;
-
-    const llmResult = await LlmClientService.chat(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      { adapterJobId }
-    );
-
-    const reply = llmResult.provider === 'synthesis'
-      ? this.synthesizeReply(message, ragContext, predictionSummary, symbol)
-      : llmResult.text;
+    try {
+      const result = await getLlmRegistry().generate_advisory(message, context, { adapterJobId });
+      reply = formatAdvisoryAsMarkdown(result.data);
+      provider = result.provider;
+      model = result.model;
+      usage = result.usage;
+      usedFallback = result.usedFallback;
+    } catch (err) {
+      logger.warn('Advisor LLM providers failed; using synthesis', {
+        error: err instanceof Error ? err.message.slice(0, 200) : 'unknown'
+      });
+      reply = this.synthesizeReply(message, ragContext, predictionSummary, symbol);
+      provider = 'synthesis';
+    }
 
     const [mlStatus, llmStatus] = await Promise.all([
       MlClientService.getHealthDetails(),
@@ -64,8 +67,11 @@ ${JSON.stringify(predictionSummary, null, 2)}`;
 
     return {
       reply,
-      provider: llmResult.provider,
-      sources: hits.map(h => ({
+      provider,
+      model,
+      usage,
+      usedFallback,
+      sources: hits.map((h) => ({
         title: String(h.metadata?.title || h.metadata?.documentId || 'Knowledge'),
         score: h.score,
         symbol: h.metadata?.symbol as string | undefined,
@@ -76,7 +82,8 @@ ${JSON.stringify(predictionSummary, null, 2)}`;
         predictions: predictionSummary.length,
         ragMode: mode,
         mlService: mlStatus,
-        llmService: llmStatus
+        llmService: llmStatus,
+        llmProviders: LlmClientService.listProviders()
       }
     };
   }
@@ -98,14 +105,14 @@ ${JSON.stringify(predictionSummary, null, 2)}`;
 
     if (ragContext) {
       lines.push('**Research context (semantic RAG):**');
-      ragContext.split('\n\n').slice(0, 3).forEach(s => {
+      ragContext.split('\n\n').slice(0, 3).forEach((s) => {
         lines.push(`- ${s.slice(0, 280)}${s.length > 280 ? '...' : ''}`);
       });
       lines.push('');
     }
 
     const relevant = symbol
-      ? predictions.filter(p => p.symbol === symbol.toUpperCase())
+      ? predictions.filter((p) => p.symbol === symbol.toUpperCase())
       : predictions;
 
     if (relevant.length) {
@@ -113,14 +120,15 @@ ${JSON.stringify(predictionSummary, null, 2)}`;
       for (const p of relevant.slice(0, 5)) {
         lines.push(
           `- **${p.symbol}** (${p.engine}): ${p.direction || 'N/A'} — ` +
-          `${p.confidence ?? '—'}% conf, ${p.accuracy ?? '—'}% accuracy`
+            `${p.confidence ?? '—'}% conf, ${p.accuracy ?? '—'}% accuracy`
         );
       }
       lines.push('');
     }
 
     lines.push(
-      '**LLM providers:** Set `OPENAI_API_KEY`, run Ollama (`OLLAMA_URL`), or train a LoRA adapter via `/api/llm/train`.'
+      '**LLM providers:** Set `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`, ' +
+        'configure `DEFAULT_LLM_PROVIDER` + `FALLBACK_LLM_PROVIDER=local`, run Ollama, or train a LoRA adapter via `/api/llm/train`.'
     );
     return lines.join('\n');
   }
