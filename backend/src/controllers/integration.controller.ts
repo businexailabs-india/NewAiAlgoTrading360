@@ -31,6 +31,29 @@ export const testMcpServer = asyncHandler(async (req: Request, res: Response) =>
   res.json({ success: true, data });
 });
 
+export const listIndianMcpCatalog = asyncHandler(async (_req: Request, res: Response) => {
+  const data = IntegrationService.listIndianMcpCatalog();
+  res.json({ success: true, data });
+});
+
+export const scanIndianMcpServers = asyncHandler(async (req: Request, res: Response) => {
+  const data = await IntegrationService.scanIndianMcpServers(req.user!.id, {
+    probe: req.body?.probe !== false,
+    providers: Array.isArray(req.body?.providers) ? req.body.providers : undefined
+  });
+  res.json({ success: true, data });
+});
+
+export const addIndianMcpServers = asyncHandler(async (req: Request, res: Response) => {
+  const data = await IntegrationService.addIndianMcpServers(req.user!.id, {
+    providers: Array.isArray(req.body?.providers) ? req.body.providers : undefined,
+    onlyReachable: !!req.body?.onlyReachable,
+    updateExisting: !!req.body?.updateExisting,
+    probeFirst: req.body?.probeFirst !== false
+  });
+  res.status(201).json({ success: true, data });
+});
+
 export const listAccounts = asyncHandler(async (req: Request, res: Response) => {
   const data = await IntegrationService.listAccounts(req.user!.id);
   res.json({ success: true, data });

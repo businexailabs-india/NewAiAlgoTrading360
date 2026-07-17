@@ -75,6 +75,16 @@ export const advisoryMarketplaceService = {
     return json(res);
   },
 
+  async listStrategyOptions(): Promise<Array<Record<string, unknown>>> {
+    const res = await fetch(`${API_BASE_URL}/strategy-options`, { headers: headers() });
+    const data = await json<Array<Record<string, unknown>> | { items?: Array<Record<string, unknown>> }>(res);
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray((data as { items?: unknown[] }).items)) {
+      return (data as { items: Array<Record<string, unknown>> }).items;
+    }
+    return [];
+  },
+
   async paperTest(optionId: string) {
     const res = await fetch(`${API_BASE_URL}/strategy-options/${optionId}/paper-test`, {
       method: 'POST',

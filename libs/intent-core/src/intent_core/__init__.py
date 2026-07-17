@@ -48,7 +48,23 @@ RULES: list[tuple[IntentType, re.Pattern[str], float, bool]] = [
     (IntentType.PORTFOLIO_QUERY, re.compile(r"(portfolio|holdings?|मेरा\s+पोर्टफोलियो|ପୋର୍ଟଫୋଲିଓ)", re.I), 0.88, False),
     (IntentType.POSITION_QUERY, re.compile(r"(position|open\s+pos|pnl\s+aaj|unrealized)", re.I), 0.85, False),
     (IntentType.ORDER_STATUS_QUERY, re.compile(r"(order\s+status|mera\s+order|filled|pending\s+order)", re.I), 0.85, False),
-    (IntentType.MARKET_QUERY, re.compile(r"(market\s+(kaisa|kaise|summary|status)|आज\s+market|nifty|sensex|bank\s*nifty)", re.I), 0.86, False),
+    (
+        IntentType.MARKET_QUERY,
+        re.compile(
+            r"("
+            r"today'?s?\s+market|market\s+today|how\s+is\s+(the\s+)?market|"
+            r"market\s+(kaisa|kaise|summary|status|outlook|update|overview|trend)|"
+            r"आज\s*(का\s*)?(market|मार्केट|बाजार)|मार्केट\s*(कैसा|क्या)|बाजार\s*(कैसा|क्या)|"
+            r"nifty|sensex|bank\s*nifty|india\s+vix|"
+            r"ବଜାର|বাজার|మార్కెట్|சந்தை|ಮಾರುಕಟ್ಟೆ|വിപണി|બજાર|ਬਾਜ਼ਾਰ|بازار|"
+            r"आजचा|आजचे|बाजार|मार्केट|বজাৰ|"
+            r"trading\s+today|market\s+data|indices?\s+today"
+            r")",
+            re.I,
+        ),
+        0.86,
+        False,
+    ),
     (IntentType.COMPLIANCE_QUERY, re.compile(r"(compliance|sebi|disclaimer|financial\s+advice)", re.I), 0.8, False),
     (IntentType.EDUCATIONAL_QUERY, re.compile(r"(kya\s+hai|what\s+is|explain|sikhao|meaning)", re.I), 0.75, False),
 ]

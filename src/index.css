@@ -4177,18 +4177,18 @@ html {
   background:
     linear-gradient(
       145deg,
-      rgba(255, 255, 255, 0.1) 0%,
-      rgba(255, 255, 255, 0.04) 45%,
-      rgba(255, 255, 255, 0.02) 100%
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0.12) 45%,
+      rgba(255, 255, 255, 0.07) 100%
     );
-  border: 1px solid rgba(34, 211, 238, 0.35);
+  border: 1px solid rgba(34, 211, 238, 0.4);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 0 18px rgba(34, 211, 238, 0.18),
-    0 0 36px rgba(16, 185, 129, 0.1),
-    0 10px 28px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 20px rgba(34, 211, 238, 0.2),
+    0 0 40px rgba(16, 185, 129, 0.12),
+    0 12px 30px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .neon-card-amber {
@@ -4201,11 +4201,11 @@ html {
 }
 
 .neon-card-inner {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow:
-    0 0 12px rgba(34, 211, 238, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 0 12px rgba(34, 211, 238, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .no-scrollbar {
@@ -4215,4 +4215,54 @@ html {
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Main desktop + Mac window scrollbars — visible left of the Window Pane */
+.main-desktop-scroll,
+.mac-window-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.55) rgba(15, 23, 42, 0.85);
+}
+
+.main-desktop-scroll::-webkit-scrollbar,
+.mac-window-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.main-desktop-scroll::-webkit-scrollbar-track,
+.mac-window-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 8px;
+}
+
+.main-desktop-scroll::-webkit-scrollbar-thumb,
+.mac-window-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.65), rgba(16, 185, 129, 0.45));
+  border-radius: 8px;
+  border: 2px solid rgba(15, 23, 42, 0.85);
+}
+
+.main-desktop-scroll::-webkit-scrollbar-thumb:hover,
+.mac-window-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.9), rgba(52, 211, 153, 0.65));
+}
+
+.cursor-move {
+  cursor: move;
+}
+
+.cursor-ew-resize {
+  cursor: ew-resize;
+}
+
+.cursor-ns-resize {
+  cursor: ns-resize;
+}
+
+.cursor-nwse-resize {
+  cursor: nwse-resize;
+}
+
+.cursor-nesw-resize {
+  cursor: nesw-resize;
 }

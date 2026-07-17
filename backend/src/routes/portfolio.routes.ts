@@ -8,7 +8,8 @@ import {
   getPortfolioSummary,
   getTrades,
   getPerformanceComparison,
-  getAdvancedMetrics
+  getAdvancedMetrics,
+  getPositions
 } from '../controllers/portfolio.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { validatePagination } from '../middleware/validation.middleware';
@@ -26,6 +27,9 @@ router.put('/portfolios/:id', updatePortfolio);
 
 // Holdings — read only on public path (mutations via broker sync / paper / admin import)
 router.get('/holdings', getHoldings);
+
+// Live / paper positions (broker when linked, else open orders + holdings)
+router.get('/positions', getPositions);
 
 // Summary
 router.get('/summary', getPortfolioSummary);

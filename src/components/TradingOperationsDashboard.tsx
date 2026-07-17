@@ -18,11 +18,13 @@ export function TradingOperationsDashboard() {
   const [orders, setOrders] = useState<any[]>([]);
   const [screener, setScreener] = useState<any>(null);
   const [optionsSignals, setOptionsSignals] = useState<any[]>([]);
+  const [optionsMeta, setOptionsMeta] = useState<string | null>(null);
+  const [screenerError, setScreenerError] = useState<string | null>(null);
   const [engines, setEngines] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
   const [showCreateAgent, setShowCreateAgent] = useState(false);
-  const [newAgent, setNewAgent] = useState({ name: '', mode: 'paper' as 'paper' | 'live', engineId: '' });
+  const [newAgent, setNewAgent] = useState({ name: '', mode: 'paper' as 'paper' | 'live', engineId: 'none' });
 
   const load = async () => {
     try {
@@ -31,9 +33,13 @@ export function TradingOperationsDashboard() {
         tradingService.getOrders(),
         predictionService.listEngines().catch(() => [])
       ]);
-      setAgents(a);
-      setOrders(o);
-      setEngines(e);
+      setAgents(Array.isArray(a) ? a : []);
+      setOrders(Array.isArray(o) ? o : []);
+      setEngines(Array.isArray(e) ? e : []);
+    } catch (err) {
+      console.error(err);
+      setAgents([]);
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -47,12 +53,14 @@ export function TradingOperationsDashboard() {
       await tradingService.createAgent({
         name: newAgent.name,
         mode: newAgent.mode,
-        engineId: newAgent.engineId || undefined,
+        engineId: newAgent.engineId && newAgent.engineId !== 'none' ? newAgent.engineId : undefined,
         config: { minConfidence: 65, maxOrdersPerRun: 5, useScreener: true, screenerTopN: 10 }
       });
       setShowCreateAgent(false);
-      setNewAgent({ name: '', mode: 'paper', engineId: '' });
+      setNewAgent({ name: '', mode: 'paper', engineId: 'none' });
       await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Create agent failed');
     } finally {
       setActionId(null);
     }
@@ -72,9 +80,16 @@ export function TradingOperationsDashboard() {
 
   const handleRunScreener = async () => {
     setActionId('screener');
+    setScreenerError(null);
     try {
       const result = await tradingService.runScreener({ topN: 15 });
       setScreener(result);
+      if (!result?.stocks?.length) {
+        setScreenerError('Scan finished but no ranked stocks returned. Check market data / login and try again.');
+      }
+    } catch (err) {
+      setScreener(null);
+      setScreenerError(err instanceof Error ? err.message : 'Screener scan failed');
     } finally {
       setActionId(null);
     }
@@ -82,9 +97,20 @@ export function TradingOperationsDashboard() {
 
   const handleOptionsScan = async () => {
     setActionId('options');
+    setOptionsMeta(null);
     try {
       const result = await tradingService.getOptionsSignals(['NIFTY', 'BANKNIFTY', 'RELIANCE', 'TCS']);
-      setOptionsSignals(result.signals || []);
+      const signals = result?.signals || [];
+      setOptionsSignals(signals);
+      setOptionsMeta(
+        result?.message ||
+          (signals.length
+            ? `Found ${signals.length} option signal(s).`
+            : 'No option signals returned.')
+      );
+    } catch (err) {
+      setOptionsSignals([]);
+      setOptionsMeta(err instanceof Error ? err.message : 'Options scan failed');
     } finally {
       setActionId(null);
     }
@@ -158,7 +184,7 @@ export function TradingOperationsDashboard() {
               <Select value={newAgent.engineId} onValueChange={v => setNewAgent({ ...newAgent, engineId: v })}>
                 <SelectTrigger className="bg-gray-900 border-gray-700"><SelectValue placeholder="Prediction engine (optional)" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {engines.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -253,10 +279,19 @@ export function TradingOperationsDashboard() {
             {actionId === 'screener' ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
             Scan NIFTY 50 for Best Picks
           </Button>
+          {screenerError && (
+            <p className="text-sm text-amber-300/90 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              {screenerError}
+            </p>
+          )}
 
           {screener && (
             <>
               <p className="text-sm text-gray-400">Scanned {screener.totalScanned} stocks · {screener.scannedAt}</p>
+              {(!screener.stocks || screener.stocks.length === 0) ? (
+                <p className="text-sm text-gray-500">No picks matched the screener criteria.</p>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {screener.stocks?.map((s: any) => (
                   <div key={s.symbol} className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
@@ -281,6 +316,7 @@ export function TradingOperationsDashboard() {
                   </div>
                 ))}
               </div>
+              )}
             </>
           )}
         </TabsContent>
@@ -291,14 +327,20 @@ export function TradingOperationsDashboard() {
             {actionId === 'options' ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Layers className="w-4 h-4 mr-2" />}
             Scan Options Signals
           </Button>
+          {optionsMeta && (
+            <p className="text-sm text-amber-200/90 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              {optionsMeta}
+            </p>
+          )}
 
-          {optionsSignals.length > 0 && (
+          {optionsSignals.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {optionsSignals.map((s: any, i: number) => (
                 <div key={i} className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
                   <div className="flex justify-between mb-2">
                     <span className="text-white">{s.underlying} {s.strike} {s.optionType}</span>
-                    <Badge className={s.signal === 'BUY' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}>{s.signal}</Badge>
+                    <Badge className={s.signal === 'BUY' ? 'bg-green-500/20 text-green-400' : s.signal === 'SELL' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}>{s.signal}</Badge>
                   </div>
                   <div className="text-sm text-gray-400 space-y-1">
                     <div>Strategy: <span className="text-cyan-400">{s.strategy}</span></div>
@@ -308,6 +350,10 @@ export function TradingOperationsDashboard() {
                 </div>
               ))}
             </div>
+          ) : (
+            actionId !== 'options' && optionsMeta === null && (
+              <p className="text-sm text-gray-500">Click Scan Options Signals to analyze NIFTY, BANKNIFTY, RELIANCE, and TCS.</p>
+            )
           )}
         </TabsContent>
       </Tabs>

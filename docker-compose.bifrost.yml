@@ -1,0 +1,27 @@
+# Bifrost LLM gateway — routes all Anthropic traffic for Ask Advisor / AI services.
+# Usage:
+#   docker compose -f docker-compose.bifrost.yml --env-file backend/.env up -d
+# UI: http://localhost:8080
+# Anthropic drop-in: http://localhost:8080/anthropic
+
+services:
+  bifrost:
+    image: maximhq/bifrost:latest
+    container_name: bxai-bifrost
+    ports:
+      - "${BIFROST_PORT:-8080}:8080"
+    environment:
+      APP_PORT: "8080"
+      APP_HOST: "0.0.0.0"
+      LOG_LEVEL: "${BIFROST_LOG_LEVEL:-info}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    volumes:
+      - ./backend/bifrost/data:/app/data
+      - ./backend/bifrost/config.json:/app/config/config.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ || curl -sf http://127.0.0.1:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s

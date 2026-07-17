@@ -66,6 +66,8 @@ class DhanLaxmiService:
                 "portfolio": h.get("portfolio") or {"holdings_count": 0},
                 "margin": h.get("margin") or {"available": 0},
                 "market_status": h.get("market_status") or "open",
+                "indices": h.get("indices") or [],
+                "market_summary_line": h.get("market_summary_line") or "",
                 "account_id_masked": mask_account(str(account)) if account else None,
                 "external_algo": bool(h.get("external_algo") or False),
             }
@@ -199,13 +201,24 @@ class DhanLaxmiService:
             text = built["text"]
             cards.append({"type": "risk_summary", "data": ctx.get("portfolio")})
         elif intent.intent == IntentType.MARKET_QUERY:
+            market_line = self._market_summary_line(ctx)
             built = build_response(
                 "market_summary",
                 lang,
-                action_summary=f"Market status: {ctx.get('market_status')}. Broker: {ctx.get('broker_status')}.",
+                action_summary=market_line,
                 next_step="Ask for a paper-only strategy idea if you want next steps.",
             )
             text = built["text"]
+            cards.append(
+                {
+                    "type": "market_snapshot",
+                    "data": {
+                        "market_status": ctx.get("market_status"),
+                        "indices": ctx.get("indices") or [],
+                        "broker_status": ctx.get("broker_status"),
+                    },
+                }
+            )
         elif intent.intent in (IntentType.STOP_BOT, IntentType.KILL_SWITCH):
             built = build_response(
                 "kill_switch_confirm",
@@ -556,3 +569,38 @@ class DhanLaxmiService:
             f"Broker: {ctx.get('broker_status')}. "
             f"Margin available context loaded (redacted)."
         )
+
+    def _market_summary_line(self, ctx: dict[str, Any]) -> str:
+        preset = (ctx.get("market_summary_line") or "").strip()
+        if preset:
+            return preset
+        indices = ctx.get("indices") or []
+        parts: list[str] = []
+        for row in indices[:6]:
+            if not isinstance(row, dict):
+                continue
+            name = row.get("name") or row.get("symbol") or "Index"
+            value = row.get("value")
+            change = row.get("change")
+            pct = row.get("changePercent")
+            if value is None:
+                continue
+            try:
+                value_s = f"{float(value):,.2f}"
+            except (TypeError, ValueError):
+                value_s = str(value)
+            move = ""
+            try:
+                if pct is not None:
+                    move = f" ({float(pct):+.2f}%)"
+                elif change is not None:
+                    move = f" ({float(change):+.2f})"
+            except (TypeError, ValueError):
+                move = ""
+            parts.append(f"{name}: {value_s}{move}")
+        status = ctx.get("market_status") or "unknown"
+        broker = ctx.get("broker_status") or "unknown"
+        head = f"Market status: {status}. Broker: {broker}."
+        if not parts:
+            return f"{head} Live index levels were unavailable — open Market Overview for quotes."
+        return f"{head} Indices — {'; '.join(parts)}."

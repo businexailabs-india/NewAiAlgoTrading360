@@ -136,6 +136,15 @@ export const portfolioService = {
     return getData('/portfolio/trades');
   },
 
+  getPositions(): Promise<{
+    positions: Array<Record<string, unknown>>;
+    source?: string;
+    openCount?: number;
+    closedCount?: number;
+  }> {
+    return getData('/portfolio/positions');
+  },
+
   async getAdvancedMetrics(period: string = '1Y', strategyId?: string): Promise<AdvancedMetricsResponse> {
     const token = localStorage.getItem('authToken');
     const url = strategyId

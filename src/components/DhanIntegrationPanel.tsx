@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Shield, Server, Link2, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Shield, Server, Link2, CheckCircle, XCircle, AlertTriangle, Radar, PlusCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
@@ -26,6 +26,24 @@ export function DhanIntegrationPanel() {
     transport: 'HTTP',
     authHeader: ''
   });
+  const [indianScan, setIndianScan] = useState<{
+    total: number;
+    alreadyAdded: number;
+    reachable: number;
+    results: Array<{
+      provider: string;
+      name: string;
+      endpoint: string;
+      alreadyAdded: boolean;
+      reachable: boolean;
+      status: string;
+      latencyMs: number | null;
+      toolsCount: number;
+      probeError: string | null;
+      notes?: string;
+    }>;
+  } | null>(null);
+  const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
   const [dhanForm, setDhanForm] = useState({
     displayName: 'Dhan Primary',
     clientId: '',
@@ -91,6 +109,78 @@ export function DhanIntegrationPanel() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const scanIndianMcps = async () => {
+    setBusy(true);
+    setError('');
+    setMsg('');
+    try {
+      const data = await integrationService.scanIndianMcpServers({ probe: true });
+      setIndianScan(data);
+      setSelectedProviders(
+        (data.results || [])
+          .filter((r: { alreadyAdded: boolean; reachable: boolean }) => !r.alreadyAdded)
+          .map((r: { provider: string }) => r.provider)
+      );
+      setMsg(
+        `Scanned ${data.total} Indian MCP presets · ${data.reachable} reachable · ${data.alreadyAdded} already added`
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Indian MCP scan failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addSelectedIndianMcps = async (onlyReachable = false) => {
+    setBusy(true);
+    setError('');
+    try {
+      const data = await integrationService.addIndianMcpServers({
+        providers: selectedProviders.length ? selectedProviders : undefined,
+        onlyReachable,
+        updateExisting: false,
+        probeFirst: onlyReachable
+      });
+      setMsg(
+        `Added ${data.summary?.created || 0} MCP server(s)` +
+          (data.summary?.skipped ? ` · skipped ${data.summary.skipped}` : '')
+      );
+      setIndianScan(data.scan || null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Add Indian MCPs failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addAllIndianMcps = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const data = await integrationService.addIndianMcpServers({
+        onlyReachable: false,
+        updateExisting: false,
+        probeFirst: false
+      });
+      setMsg(
+        `Added all catalog presets: ${data.summary?.created || 0} created · ${data.summary?.skipped || 0} skipped`
+      );
+      setIndianScan(data.scan || null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Add all Indian MCPs failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleProvider = (provider: string) => {
+    setSelectedProviders((prev) =>
+      prev.includes(provider) ? prev.filter((p) => p !== provider) : [...prev, provider]
+    );
   };
 
   const saveDhan = async () => {
@@ -262,6 +352,73 @@ export function DhanIntegrationPanel() {
         {/* MCP config */}
         <section className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
           <h3 className="text-white flex items-center gap-2"><Link2 className="w-4 h-4" /> MCP Servers</h3>
+
+          <div className="rounded-lg border border-cyan-400/25 bg-cyan-500/5 p-3 space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-sm font-medium text-cyan-100 flex items-center gap-2">
+                  <Radar className="w-4 h-4" /> Indian Trading MCP Catalog
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Scan presets for Dhan, Zerodha, Angel One, Upstox, Groww, Fyers, and more. Override endpoints with{' '}
+                  <code className="text-cyan-300/90">MCP_&lt;PROVIDER&gt;_URL</code> in backend env.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={scanIndianMcps} disabled={busy} className="bg-cyan-500/20 border border-cyan-400/30 text-cyan-200">
+                <Radar className="w-4 h-4 mr-2" />
+                Scan Indian MCPs
+              </Button>
+              <Button onClick={() => addSelectedIndianMcps(false)} disabled={busy || selectedProviders.length === 0} variant="outline">
+                <PlusCircle className="w-4 h-4 mr-2" />
+                Add selected ({selectedProviders.length})
+              </Button>
+              <Button onClick={() => addSelectedIndianMcps(true)} disabled={busy || !indianScan} variant="outline">
+                Add reachable only
+              </Button>
+              <Button onClick={addAllIndianMcps} disabled={busy} variant="secondary">
+                Add all Indian MCPs
+              </Button>
+            </div>
+
+            {indianScan && (
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {indianScan.results.map((r) => (
+                  <label
+                    key={r.provider}
+                    className="flex items-start gap-3 p-2 rounded-md bg-black/30 border border-white/5 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={selectedProviders.includes(r.provider)}
+                      disabled={r.alreadyAdded}
+                      onChange={() => toggleProvider(r.provider)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm text-white">{r.name}</span>
+                        <Badge variant="outline">{r.status}</Badge>
+                        {r.alreadyAdded && <Badge className="bg-emerald-500/20 text-emerald-300">Added</Badge>}
+                        {r.reachable ? (
+                          <Badge className="bg-cyan-500/20 text-cyan-300">Reachable{r.latencyMs != null ? ` · ${r.latencyMs}ms` : ''}</Badge>
+                        ) : (
+                          <Badge className="bg-amber-500/20 text-amber-200">Offline</Badge>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-gray-500 break-all">{r.endpoint}</div>
+                      {r.notes && <div className="text-[11px] text-gray-400 mt-0.5">{r.notes}</div>}
+                      {r.probeError && !r.reachable && (
+                        <div className="text-[11px] text-amber-300/80 mt-0.5 truncate" title={r.probeError}>{r.probeError}</div>
+                      )}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
           <Input placeholder="Name" value={mcpForm.name} onChange={e => setMcpForm({ ...mcpForm, name: e.target.value })} />
           <Input placeholder="HTTP/SSE endpoint URL" value={mcpForm.endpoint} onChange={e => setMcpForm({ ...mcpForm, endpoint: e.target.value })} />
           <Input placeholder="Optional Authorization header" value={mcpForm.authHeader} onChange={e => setMcpForm({ ...mcpForm, authHeader: e.target.value })} />

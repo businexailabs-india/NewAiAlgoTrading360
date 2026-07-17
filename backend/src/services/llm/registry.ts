@@ -20,10 +20,12 @@ import {
   StrategyRulesResponse
 } from './types';
 import { logger } from '../../utils/logger';
+import { forceAnthropicForAllQueries, isBifrostEnabled } from './bifrost';
 
 const PROVIDER_ALIASES: Record<string, LlmProviderId> = {
   claude: 'claude',
   anthropic: 'claude',
+  bifrost: 'claude',
   openai: 'openai',
   azure: 'azure_openai',
   azure_openai: 'azure_openai',
@@ -76,6 +78,10 @@ export class LlmProviderRegistry {
   }
 
   resolveDefault(): LlmProviderId {
+    // Route every advisory / Ask Advisor query through Anthropic (via Bifrost when enabled).
+    if (forceAnthropicForAllQueries()) {
+      return 'claude';
+    }
     const configured = normalizeProviderId(process.env.DEFAULT_LLM_PROVIDER) || 'claude';
     if (configured === 'mock' && process.env.ALLOW_MOCK_LLM !== 'true' && process.env.NODE_ENV !== 'test') {
       throw new LlmProviderError(
@@ -119,7 +125,12 @@ export class LlmProviderRegistry {
     run: (provider: BaseLLMProvider) => Promise<LlmProviderResult<T>>,
     prefer?: LlmProviderId
   ): Promise<LlmProviderResult<T>> {
-    const primaryId = prefer || this.resolveDefault();
+    const primaryId = forceAnthropicForAllQueries()
+      ? 'claude'
+      : prefer || this.resolveDefault();
+    if (isBifrostEnabled() && primaryId === 'claude') {
+      logger.debug('llm.bifrost_route', { operation, provider: primaryId });
+    }
     const primary = this.providers.get(primaryId);
     if (!primary) {
       throw new LlmProviderError(`Unknown provider: ${primaryId}`, primaryId, 400, false);

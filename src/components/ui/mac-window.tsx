@@ -1,6 +1,18 @@
-import { PointerEvent as ReactPointerEvent, ReactNode, useCallback, useRef, useState } from 'react';
+import {
+  PointerEvent as ReactPointerEvent,
+  CSSProperties,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState
+} from 'react';
+import { flushSync } from 'react-dom';
+import { useWindowStack } from '../../contexts/WindowStackContext';
 
 type WindowMode = 'inline' | 'floating' | 'maximized';
+type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 interface MacWindowProps {
   title: string;
@@ -13,7 +25,23 @@ interface MacWindowProps {
   minWidth?: number;
   minHeight?: number;
   reopenLabel?: string;
+  defaultMode?: WindowMode;
+  startClosed?: boolean;
+  popupToken?: number;
+  initialPosition?: { x: number; y: number };
+  windowId?: string;
+  /** Keep above other Mac windows (below TopBar / Algos menu). */
+  alwaysOnTop?: boolean;
+  /**
+   * Keep window in the main desktop column (full width, no float-away).
+   * Default true when defaultMode is inline. DhanLaxmi stays separate (always floating).
+   */
+  fitMain?: boolean;
 }
+
+/** Top menu + market ticker / profile strip. */
+const TOP_BAR_H = 104;
+const SIDEBAR_W = 80;
 
 export function MacWindow({
   title,
@@ -25,195 +53,494 @@ export function MacWindow({
   initialHeight = 560,
   minWidth = 360,
   minHeight = 280,
-  reopenLabel
+  reopenLabel,
+  defaultMode = 'inline',
+  startClosed = false,
+  popupToken = 0,
+  initialPosition,
+  windowId,
+  alwaysOnTop = false,
+  fitMain
 }: MacWindowProps) {
+  const reactId = useId();
+  const id = windowId || reactId;
+  const lockMain = fitMain ?? defaultMode === 'inline';
+  const {
+    claimZIndex,
+    cascadeOffset,
+    registerWindow,
+    updateWindowStatus,
+    unregisterWindow,
+    getRestoreToken,
+    getCloseToken
+  } = useWindowStack();
   const frameRef = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState<WindowMode>('inline');
-  const [closed, setClosed] = useState(false);
+  const bumpZ = useCallback(() => claimZIndex(alwaysOnTop), [claimZIndex, alwaysOnTop]);
+
+  const cascade = cascadeOffset(id);
+  const [mode, setMode] = useState<WindowMode>(() =>
+    lockMain && defaultMode === 'floating' ? 'inline' : defaultMode
+  );
+  const [closed, setClosed] = useState(startClosed);
   const [minimized, setMinimized] = useState(false);
-  const [position, setPosition] = useState({ x: 112, y: 84 });
+  const [position, setPosition] = useState(
+    initialPosition ?? { x: cascade.x, y: cascade.y }
+  );
   const [size, setSize] = useState({ width: initialWidth, height: initialHeight });
+  const [userSized, setUserSized] = useState(false);
+  const [zIndex, setZIndex] = useState(() => claimZIndex(alwaysOnTop));
+  const lastPopupToken = useRef(popupToken);
+  const lastRestoreToken = useRef(getRestoreToken(id));
+  const lastCloseToken = useRef(getCloseToken(id));
+
   const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
-  const resizeRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const resizeRef = useRef<{
+    edge: ResizeEdge;
+    startX: number;
+    startY: number;
+    width: number;
+    height: number;
+    left: number;
+    top: number;
+  } | null>(null);
 
-  const stopDrag = useCallback(() => {
-    dragRef.current = null;
-    window.removeEventListener('pointermove', moveDrag);
-    window.removeEventListener('pointerup', stopDrag);
-  // Functions are stable for the lifetime of an active pointer gesture.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => {
+    registerWindow({
+      id,
+      title,
+      subtitle,
+      status: startClosed ? 'closed' : 'open'
+    });
+    return () => unregisterWindow(id);
+  }, [id, title, subtitle, startClosed, registerWindow, unregisterWindow]);
 
-  const moveDrag = useCallback((event: PointerEvent) => {
+  useEffect(() => {
+    const status = closed ? 'closed' : minimized ? 'minimized' : 'open';
+    updateWindowStatus(id, status);
+  }, [id, closed, minimized, updateWindowStatus]);
+
+  useEffect(() => {
+    const token = getRestoreToken(id);
+    if (token === lastRestoreToken.current) return;
+    lastRestoreToken.current = token;
+    if (!token) return;
+    setClosed(false);
+    setMinimized(false);
+    setMode(lockMain ? 'inline' : defaultMode);
+    if (lockMain) setUserSized(false);
+    setZIndex(bumpZ());
+  }, [id, getRestoreToken, bumpZ, defaultMode, lockMain]);
+
+  useEffect(() => {
+    const token = getCloseToken(id);
+    if (token === lastCloseToken.current) return;
+    lastCloseToken.current = token;
+    if (!token) return;
+    setClosed(true);
+    setMinimized(false);
+  }, [id, getCloseToken]);
+
+  const bringToFront = useCallback(() => {
+    setZIndex(bumpZ());
+  }, [bumpZ]);
+
+  // Main desktop windows stay in-flow (fit) — never leave them stuck floating.
+  useEffect(() => {
+    if (lockMain && mode === 'floating') {
+      setMode('inline');
+      setUserSized(false);
+    }
+  }, [lockMain, mode]);
+
+  useEffect(() => {
+    if (popupToken === lastPopupToken.current) return;
+    lastPopupToken.current = popupToken;
+    if (!popupToken) return;
+    setClosed(false);
+    setMinimized(false);
+    const nextMode = lockMain ? 'inline' : defaultMode;
+    setMode(nextMode);
+    if (lockMain) setUserSized(false);
+    if (nextMode === 'floating') {
+      setPosition(initialPosition ?? cascadeOffset(id));
+    }
+    setZIndex(bumpZ());
+  }, [popupToken, initialPosition, cascadeOffset, id, bumpZ, defaultMode, lockMain]);
+
+  // Auto-fit height in inline mode until user resizes.
+  useEffect(() => {
+    if (mode !== 'inline' || userSized || minimized || !frameRef.current) return;
+    const el = frameRef.current;
+    const apply = () => {
+      const h = Math.max(minHeight, Math.min(el.scrollHeight, window.innerHeight - TOP_BAR_H - 48));
+      setSize((s) => ({ ...s, width: el.offsetWidth || s.width, height: h }));
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mode, userSized, minimized, minHeight, children]);
+
+  const liftToFloating = (rect: DOMRect) => {
+    flushSync(() => {
+      setPosition({ x: rect.left, y: Math.max(TOP_BAR_H + 8, rect.top) });
+      setSize({
+        width: Math.max(minWidth, Math.round(rect.width)),
+        height: Math.max(minHeight, Math.round(rect.height))
+      });
+      setMode('floating');
+      setUserSized(true);
+      setZIndex(bumpZ());
+    });
+  };
+
+  const onDragMove = useCallback((event: PointerEvent) => {
     if (!dragRef.current) return;
     setPosition({
       x: Math.min(
-        Math.max(80, dragRef.current.left + event.clientX - dragRef.current.x),
-        window.innerWidth - 160
+        Math.max(SIDEBAR_W, dragRef.current.left + event.clientX - dragRef.current.x),
+        window.innerWidth - 120
       ),
       y: Math.min(
-        Math.max(68, dragRef.current.top + event.clientY - dragRef.current.y),
-        window.innerHeight - 54
+        Math.max(TOP_BAR_H + 8, dragRef.current.top + event.clientY - dragRef.current.y),
+        window.innerHeight - 48
       )
     });
   }, []);
 
+  const stopDrag = useCallback(() => {
+    dragRef.current = null;
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', stopDrag);
+  }, [onDragMove]);
+
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (mode === 'maximized' || (event.target as HTMLElement).closest('button')) return;
+    // Main desktop windows stay fitted in the column — no drag-to-float.
+    if (lockMain && (mode === 'inline' || mode === 'maximized')) {
+      bringToFront();
+      return;
+    }
+    bringToFront();
     const rect = frameRef.current?.getBoundingClientRect();
     if (!rect) return;
-    if (mode === 'inline') {
-      setSize({ width: Math.max(minWidth, rect.width), height: Math.max(minHeight, rect.height) });
-      setPosition({ x: rect.left, y: rect.top });
-      setMode('floating');
-    }
-    dragRef.current = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
-    window.addEventListener('pointermove', moveDrag);
+    if (mode === 'inline') liftToFloating(rect);
+    dragRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      left: rect.left,
+      top: Math.max(TOP_BAR_H + 8, rect.top)
+    };
+    window.addEventListener('pointermove', onDragMove);
     window.addEventListener('pointerup', stopDrag);
   };
 
-  const stopResize = useCallback(() => {
-    resizeRef.current = null;
-    window.removeEventListener('pointermove', moveResize);
-    window.removeEventListener('pointerup', stopResize);
-  // Functions are stable for the lifetime of an active pointer gesture.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const moveResize = useCallback(
+  const onResizeMove = useCallback(
     (event: PointerEvent) => {
-      if (!resizeRef.current) return;
-      setSize({
-        width: Math.min(
-          Math.max(minWidth, resizeRef.current.width + event.clientX - resizeRef.current.x),
-          window.innerWidth - position.x - 16
-        ),
-        height: Math.min(
-          Math.max(minHeight, resizeRef.current.height + event.clientY - resizeRef.current.y),
-          window.innerHeight - position.y - 16
-        )
-      });
+      const r = resizeRef.current;
+      if (!r) return;
+      const dx = event.clientX - r.startX;
+      const dy = event.clientY - r.startY;
+      let nextW = r.width;
+      let nextH = r.height;
+      let nextX = r.left;
+      let nextY = r.top;
+      const maxRight = window.innerWidth - 12;
+      const maxBottom = window.innerHeight - 12;
+      const minTop = TOP_BAR_H + 8;
+      const minLeft = SIDEBAR_W;
+
+      if (r.edge.includes('e')) {
+        nextW = Math.max(minWidth, Math.min(r.width + dx, maxRight - r.left));
+      }
+      if (r.edge.includes('s')) {
+        nextH = Math.max(minHeight, Math.min(r.height + dy, maxBottom - r.top));
+      }
+      if (r.edge.includes('w')) {
+        const maxGrow = r.left - minLeft;
+        const applied = Math.max(-maxGrow, Math.min(dx, r.width - minWidth));
+        nextW = r.width - applied;
+        nextX = r.left + applied;
+      }
+      if (r.edge.includes('n')) {
+        const maxGrow = r.top - minTop;
+        const applied = Math.max(-maxGrow, Math.min(dy, r.height - minHeight));
+        nextH = r.height - applied;
+        nextY = r.top + applied;
+      }
+
+      setSize({ width: Math.round(nextW), height: Math.round(nextH) });
+      setPosition({ x: Math.round(nextX), y: Math.round(nextY) });
     },
-    [minHeight, minWidth, position.x, position.y]
+    [minHeight, minWidth]
   );
 
-  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const stopResize = useCallback(() => {
+    resizeRef.current = null;
+    window.removeEventListener('pointermove', onResizeMove);
+    window.removeEventListener('pointerup', stopResize);
+  }, [onResizeMove]);
+
+  const startResize = (edge: ResizeEdge) => (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    bringToFront();
     const rect = frameRef.current?.getBoundingClientRect();
     if (!rect) return;
-    if (mode === 'inline') {
-      setPosition({ x: rect.left, y: rect.top });
-      setMode('floating');
+
+    // Main desktop: height resize in-flow only (stay full width).
+    if (lockMain && mode === 'inline') {
+      if (!(edge === 's' || edge === 'n' || edge === 'se' || edge === 'sw' || edge === 'ne' || edge === 'nw')) {
+        return;
+      }
+      setUserSized(true);
+      setSize({
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      });
+    } else if (mode === 'inline') {
+      liftToFloating(rect);
+    } else {
+      setUserSized(true);
     }
+
     resizeRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      width: rect.width,
-      height: rect.height
+      edge: lockMain && mode === 'inline' ? (edge.includes('n') ? 'n' : 's') : edge,
+      startX: event.clientX,
+      startY: event.clientY,
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      left: Math.round(rect.left),
+      top: Math.round(Math.max(TOP_BAR_H + 8, rect.top))
     };
-    window.addEventListener('pointermove', moveResize);
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* ignore */
+    }
+
+    window.addEventListener('pointermove', onResizeMove);
     window.addEventListener('pointerup', stopResize);
   };
 
   const toggleMaximize = () => {
     setMinimized(false);
-    setMode((current) => (current === 'maximized' ? 'inline' : 'maximized'));
+    bringToFront();
+    setMode((current) => {
+      if (current === 'maximized') {
+        if (lockMain) setUserSized(false);
+        return lockMain ? 'inline' : defaultMode === 'floating' ? 'floating' : 'inline';
+      }
+      return 'maximized';
+    });
   };
 
-  if (closed) {
-    return (
-      <button
-        type="button"
-        onClick={() => setClosed(false)}
-        className="fixed bottom-5 right-5 z-[160] rounded-full border border-cyan-300/40 bg-slate-900/95 px-4 py-2 text-sm text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.3)]"
-      >
-        {reopenLabel || `Open ${title}`}
-      </button>
-    );
+  if (closed || minimized) {
+    return null;
   }
 
   const floating = mode !== 'inline';
-  const style =
+  const frameLayout: CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden'
+  };
+  const style: CSSProperties =
     mode === 'maximized'
-      ? { left: 96, right: 16, top: 72, bottom: 16 }
+      ? {
+          ...frameLayout,
+          left: SIDEBAR_W + 10,
+          right: 'var(--window-pane-inset, 62px)',
+          top: TOP_BAR_H + 8,
+          bottom: 16,
+          zIndex,
+          width: 'auto',
+          height: 'auto'
+        }
       : mode === 'floating'
         ? {
+            ...frameLayout,
             left: position.x,
             top: position.y,
             width: size.width,
-            height: minimized ? 'auto' : size.height
+            height: size.height,
+            zIndex
           }
-        : undefined;
+        : {
+            ...frameLayout,
+            width: '100%',
+            maxWidth: 'none',
+            alignSelf: 'stretch',
+            boxSizing: 'border-box',
+            // Fit the main column under top chrome + ticker.
+            height: lockMain && !userSized
+              ? `calc(100vh - ${TOP_BAR_H + 24}px)`
+              : userSized
+                ? size.height
+                : undefined,
+            maxHeight: `calc(100vh - ${TOP_BAR_H + 24}px)`,
+            minHeight: userSized ? undefined : minHeight,
+            marginLeft: 0,
+            marginRight: 0,
+            ...(lockMain
+              ? {
+                  border: '1px solid rgba(34, 211, 238, 0.55)',
+                  boxShadow:
+                    '0 0 0 1px rgba(34,211,238,0.12), 0 0 28px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)',
+                  background: 'rgba(2, 8, 23, 0.96)'
+                }
+              : {})
+          };
+
+  const grip = (edge: ResizeEdge, extra: CSSProperties) => (
+    <div
+      key={edge}
+      onPointerDown={startResize(edge)}
+      style={{
+        position: 'absolute',
+        zIndex: 20,
+        touchAction: 'none',
+        ...extra
+      }}
+      aria-label={`Resize ${edge}`}
+    />
+  );
 
   return (
     <div
       ref={frameRef}
+      data-window-id={id}
+      data-reopen-label={reopenLabel || title}
       style={style}
-      className={`${floating ? 'fixed z-[150]' : 'relative w-full'} neon-card overflow-hidden rounded-2xl ${className}`}
+      onPointerDownCapture={bringToFront}
+      className={`${floating ? 'fixed' : 'relative'} neon-card overflow-hidden rounded-2xl ${className}`}
     >
       <div
         onPointerDown={startDrag}
         onDoubleClick={toggleMaximize}
-        className={`flex select-none items-center justify-between gap-4 border-b border-white/10 bg-slate-950/55 px-4 py-3 ${
-          mode === 'maximized' ? '' : 'cursor-move'
-        }`}
+        className={mode === 'maximized' || lockMain ? '' : 'cursor-move'}
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          width: '100%',
+          boxSizing: 'border-box',
+          flexShrink: 0,
+          userSelect: 'none',
+          padding: '12px 16px',
+          borderBottom: '1px solid rgba(34,211,238,0.25)',
+          cursor: mode === 'maximized' || lockMain ? 'default' : 'move',
+          background:
+            'linear-gradient(90deg, rgba(8,47,73,0.96) 0%, rgba(15,23,42,0.98) 45%, rgba(6,78,59,0.55) 100%)',
+          boxShadow: 'inset 0 -1px 0 rgba(34,211,238,0.18), 0 8px 18px rgba(0,0,0,0.25)'
+        }}
       >
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex shrink-0 items-center gap-2" aria-label="Window controls">
-            <button
-              type="button"
-              title="Close"
-              aria-label="Close"
-              onClick={() => setClosed(true)}
-              className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#ff5f57] shadow-[0_0_7px_rgba(255,95,87,0.45)]"
-            >
-              <span className="text-[8px] leading-none text-red-950 opacity-0 group-hover:opacity-100">×</span>
-            </button>
-            <button
-              type="button"
-              title={minimized ? 'Restore' : 'Minimize'}
-              aria-label={minimized ? 'Restore' : 'Minimize'}
-              onClick={() => setMinimized((value) => !value)}
-              className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#febc2e] shadow-[0_0_7px_rgba(254,188,46,0.4)]"
-            >
-              <span className="text-[8px] leading-none text-amber-950 opacity-0 group-hover:opacity-100">−</span>
-            </button>
-            <button
-              type="button"
-              title={mode === 'maximized' ? 'Restore' : 'Maximize'}
-              aria-label={mode === 'maximized' ? 'Restore' : 'Maximize'}
-              onClick={toggleMaximize}
-              className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#28c840] shadow-[0_0_7px_rgba(40,200,64,0.4)]"
-            >
-              <span className="text-[7px] leading-none text-green-950 opacity-0 group-hover:opacity-100">↗</span>
-            </button>
-          </div>
-
-          <div className="h-5 w-px bg-white/10" />
+        {/* Title block — left */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            minWidth: 0,
+            flex: '1 1 auto'
+          }}
+        >
           {icon}
-          <div className="min-w-0">
+          <div style={{ minWidth: 0 }}>
             <div className="truncate text-sm font-semibold text-white">{title}</div>
             {subtitle && <div className="truncate text-[11px] text-slate-400">{subtitle}</div>}
           </div>
         </div>
-        <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-          {mode === 'maximized' ? 'Full screen' : mode === 'floating' ? 'Floating' : 'Dashboard'}
+
+        {/* Min / max / close — right */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexShrink: 0,
+            marginLeft: 'auto'
+          }}
+          aria-label="Window controls"
+        >
+          <button
+            type="button"
+            title={minimized ? 'Restore' : 'Minimize'}
+            aria-label={minimized ? 'Restore' : 'Minimize'}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMinimized((value) => !value);
+            }}
+            className="flex h-4 w-4 items-center justify-center rounded-full bg-[#febc2e] font-bold leading-none text-amber-950 ring-1 ring-black/25 shadow-[0_0_8px_rgba(254,188,46,0.55)] transition hover:brightness-110"
+          >
+            <span className="mt-[-1px] text-[11px] leading-none">{minimized ? '+' : '−'}</span>
+          </button>
+          <button
+            type="button"
+            title={mode === 'maximized' ? 'Restore' : 'Maximize'}
+            aria-label={mode === 'maximized' ? 'Restore' : 'Maximize'}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMaximize();
+            }}
+            className="flex h-4 w-4 items-center justify-center rounded-full bg-[#28c840] font-bold leading-none text-green-950 ring-1 ring-black/25 shadow-[0_0_8px_rgba(40,200,64,0.55)] transition hover:brightness-110"
+          >
+            <span className="text-[9px] leading-none">{mode === 'maximized' ? '❐' : '＋'}</span>
+          </button>
+          <button
+            type="button"
+            title="Close"
+            aria-label="Close"
+            onClick={(e) => {
+              e.stopPropagation();
+              setClosed(true);
+            }}
+            className="flex h-4 w-4 items-center justify-center rounded-full bg-[#ff5f57] font-bold leading-none text-red-950 ring-1 ring-black/25 shadow-[0_0_8px_rgba(255,95,87,0.6)] transition hover:brightness-110"
+          >
+            <span className="text-[10px] leading-none">×</span>
+          </button>
         </div>
       </div>
 
       {!minimized && (
-        <div className={floating ? 'h-[calc(100%-57px)] overflow-auto' : ''}>{children}</div>
+        <div
+          className="mac-window-scroll"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowX: 'hidden',
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarGutter: 'stable'
+          }}
+        >
+          {children}
+        </div>
       )}
 
       {!minimized && mode !== 'maximized' && (
-        <div
-          onPointerDown={startResize}
-          className="absolute bottom-0 right-0 h-5 w-5 cursor-nwse-resize"
-          aria-label="Resize window"
-        >
-          <span className="absolute bottom-1 right-1 h-2.5 w-2.5 border-b-2 border-r-2 border-cyan-300/60" />
-        </div>
+        <>
+          {grip('n', { top: 0, left: 10, right: 10, height: 8, cursor: 'ns-resize' })}
+          {grip('s', { bottom: 0, left: 10, right: 10, height: 8, cursor: 'ns-resize' })}
+          {!lockMain && (
+            <>
+              {grip('e', { top: 10, right: 0, bottom: 10, width: 8, cursor: 'ew-resize' })}
+              {grip('w', { top: 10, left: 0, bottom: 10, width: 8, cursor: 'ew-resize' })}
+              {grip('ne', { top: 0, right: 0, width: 14, height: 14, cursor: 'nesw-resize' })}
+              {grip('nw', { top: 0, left: 0, width: 14, height: 14, cursor: 'nwse-resize' })}
+              {grip('se', { bottom: 0, right: 0, width: 16, height: 16, cursor: 'nwse-resize' })}
+              {grip('sw', { bottom: 0, left: 0, width: 14, height: 14, cursor: 'nesw-resize' })}
+            </>
+          )}
+          <div
+            className="pointer-events-none absolute bottom-1 right-1 h-3 w-3 rounded-sm border-b-2 border-r-2 border-cyan-300/90"
+            aria-hidden
+          />
+        </>
       )}
     </div>
   );

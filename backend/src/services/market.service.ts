@@ -62,9 +62,15 @@ const SMALLCAP_UNIVERSE = [
   'SAIL', 'NMDC', 'NHPC', 'IRFC', 'RVNL', 'IREDA', 'HUDCO', 'IRCTC'
 ];
 
+/** NSE symbols that Yahoo Finance renamed / remapped after corporate actions */
+const YAHOO_SYMBOL_ALIASES: Record<string, string> = {
+  TATAMOTORS: 'TMCV'
+};
+
 export class MarketService {
   private static cache = new Map<string, { data: Quote; expires: number }>();
   private static CACHE_TTL = 30_000;
+  private static yahooWarnAt = new Map<string, number>();
 
   private static assertValidQuote(quote: Quote | null, symbol: string): Quote {
     if (!quote || !(quote.price > 0)) {
@@ -75,7 +81,8 @@ export class MarketService {
 
   static async fetchYahooQuote(symbol: string, suffix = '.NS'): Promise<Quote | null> {
     try {
-      const yahooSymbol = symbol.includes('^') ? symbol : `${symbol}${suffix}`;
+      const lookup = YAHOO_SYMBOL_ALIASES[symbol] || symbol;
+      const yahooSymbol = lookup.includes('^') ? lookup : `${lookup}${suffix}`;
       const response = await axios.get(
         `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`,
         {
@@ -112,7 +119,12 @@ export class MarketService {
         available: true
       };
     } catch (err) {
-      logger.warn(`Yahoo quote failed for ${symbol}: ${err instanceof Error ? err.message : String(err)}`);
+      const now = Date.now();
+      const last = this.yahooWarnAt.get(symbol) || 0;
+      if (now - last > 5 * 60_000) {
+        this.yahooWarnAt.set(symbol, now);
+        logger.warn(`Yahoo quote failed for ${symbol}: ${err instanceof Error ? err.message : String(err)}`);
+      }
       return null;
     }
   }

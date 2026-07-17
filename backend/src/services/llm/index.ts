@@ -5,6 +5,7 @@ export * from './retry';
 export * from './usage';
 export * from './base-llm-provider';
 export * from './registry';
+export * from './bifrost';
 export { ClaudeProvider } from './providers/claude.provider';
 export { OpenAIProvider } from './providers/openai.provider';
 export { AzureOpenAIProvider } from './providers/azure-openai.provider';

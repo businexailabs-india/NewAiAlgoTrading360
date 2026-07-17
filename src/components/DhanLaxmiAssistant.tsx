@@ -6,6 +6,7 @@ import {
   LANGUAGES,
   dhanlaxmiService
 } from '../services/dhanlaxmiService';
+import { useWindowStack } from '../contexts/WindowStackContext';
 
 type Turn = {
   role: 'user' | 'assistant';
@@ -25,7 +26,8 @@ const MIN_W = 340;
 const MIN_H = 380;
 const DEFAULT_W = 420;
 const DEFAULT_H = 560;
-const TOP_OFFSET = 84;
+/** Clear top menu + ticker/profile. */
+const TOP_OFFSET = 112;
 const EDGE_GAP = 20;
 
 export function DhanLaxmiAssistant({
@@ -33,9 +35,19 @@ export function DhanLaxmiAssistant({
   open: openProp,
   onOpenChange
 }: DhanLaxmiAssistantProps) {
+  const {
+    claimZIndex,
+    registerWindow,
+    updateWindowStatus,
+    unregisterWindow,
+    getRestoreToken
+  } = useWindowStack();
   const isControlled = openProp !== undefined;
   const [openState, setOpenState] = useState(false);
   const open = isControlled ? openProp : openState;
+  const [zIndex, setZIndex] = useState(() => claimZIndex());
+  const bringToFront = useCallback(() => setZIndex(claimZIndex()), [claimZIndex]);
+  const lastRestoreToken = useRef(0);
 
   const setOpen = useCallback(
     (next: boolean) => {
@@ -61,14 +73,42 @@ export function DhanLaxmiAssistant({
   const [size, setSize] = useState({ w: DEFAULT_W, h: DEFAULT_H });
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
 
+  useEffect(() => {
+    registerWindow({
+      id: 'dhanlaxmi',
+      title: 'DhanLaxmi',
+      subtitle: 'Local-language AI assistant',
+      status: open ? 'open' : 'closed'
+    });
+    return () => unregisterWindow('dhanlaxmi');
+  }, [registerWindow, unregisterWindow, open]);
+
+  useEffect(() => {
+    updateWindowStatus('dhanlaxmi', !open ? 'closed' : minimized ? 'minimized' : 'open');
+  }, [open, minimized, updateWindowStatus]);
+
+  useEffect(() => {
+    const token = getRestoreToken('dhanlaxmi');
+    if (token === lastRestoreToken.current) return;
+    lastRestoreToken.current = token;
+    if (!token) return;
+    setOpen(true);
+    setMinimized(false);
+    setZIndex(claimZIndex());
+  }, [getRestoreToken, setOpen, claimZIndex]);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const drawerInputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(
     null
   );
-  const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number } | null>(
-    null
-  );
+  const resizeRef = useRef<{
+    startX: number;
+    startY: number;
+    origW: number;
+    origH: number;
+    edge: 'e' | 's' | 'se';
+  } | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -109,7 +149,8 @@ export function DhanLaxmiAssistant({
   }, [onDragMove]);
 
   const startDrag = (e: React.PointerEvent) => {
-    if (mode === 'maximized') return;
+    if (mode === 'maximized' || (e.target as HTMLElement).closest('button')) return;
+    bringToFront();
     const origin = pos ?? { x: window.innerWidth - size.w - EDGE_GAP, y: TOP_OFFSET };
     dragRef.current = { startX: e.clientX, startY: e.clientY, origX: origin.x, origY: origin.y };
     window.addEventListener('pointermove', onDragMove);
@@ -118,12 +159,14 @@ export function DhanLaxmiAssistant({
 
   const onResizeMove = useCallback((e: PointerEvent) => {
     if (!resizeRef.current) return;
-    const dw = e.clientX - resizeRef.current.startX;
-    const dh = e.clientY - resizeRef.current.startY;
-    setSize({
-      w: Math.min(Math.max(MIN_W, resizeRef.current.origW + dw), window.innerWidth - 40),
-      h: Math.min(Math.max(MIN_H, resizeRef.current.origH + dh), window.innerHeight - 80)
-    });
+    const { edge, startX, startY, origW, origH } = resizeRef.current;
+    const dw = e.clientX - startX;
+    const dh = e.clientY - startY;
+    let w = origW;
+    let h = origH;
+    if (edge.includes('e')) w = Math.min(Math.max(MIN_W, origW + dw), window.innerWidth - 40);
+    if (edge.includes('s')) h = Math.min(Math.max(MIN_H, origH + dh), window.innerHeight - 80);
+    setSize({ w, h });
   }, []);
 
   const stopResize = useCallback(() => {
@@ -132,9 +175,17 @@ export function DhanLaxmiAssistant({
     window.removeEventListener('pointerup', stopResize);
   }, [onResizeMove]);
 
-  const startResize = (e: React.PointerEvent) => {
+  const startResize = (edge: 'e' | 's' | 'se') => (e: React.PointerEvent) => {
+    e.preventDefault();
     e.stopPropagation();
-    resizeRef.current = { startX: e.clientX, startY: e.clientY, origW: size.w, origH: size.h };
+    bringToFront();
+    resizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origW: size.w,
+      origH: size.h,
+      edge
+    };
     window.addEventListener('pointermove', onResizeMove);
     window.addEventListener('pointerup', stopResize);
   };
@@ -235,34 +286,95 @@ export function DhanLaxmiAssistant({
         setOpen(true);
         setMinimized(false);
       }}
-      className="group flex items-center gap-2 rounded-full border border-amber-300/40 bg-gradient-to-r from-emerald-900 to-emerald-800 px-3 py-1.5 text-sm font-semibold text-amber-100 shadow-[0_0_18px_rgba(16,185,129,0.35)] transition hover:from-emerald-800 hover:to-emerald-700"
       aria-label="Open DhanLaxmi assistant"
+      style={
+        placement === 'top'
+          ? {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              height: 36,
+              padding: '0 16px',
+              borderRadius: 999,
+              border: '1px solid rgba(148,163,184,0.28)',
+              background:
+                'linear-gradient(180deg, rgba(30,41,59,0.95) 0%, rgba(15,23,42,0.98) 100%)',
+              color: '#f8fafc',
+              fontSize: 13,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)'
+            }
+          : {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              height: 36,
+              padding: '0 14px',
+              borderRadius: 999,
+              border: '1px solid rgba(252,211,77,0.4)',
+              background: 'linear-gradient(90deg, #064e3b 0%, #065f46 100%)',
+              color: '#fef3c7',
+              fontSize: 13,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              boxShadow: '0 0 18px rgba(16,185,129,0.35)'
+            }
+      }
     >
-      <span className="flex h-6 w-6 animate-pulse items-center justify-center rounded-full bg-amber-300 text-emerald-950">
+      <span
+        style={
+          placement === 'top'
+            ? { color: '#e2e8f0', fontSize: 14, lineHeight: 1 }
+            : {
+                display: 'flex',
+                height: 22,
+                width: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 999,
+                background: '#fcd34d',
+                color: '#064e3b',
+                fontSize: 12
+              }
+        }
+      >
         ✦
       </span>
       Ask DhanLaxmi
-      <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
     </button>
   );
 
   const windowStyle: React.CSSProperties =
     mode === 'maximized'
-      ? { left: 96, top: TOP_OFFSET - 12, width: 'auto', height: 'auto', right: 16, bottom: 16 }
+      ? {
+          left: 96,
+          top: 72,
+          width: 'auto',
+          height: 'auto',
+          right: 16,
+          bottom: 16,
+          zIndex
+        }
       : {
           left: pos?.x ?? undefined,
           top: pos?.y ?? TOP_OFFSET,
           width: size.w,
-          height: minimized ? 'auto' : size.h
+          height: minimized ? 52 : size.h,
+          zIndex
         };
 
   const chatWindow =
     mounted &&
     open &&
+    !minimized &&
     createPortal(
       <div
-        className="fixed z-[200] flex flex-col overflow-hidden rounded-2xl neon-card neon-card-amber text-slate-100"
+        className="fixed flex flex-col overflow-hidden rounded-2xl neon-card neon-card-amber text-slate-100"
         style={windowStyle}
+        onPointerDownCapture={bringToFront}
         role="dialog"
         aria-modal="false"
         aria-label="DhanLaxmi assistant"
@@ -270,44 +382,24 @@ export function DhanLaxmiAssistant({
         {/* Title bar */}
         <header
           onPointerDown={startDrag}
-          className={`flex items-center justify-between gap-3 border-b border-white/10 bg-gradient-to-r from-emerald-950/90 to-slate-950/90 px-3 py-2.5 ${
-            mode === 'maximized' ? '' : 'cursor-move'
-          }`}
+          className={mode === 'maximized' ? '' : 'cursor-move'}
+          style={{
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '10px 12px',
+            borderBottom: '1px solid rgba(251,191,36,0.3)',
+            cursor: mode === 'maximized' ? 'default' : 'move',
+            background:
+              'linear-gradient(90deg, rgba(69,26,3,0.95) 0%, rgba(6,78,59,0.9) 50%, rgba(15,23,42,0.96) 100%)',
+            boxShadow: 'inset 0 -1px 0 rgba(251,191,36,0.22), 0 8px 18px rgba(0,0,0,0.25)'
+          }}
         >
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex shrink-0 items-center gap-2" aria-label="Window controls">
-              <button
-                type="button"
-                title="Close"
-                aria-label="Close"
-                onClick={() => setOpen(false)}
-                className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#ff5f57] shadow-[0_0_7px_rgba(255,95,87,0.45)]"
-              >
-                <span className="text-[8px] text-red-950 opacity-0 group-hover:opacity-100">×</span>
-              </button>
-              <button
-                type="button"
-                title={minimized ? 'Restore' : 'Minimize'}
-                aria-label={minimized ? 'Restore' : 'Minimize'}
-                onClick={() => setMinimized((m) => !m)}
-                className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#febc2e] shadow-[0_0_7px_rgba(254,188,46,0.4)]"
-              >
-                <span className="text-[8px] text-amber-950 opacity-0 group-hover:opacity-100">−</span>
-              </button>
-              <button
-                type="button"
-                title={mode === 'maximized' ? 'Restore' : 'Maximize'}
-                aria-label={mode === 'maximized' ? 'Restore' : 'Maximize'}
-                onClick={() => {
-                  setMinimized(false);
-                  setMode((m) => (m === 'maximized' ? 'normal' : 'maximized'));
-                }}
-                className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#28c840] shadow-[0_0_7px_rgba(40,200,64,0.4)]"
-              >
-                <span className="text-[7px] text-green-950 opacity-0 group-hover:opacity-100">↗</span>
-              </button>
-            </div>
-            <div className="h-5 w-px bg-white/10" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: '1 1 auto' }}>
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-300 text-emerald-950 shadow-[0_0_12px_rgba(252,211,77,0.6)]">
               ✦
             </span>
@@ -321,9 +413,48 @@ export function DhanLaxmiAssistant({
               </div>
             </div>
           </div>
-          <span className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-            {mode === 'maximized' ? 'Full screen' : 'Floating'}
-          </span>
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 'auto' }}
+            aria-label="Window controls"
+          >
+            <button
+              type="button"
+              title={minimized ? 'Restore' : 'Minimize'}
+              aria-label={minimized ? 'Restore' : 'Minimize'}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMinimized((m) => !m);
+              }}
+              className="flex h-4 w-4 items-center justify-center rounded-full bg-[#febc2e] font-bold leading-none text-amber-950 ring-1 ring-black/20 shadow-[0_0_8px_rgba(254,188,46,0.55)] transition hover:brightness-110"
+            >
+              <span className="mt-[-1px] text-[11px] leading-none">{minimized ? '+' : '−'}</span>
+            </button>
+            <button
+              type="button"
+              title={mode === 'maximized' ? 'Restore' : 'Maximize'}
+              aria-label={mode === 'maximized' ? 'Restore' : 'Maximize'}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMinimized(false);
+                setMode((m) => (m === 'maximized' ? 'normal' : 'maximized'));
+              }}
+              className="flex h-4 w-4 items-center justify-center rounded-full bg-[#28c840] font-bold leading-none text-green-950 ring-1 ring-black/20 shadow-[0_0_8px_rgba(40,200,64,0.55)] transition hover:brightness-110"
+            >
+              <span className="text-[9px] leading-none">{mode === 'maximized' ? '❐' : '＋'}</span>
+            </button>
+            <button
+              type="button"
+              title="Close"
+              aria-label="Close"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen(false);
+              }}
+              className="flex h-4 w-4 items-center justify-center rounded-full bg-[#ff5f57] font-bold leading-none text-red-950 ring-1 ring-black/20 shadow-[0_0_8px_rgba(255,95,87,0.6)] transition hover:brightness-110"
+            >
+              <span className="text-[10px] leading-none">×</span>
+            </button>
+          </div>
         </header>
 
         {!minimized && (
@@ -471,15 +602,25 @@ export function DhanLaxmiAssistant({
             </form>
 
             {mode !== 'maximized' && (
-              <div
-                onPointerDown={startResize}
-                className="absolute bottom-0 right-0 z-10 h-4 w-4 cursor-nwse-resize"
-                style={{
-                  background:
-                    'linear-gradient(135deg, transparent 0 50%, rgba(251,191,36,0.7) 50% 60%, transparent 60% 70%, rgba(251,191,36,0.7) 70% 80%, transparent 80%)'
-                }}
-                aria-label="Resize"
-              />
+              <>
+                <div
+                  onPointerDown={startResize('e')}
+                  style={{ position: 'absolute', top: 40, right: 0, bottom: 12, width: 8, cursor: 'ew-resize', zIndex: 20 }}
+                  aria-label="Resize horizontally"
+                />
+                <div
+                  onPointerDown={startResize('s')}
+                  style={{ position: 'absolute', left: 12, right: 12, bottom: 0, height: 8, cursor: 'ns-resize', zIndex: 20 }}
+                  aria-label="Resize vertically"
+                />
+                <div
+                  onPointerDown={startResize('se')}
+                  style={{ position: 'absolute', right: 0, bottom: 0, width: 16, height: 16, cursor: 'nwse-resize', zIndex: 21 }}
+                  aria-label="Resize corner"
+                >
+                  <span className="pointer-events-none absolute bottom-1 right-1 h-3 w-3 rounded-sm border-b-2 border-r-2 border-amber-300/90" />
+                </div>
+              </>
             )}
           </>
         )}

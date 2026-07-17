@@ -128,3 +128,145 @@ export const getPerformanceComparison = asyncHandler(async (req: Request, res: R
   const data = await AnalyticsService.getPerformanceComparison(req.user!.id, timeRange);
   res.status(200).json({ success: true, data });
 });
+
+/**
+ * Live broker positions when a Dhan account is linked; otherwise open orders + holdings.
+ */
+export const getPositions = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  let source: 'broker' | 'orders' | 'holdings' | 'mixed' = 'orders';
+  const positions: Array<Record<string, unknown>> = [];
+
+  try {
+    const { ExecutionTargetResolver } = await import('../services/execution-target.resolver');
+    const target = await ExecutionTargetResolver.resolve(userId, { requireLive: true });
+    if (target.adapter === 'direct' && target.direct) {
+      const raw = await target.direct.getPositions();
+      const list = Array.isArray(raw) ? raw : Array.isArray((raw as { data?: unknown[] })?.data) ? (raw as { data: unknown[] }).data : [];
+      for (const p of list as Array<Record<string, unknown>>) {
+        const qty = Number(p.netQty ?? p.quantity ?? p.qty ?? 0);
+        if (!qty) continue;
+        positions.push({
+          id: String(p.positionId || p.securityId || p.tradingSymbol || `${p.symbol}-${positions.length}`),
+          symbol: String(p.tradingSymbol || p.symbol || '—'),
+          side: qty >= 0 ? 'BUY' : 'SELL',
+          quantity: Math.abs(qty),
+          averagePrice: Number(p.costPrice ?? p.averagePrice ?? p.avgPrice ?? 0),
+          lastPrice: Number(p.ltp ?? p.lastPrice ?? p.close ?? 0),
+          pnl: Number(p.unrealizedProfit ?? p.unrealized ?? p.pnl ?? 0),
+          product: String(p.productType || p.product || ''),
+          status: 'open',
+          isPaper: false,
+          broker: target.broker || 'dhan'
+        });
+      }
+      if (positions.length) source = 'broker';
+    } else if (target.adapter === 'mcp' && target.mcp && typeof (target.mcp as { getPositions?: () => Promise<unknown> }).getPositions === 'function') {
+      const raw = await (target.mcp as { getPositions: () => Promise<unknown> }).getPositions();
+      const list = Array.isArray(raw) ? raw : [];
+      for (const p of list as Array<Record<string, unknown>>) {
+        const qty = Number(p.netQty ?? p.quantity ?? p.qty ?? 0);
+        if (!qty) continue;
+        positions.push({
+          id: String(p.positionId || p.tradingSymbol || positions.length),
+          symbol: String(p.tradingSymbol || p.symbol || '—'),
+          side: qty >= 0 ? 'BUY' : 'SELL',
+          quantity: Math.abs(qty),
+          averagePrice: Number(p.costPrice ?? p.averagePrice ?? 0),
+          lastPrice: Number(p.ltp ?? p.lastPrice ?? 0),
+          pnl: Number(p.unrealizedProfit ?? p.pnl ?? 0),
+          product: String(p.productType || p.product || ''),
+          status: 'open',
+          isPaper: false,
+          broker: target.broker || 'dhan'
+        });
+      }
+      if (positions.length) source = 'broker';
+    }
+  } catch {
+    /* no live broker — fall through */
+  }
+
+  if (!positions.length) {
+    const openOrders = await prisma.order.findMany({
+      where: {
+        userId,
+        status: { in: ['PENDING', 'OPEN', 'PLACED', 'PARTIAL', 'TRIGGER_PENDING'] }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+    for (const o of openOrders) {
+      positions.push({
+        id: o.id,
+        symbol: o.symbol,
+        side: o.tradeType,
+        quantity: o.quantity,
+        averagePrice: o.price != null ? Number(o.price) : 0,
+        lastPrice: o.price != null ? Number(o.price) : 0,
+        pnl: 0,
+        product: o.product,
+        status: 'open',
+        isPaper: o.isPaper,
+        agentId: o.agentId,
+        orderId: o.id
+      });
+    }
+    source = openOrders.length ? 'orders' : source;
+
+    const holdings = await DatabaseService.getHoldings(userId);
+    for (const h of holdings as Array<Record<string, unknown>>) {
+      const qty = Number(h.quantity ?? 0);
+      if (!qty) continue;
+      positions.push({
+        id: String(h.id || h.symbol),
+        symbol: String(h.symbol || '—'),
+        side: 'BUY',
+        quantity: Math.abs(qty),
+        averagePrice: Number(h.averagePrice ?? h.avgPrice ?? 0),
+        lastPrice: Number(h.currentPrice ?? h.lastPrice ?? h.averagePrice ?? 0),
+        pnl: Number(h.pnl ?? h.unrealizedPnl ?? 0),
+        product: String(h.product || 'CNC'),
+        status: 'open',
+        isPaper: Boolean(h.isPaper),
+        source: 'holding'
+      });
+    }
+    if (holdings?.length && openOrders.length) source = 'mixed';
+    else if (holdings?.length) source = 'holdings';
+  }
+
+  // Closed-ish: recent completed orders for the Closed tab
+  const closedOrders = await prisma.order.findMany({
+    where: {
+      userId,
+      status: { in: ['COMPLETE', 'FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'] }
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 50
+  });
+  const closed = closedOrders.map((o) => ({
+    id: `closed-${o.id}`,
+    symbol: o.symbol,
+    side: o.tradeType,
+    quantity: o.quantity,
+    averagePrice: o.price != null ? Number(o.price) : 0,
+    lastPrice: o.price != null ? Number(o.price) : 0,
+    pnl: 0,
+    product: o.product,
+    status: 'closed' as const,
+    isPaper: o.isPaper,
+    agentId: o.agentId,
+    orderId: o.id
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      positions: [...positions, ...closed],
+      source,
+      openCount: positions.length,
+      closedCount: closed.length
+    }
+  });
+});

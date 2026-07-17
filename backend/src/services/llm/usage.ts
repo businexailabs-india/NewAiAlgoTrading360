@@ -3,6 +3,9 @@ import { LlmOperation, LlmProviderId, TokenUsage } from './types';
 
 /** Approximate USD per 1M tokens (input, output). Local/unknown => null cost. */
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'claude-sonnet-5': { input: 3, output: 15 },
+  'claude-sonnet-4-5-20250929': { input: 3, output: 15 },
+  'claude-haiku-4-5-20251001': { input: 0.8, output: 4 },
   'claude-3-5-sonnet-20241022': { input: 3, output: 15 },
   'claude-3-5-haiku-20241022': { input: 0.8, output: 4 },
   'claude-sonnet-4-20250514': { input: 3, output: 15 },

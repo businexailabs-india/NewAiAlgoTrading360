@@ -53,10 +53,11 @@ export class AdvisorService {
       usage = result.usage;
       usedFallback = result.usedFallback;
     } catch (err) {
-      logger.warn('Advisor LLM providers failed; using synthesis', {
-        error: err instanceof Error ? err.message.slice(0, 200) : 'unknown'
-      });
-      reply = this.synthesizeReply(message, ragContext, predictionSummary, symbol);
+      const errMsg = err instanceof Error ? err.message.slice(0, 300) : 'unknown';
+      logger.warn('Advisor LLM providers failed; using synthesis', { error: errMsg });
+      reply =
+        this.synthesizeReply(message, ragContext, predictionSummary, symbol) +
+        `\n\n_LLM provider error (falling back to local synthesis): ${errMsg}_`;
       provider = 'synthesis';
     }
 

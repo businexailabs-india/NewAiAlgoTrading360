@@ -2,6 +2,8 @@ import { createHmac, randomUUID } from 'crypto';
 import { AppError } from '../middleware/error.middleware';
 import { TenantService } from './tenant.service';
 import { AdvisoryGatewayService } from './advisory-gateway.service';
+import { MarketService } from './market.service';
+import { isMarketOpen } from '../utils/helpers';
 import { logger } from '../utils/logger';
 
 const DHANLAXMI_URL = process.env.DHANLAXMI_SERVICE_URL || 'http://localhost:8095';
@@ -52,15 +54,63 @@ async function proxyJson(
   return data.data ?? data;
 }
 
+function formatIndicesLine(
+  indices: Array<{ name: string; value: number; change: number; changePercent: number }>,
+  marketStatus: string
+) {
+  const parts = indices.slice(0, 6).map((row) => {
+    const pct =
+      typeof row.changePercent === 'number' ? ` (${row.changePercent >= 0 ? '+' : ''}${row.changePercent.toFixed(2)}%)` : '';
+    return `${row.name}: ${Number(row.value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}${pct}`;
+  });
+  const head = `Market status: ${marketStatus}.`;
+  if (!parts.length) {
+    return `${head} Live index levels were unavailable — open Market Overview for quotes.`;
+  }
+  return `${head} Indices — ${parts.join('; ')}.`;
+}
+
+type MarketIndexRow = { name: string; value: number; change: number; changePercent: number };
+
 export class DhanLaxmiGatewayService {
+  static async loadMarketContext(): Promise<{
+    market_status: string;
+    indices: MarketIndexRow[];
+    market_summary_line: string;
+  }> {
+    const indices = await MarketService.getIndices().catch((): MarketIndexRow[] => []);
+    const indexRows: MarketIndexRow[] = Array.isArray(indices) ? (indices as MarketIndexRow[]) : [];
+    const marketStatus = isMarketOpen() ? 'open' : 'closed';
+    const market_summary_line = formatIndicesLine(indexRows, marketStatus);
+    return {
+      market_status: marketStatus,
+      indices: indexRows,
+      market_summary_line
+    };
+  }
+
   static async withContext(userId: string, body: Record<string, unknown> = {}) {
-    const context = await AdvisoryGatewayService.buildUserContext(userId).catch(() => ({
-      broker_status: 'disconnected',
-      risk_profile_completed: true,
-      data_stale: false,
-      kill_switch: false
-    }));
-    return { ...body, context: { ...(body.context as object || {}), ...context } };
+    const [context, market] = await Promise.all([
+      AdvisoryGatewayService.buildUserContext(userId).catch(() => ({
+        broker_status: 'disconnected',
+        risk_profile_completed: true,
+        data_stale: false,
+        kill_switch: false
+      })),
+      this.loadMarketContext().catch((): {
+        market_status: string;
+        indices: MarketIndexRow[];
+        market_summary_line: string;
+      } => ({
+        market_status: 'unknown',
+        indices: [],
+        market_summary_line: 'Live market data unavailable right now.'
+      }))
+    ]);
+    return {
+      ...body,
+      context: { ...(body.context as object || {}), ...context, ...market }
+    };
   }
 
   static async chat(userId: string, role: string, body: Record<string, unknown>) {
@@ -74,14 +124,30 @@ export class DhanLaxmiGatewayService {
       logger.warn('dhanlaxmi.chat_fallback', {
         error: err instanceof Error ? err.message : String(err)
       });
+      const market = (payload.context || {}) as {
+        market_summary_line?: string;
+        indices?: unknown[];
+        market_status?: string;
+      };
+      const line =
+        market.market_summary_line ||
+        'Live market data unavailable. Trading involves risk and profit is not guaranteed.';
       return {
         conversation_id: null,
         language: body.language_hint || 'en',
-        intent: 'unknown_intent',
+        intent: 'market_query',
         response_text:
-          'DhanLaxmi is preparing. Trading involves risk and profit is not guaranteed. Paper trading is default.',
+          `DhanLaxmi assistant service is temporarily unavailable, but here is today's market snapshot. ${line} Paper trading remains default. Trading involves risk and profit is not guaranteed.`,
         disclaimer: 'Not financial advice. No guaranteed returns.',
-        cards: [],
+        cards: [
+          {
+            type: 'market_snapshot',
+            data: {
+              market_status: market.market_status || 'unknown',
+              indices: market.indices || []
+            }
+          }
+        ],
         paper_first: true,
         never_auto_executes: true,
         status: 'degraded'

@@ -7,6 +7,9 @@ import {
   updateMcpServer,
   deleteMcpServer,
   testMcpServer,
+  listIndianMcpCatalog,
+  scanIndianMcpServers,
+  addIndianMcpServers,
   listAccounts,
   upsertDhanAccount,
   validateAccount,
@@ -28,6 +31,9 @@ router.get('/status', featureStatus);
 
 router.get('/mcp-servers', listMcpServers);
 router.post('/mcp-servers', createMcpServer);
+router.get('/mcp-servers/indian/catalog', listIndianMcpCatalog);
+router.post('/mcp-servers/indian/scan', scanIndianMcpServers);
+router.post('/mcp-servers/indian/add', addIndianMcpServers);
 router.put('/mcp-servers/:id', updateMcpServer);
 router.delete('/mcp-servers/:id', deleteMcpServer);
 router.post('/mcp-servers/:id/test', testMcpServer);

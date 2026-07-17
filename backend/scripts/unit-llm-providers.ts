@@ -17,6 +17,9 @@ process.env.NODE_ENV = 'test';
 process.env.ALLOW_MOCK_LLM = 'true';
 process.env.LLM_MAX_RETRIES = '2';
 process.env.LLM_TIMEOUT_SECONDS = '5';
+process.env.LLM_FORCE_ANTHROPIC = 'false';
+delete process.env.BIFROST_ENABLED;
+delete process.env.BIFROST_BASE_URL;
 
 function assertTrue(cond: unknown, msg: string) {
   assert.ok(cond, msg);

@@ -9,6 +9,7 @@ import { RiskGateService } from './risk-gate.service';
 import { DatabaseService } from './database.service';
 import { AppError } from '../middleware/error.middleware';
 import { logger } from '../utils/logger';
+import { listIndianMcpPresets, type ResolvedIndianMcpPreset } from './indian-mcp-catalog';
 
 function sanitizeMcp(config: {
   id: string;
@@ -204,6 +205,185 @@ export class IntegrationService {
     });
 
     return { health, server: sanitizeMcp(updated), capabilityCatalog: DHAN_CAPABILITY_REGISTRY };
+  }
+
+  /** Preset catalog of Indian broker MCP servers (env-overridable endpoints). */
+  static listIndianMcpCatalog() {
+    return {
+      region: 'IN' as const,
+      count: listIndianMcpPresets().length,
+      presets: listIndianMcpPresets()
+    };
+  }
+
+  /**
+   * Probe Indian MCP presets for reachability and mark which are already configured.
+   */
+  static async scanIndianMcpServers(userId: string, opts?: { probe?: boolean; providers?: string[] }) {
+    const probe = opts?.probe !== false;
+    const filter = new Set((opts?.providers || []).map((p) => p.toLowerCase()));
+    const existing = await prisma.mcpServerConfig.findMany({ where: { userId } });
+    const byProvider = new Map(existing.map((e) => [e.provider.toLowerCase(), e]));
+
+    let presets = listIndianMcpPresets();
+    if (filter.size) {
+      presets = presets.filter((p) => filter.has(p.provider.toLowerCase()));
+    }
+
+    const results = await Promise.all(
+      presets.map(async (preset) => {
+        const saved = byProvider.get(preset.provider.toLowerCase());
+        let reachable = false;
+        let latencyMs: number | null = null;
+        let toolsCount = 0;
+        let error: string | null = null;
+
+        if (probe) {
+          const client = new McpHttpClient({
+            endpoint: preset.endpoint,
+            transport: preset.transport,
+            timeoutMs: 4000
+          });
+          const health = await client.health();
+          reachable = health.ok;
+          latencyMs = health.latencyMs;
+          toolsCount = health.tools.length;
+          error = health.error || null;
+        }
+
+        return {
+          ...preset,
+          alreadyAdded: Boolean(saved),
+          existingId: saved?.id || null,
+          existingEndpoint: saved?.endpoint || null,
+          reachable,
+          latencyMs,
+          toolsCount,
+          probeError: error,
+          status: saved
+            ? saved.lastHealthStatus || 'CONFIGURED'
+            : reachable
+              ? 'REACHABLE'
+              : probe
+                ? 'UNREACHABLE'
+                : 'NOT_ADDED'
+        };
+      })
+    );
+
+    return {
+      scannedAt: new Date().toISOString(),
+      probed: probe,
+      total: results.length,
+      alreadyAdded: results.filter((r) => r.alreadyAdded).length,
+      reachable: results.filter((r) => r.reachable).length,
+      results
+    };
+  }
+
+  /**
+   * Add (or refresh endpoints for) Indian MCP presets.
+   * Skips providers already present unless `updateExisting` is true.
+   */
+  static async addIndianMcpServers(
+    userId: string,
+    opts?: {
+      providers?: string[];
+      onlyReachable?: boolean;
+      updateExisting?: boolean;
+      probeFirst?: boolean;
+    }
+  ) {
+    const onlyReachable = !!opts?.onlyReachable;
+    const updateExisting = !!opts?.updateExisting;
+    const probeFirst = opts?.probeFirst !== false && onlyReachable;
+
+    const scan = await this.scanIndianMcpServers(userId, {
+      probe: probeFirst || onlyReachable,
+      providers: opts?.providers
+    });
+
+    const created: ReturnType<typeof sanitizeMcp>[] = [];
+    const updated: ReturnType<typeof sanitizeMcp>[] = [];
+    const skipped: Array<{ provider: string; reason: string }> = [];
+
+    for (const row of scan.results as Array<
+      ResolvedIndianMcpPreset & {
+        alreadyAdded: boolean;
+        existingId: string | null;
+        reachable: boolean;
+        status: string;
+      }
+    >) {
+      if (onlyReachable && !row.reachable) {
+        skipped.push({ provider: row.provider, reason: 'unreachable' });
+        continue;
+      }
+
+      if (row.alreadyAdded && row.existingId) {
+        if (!updateExisting) {
+          skipped.push({ provider: row.provider, reason: 'already_added' });
+          continue;
+        }
+        const saved = await prisma.mcpServerConfig.update({
+          where: { id: row.existingId },
+          data: {
+            name: row.name,
+            endpoint: row.endpoint,
+            transport: row.transport,
+            provider: row.provider,
+            isEnabled: true
+          }
+        });
+        updated.push(sanitizeMcp(saved));
+        continue;
+      }
+
+      const saved = await prisma.mcpServerConfig.create({
+        data: {
+          userId,
+          name: row.name,
+          endpoint: row.endpoint,
+          transport: row.transport,
+          provider: row.provider,
+          isEnabled: true,
+          credentialKeyVersion: EncryptionService.currentKeyVersion()
+        }
+      });
+      created.push(sanitizeMcp(saved));
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'MCP_INDIAN_CATALOG_ADD',
+        resource: 'mcp_server_configs',
+        details: {
+          created: created.map((c) => c.provider),
+          updated: updated.map((u) => u.provider),
+          skipped
+        }
+      }
+    });
+
+    logger.info('indian_mcp.add_complete', {
+      userId,
+      created: created.length,
+      updated: updated.length,
+      skipped: skipped.length
+    });
+
+    return {
+      created,
+      updated,
+      skipped,
+      summary: {
+        created: created.length,
+        updated: updated.length,
+        skipped: skipped.length
+      },
+      scan
+    };
   }
 
   // ── Dhan accounts ────────────────────────────────────────────

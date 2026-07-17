@@ -126,6 +126,36 @@ export const integrationService = {
     return json(res);
   },
 
+  async listIndianMcpCatalog() {
+    const res = await fetch(`${API_BASE_URL}/integrations/mcp-servers/indian/catalog`, {
+      headers: headers()
+    });
+    return json(res);
+  },
+
+  async scanIndianMcpServers(body?: { probe?: boolean; providers?: string[] }) {
+    const res = await fetch(`${API_BASE_URL}/integrations/mcp-servers/indian/scan`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body || { probe: true })
+    });
+    return json(res);
+  },
+
+  async addIndianMcpServers(body?: {
+    providers?: string[];
+    onlyReachable?: boolean;
+    updateExisting?: boolean;
+    probeFirst?: boolean;
+  }) {
+    const res = await fetch(`${API_BASE_URL}/integrations/mcp-servers/indian/add`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body || {})
+    });
+    return json(res);
+  },
+
   async listAccounts(): Promise<BrokerAccountView[]> {
     const res = await fetch(`${API_BASE_URL}/integrations/accounts`, { headers: headers() });
     return json(res);

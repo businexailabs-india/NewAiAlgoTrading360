@@ -114,7 +114,8 @@ export function AccountManagementModal({ onClose }: AccountManagementModalProps)
 
   const modal = (
     <div
-      className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      style={{ zIndex: 260 }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="account-management-title"

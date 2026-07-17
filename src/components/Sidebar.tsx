@@ -17,9 +17,13 @@ import {
   AlertCircle,
   FileText,
   LogOut,
-  Shield
+  Shield,
+  Rocket
 } from 'lucide-react';
 import { Badge } from './ui/badge';
+import { TOP_CHROME_H } from './TopBar';
+
+export const SIDEBAR_W = 80;
 
 interface SidebarProps {
   activeSection: string;
@@ -40,6 +44,12 @@ const menuItems = [
     label: 'Smart Trading',
     icon: Zap,
     badge: null
+  },
+  {
+    id: 'algos',
+    label: 'Algos',
+    icon: Rocket,
+    badge: { text: 'New', color: 'green' }
   },
   {
     id: 'portfolio',
@@ -163,63 +173,57 @@ export function Sidebar({ activeSection, onSectionChange, onLogout, user }: Side
 
   return (
     <motion.div
-      className="fixed left-0 top-0 h-screen bg-gray-900/95 backdrop-blur-xl border-r border-gray-800 z-40 flex flex-col"
-      initial={{ width: 80 }}
-      animate={{ width: isExpanded ? 240 : 80 }}
+      className="fixed left-0 z-40 flex flex-col overflow-hidden"
+      style={{
+        top: TOP_CHROME_H,
+        height: `calc(100vh - ${TOP_CHROME_H}px)`,
+        background:
+          'linear-gradient(180deg, rgba(2,6,23,1) 0%, rgba(8,47,73,0.98) 35%, rgba(6,78,59,0.35) 100%)',
+        borderRight: '1px solid rgba(34,211,238,0.35)',
+        boxShadow:
+          '8px 0 28px rgba(0,0,0,0.45), inset -1px 0 0 rgba(34,211,238,0.18), 0 0 30px rgba(16,185,129,0.08)',
+        backdropFilter: 'blur(18px)'
+      }}
+      initial={{ width: SIDEBAR_W }}
+      animate={{ width: isExpanded ? 240 : SIDEBAR_W }}
       transition={{ duration: 0.3, ease: 'easeInOut' }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Logo & Pin Button */}
-      <div className="h-20 flex items-center justify-between px-4 border-b border-gray-800">
-        <motion.div
-          className="flex items-center gap-3"
-          initial={false}
-          animate={{ opacity: isExpanded ? 1 : 0 }}
-        >
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-            <TrendingUp className="w-6 h-6 text-white" />
-          </div>
-          <AnimatePresence>
-            {isExpanded && (
-              <motion.div
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                <div className="text-white font-semibold leading-tight">AlgoTradingV360</div>
-                <div className="text-xs text-gray-400">AI Algo Trading</div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {!isExpanded && (
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-            <TrendingUp className="w-6 h-6 text-white" />
-          </div>
+      {/* Compact pin — brand lives in the top menu above */}
+      <div
+        className="flex items-center justify-center px-2 py-2"
+        style={{
+          borderBottom: '1px solid rgba(34,211,238,0.2)',
+          minHeight: 40
+        }}
+      >
+        {isExpanded ? (
+          <button
+            type="button"
+            onClick={togglePin}
+            title={isPinned ? 'Unpin menu' : 'Pin menu'}
+            className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs transition-colors ${
+              isPinned ? 'text-cyan-300' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span className="font-medium">Main menu</span>
+            {isPinned ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={togglePin}
+            title="Expand menu"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 hover:text-cyan-300"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
         )}
-
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              onClick={togglePin}
-              className={`p-1 rounded hover:bg-gray-800 transition-colors ${
-                isPinned ? 'text-cyan-400' : 'text-gray-400'
-              }`}
-            >
-              {isPinned ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </motion.button>
-          )}
-        </AnimatePresence>
       </div>
 
-      {/* Main Menu Items */}
-      <div className="flex-1 overflow-y-auto py-6 px-3 space-y-2">
+      {/* Section icons under the top Algos menu */}
+      <div className="no-scrollbar flex-1 space-y-2 overflow-x-hidden overflow-y-auto px-3 py-3">
         {menuItems.map((item, index) => {
           const Icon = item.icon;
           const isActive = activeSection === item.id;
@@ -231,17 +235,29 @@ export function Sidebar({ activeSection, onSectionChange, onLogout, user }: Side
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.05 }}
               onClick={() => onSectionChange(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all relative group ${
-                isActive
-                  ? 'bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30 text-cyan-400'
-                  : 'text-gray-400 hover:bg-gray-800/50 hover:text-white'
+              className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-3 transition-all ${
+                isActive ? 'text-cyan-200' : 'text-gray-400 hover:text-white'
               }`}
+              style={
+                isActive
+                  ? {
+                      background:
+                        'linear-gradient(90deg, rgba(34,211,238,0.28) 0%, rgba(16,185,129,0.18) 100%)',
+                      border: '1px solid rgba(34,211,238,0.45)',
+                      boxShadow: '0 0 16px rgba(34,211,238,0.2)'
+                    }
+                  : {
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.06)'
+                    }
+              }
             >
               {/* Active Indicator */}
               {isActive && (
                 <motion.div
                   layoutId="activeIndicator"
-                  className="absolute left-0 w-1 h-8 bg-cyan-400 rounded-r-full"
+                  className="absolute left-0 h-8 w-1 rounded-r-full bg-cyan-300"
+                  style={{ boxShadow: '0 0 10px rgba(34,211,238,0.8)' }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                 />
               )}
@@ -284,7 +300,13 @@ export function Sidebar({ activeSection, onSectionChange, onLogout, user }: Side
       </div>
 
       {/* Bottom Menu Items */}
-      <div className="border-t border-gray-800 py-4 px-3 space-y-2">
+      <div
+        className="space-y-2 px-3 py-4"
+        style={{
+          borderTop: '1px solid rgba(34,211,238,0.22)',
+          background: 'rgba(2,6,23,0.55)'
+        }}
+      >
         {bottomItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeSection === item.id;
@@ -293,13 +315,24 @@ export function Sidebar({ activeSection, onSectionChange, onLogout, user }: Side
             <motion.button
               key={item.id}
               onClick={() => onSectionChange(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all relative group ${
-                isActive
-                  ? 'bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30 text-cyan-400'
-                  : 'text-gray-400 hover:bg-gray-800/50 hover:text-white'
+              className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-3 transition-all ${
+                isActive ? 'text-cyan-200' : 'text-gray-400 hover:text-white'
               }`}
+              style={
+                isActive
+                  ? {
+                      background:
+                        'linear-gradient(90deg, rgba(34,211,238,0.28) 0%, rgba(16,185,129,0.18) 100%)',
+                      border: '1px solid rgba(34,211,238,0.45)',
+                      boxShadow: '0 0 16px rgba(34,211,238,0.2)'
+                    }
+                  : {
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.06)'
+                    }
+              }
             >
-              <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-cyan-400' : ''}`} />
+              <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-cyan-300' : ''}`} />
 
               <AnimatePresence>
                 {isExpanded && (
@@ -308,7 +341,7 @@ export function Sidebar({ activeSection, onSectionChange, onLogout, user }: Side
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -10 }}
                     transition={{ duration: 0.2 }}
-                    className="text-sm whitespace-nowrap"
+                    className="whitespace-nowrap text-sm"
                   >
                     {item.label}
                   </motion.span>
@@ -337,11 +370,18 @@ export function Sidebar({ activeSection, onSectionChange, onLogout, user }: Side
       </div>
 
       {/* User Info at Bottom */}
-      <div className="border-t border-gray-800 p-3">
+      <div
+        className="p-3"
+        style={{ borderTop: '1px solid rgba(34,211,238,0.22)' }}
+      >
         <motion.div
-          className={`flex items-center gap-3 px-3 py-3 rounded-xl bg-gray-800/50 ${
+          className={`flex items-center gap-3 rounded-xl px-3 py-3 ${
             isExpanded ? '' : 'justify-center'
           }`}
+          style={{
+            background: 'rgba(34,211,238,0.1)',
+            border: '1px solid rgba(34,211,238,0.25)'
+          }}
         >
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center text-white flex-shrink-0">
             {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}

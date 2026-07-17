@@ -1,14 +1,12 @@
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle, FlaskConical, Save, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CheckCircle, FlaskConical, Save, ShieldAlert, Sparkles } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { LoginAdvisoryCard } from './LoginAdvisoryCard';
-import {
-  advisoryMarketplaceService,
-  AdvisoryRecommendation
-} from '../services/advisoryMarketplaceService';
+import { advisoryMarketplaceService } from '../services/advisoryMarketplaceService';
+import { useWindowStack } from '../contexts/WindowStackContext';
 
 export function AdvisoryMarketplacePanel() {
+  const { restoreWindow } = useWindowStack();
   const [option, setOption] = useState<Record<string, unknown> | null>(null);
   const [paperResult, setPaperResult] = useState<Record<string, unknown> | null>(null);
   const [liveReq, setLiveReq] = useState<Record<string, unknown> | null>(null);
@@ -18,22 +16,6 @@ export function AdvisoryMarketplacePanel() {
   const [busy, setBusy] = useState(false);
   const [disclosure, setDisclosure] = useState(false);
   const [confirmLive, setConfirmLive] = useState(false);
-
-  const convert = async (advisoryId: string, rec: AdvisoryRecommendation) => {
-    setBusy(true);
-    setError('');
-    try {
-      const data = await advisoryMarketplaceService.convertToAlgo(advisoryId, rec.id) as Record<string, unknown>;
-      setOption(data);
-      setPaperResult(null);
-      setLiveReq(null);
-      setMsg('Strategy option created — edit rules, then run paper test. Live is disabled.');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Convert failed');
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const runPaper = async () => {
     if (!option?.id) return;
@@ -108,7 +90,25 @@ export function AdvisoryMarketplacePanel() {
 
   return (
     <div className="space-y-6">
-      <LoginAdvisoryCard onConvert={convert} onOpenMarketplace={loadExternal} />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-400/25 bg-cyan-400/5 px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-medium text-cyan-100">
+            <Sparkles className="h-4 w-4 text-cyan-300" />
+            AI Algo Trade Advisory
+          </div>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Opens from the top menu · convert candidates here after paper test
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-cyan-300/40 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20"
+          onClick={() => restoreWindow('ai-algo-advisory')}
+        >
+          Open AI Advisory
+        </Button>
+      </div>
 
       {error && (
         <div className="text-sm text-red-300 flex gap-2 items-center">

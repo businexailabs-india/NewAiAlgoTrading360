@@ -11,6 +11,14 @@ build/
 backend/data/historical/*.json
 !backend/data/historical/.gitkeep
 
+# Bifrost gateway local DB / runtime / binary
+backend/bifrost/data/*
+!backend/bifrost/data/.gitkeep
+backend/bifrost/bin/
+backend/bifrost/*.db
+backend/bifrost/logs.db
+backend/bifrost/config.db
+
 # IDE
 .idea
 .vscode
