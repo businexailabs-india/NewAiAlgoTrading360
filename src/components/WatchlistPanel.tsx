@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Eye, Plus, Trash2, RefreshCw, Star, LineChart, Sparkles, Loader2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Eye, Plus, Trash2, RefreshCw, Star, LineChart, Sparkles, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -123,6 +124,7 @@ export function WatchlistPanel() {
   const [aiProvider, setAiProvider] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [showAiPopup, setShowAiPopup] = useState(false);
   const aiReqRef = useRef(0);
 
   const active = useMemo(
@@ -189,11 +191,13 @@ export function WatchlistPanel() {
     setAiText(null);
     setAiProvider(null);
     setAiError(null);
-    if (active?.items?.length) {
-      void fetchWatchlistAi();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when list membership changes
+    setShowAiPopup(false);
   }, [active?.id, listSnapshot.fingerprint]);
+
+  function openWatchlistAi() {
+    setShowAiPopup(true);
+    if (!aiText && !aiLoading) void fetchWatchlistAi();
+  }
 
   const refresh = useCallback(async (opts?: { quiet?: boolean }) => {
     if (!opts?.quiet) setLoading(true);
@@ -441,55 +445,19 @@ export function WatchlistPanel() {
               <Plus className="mr-1 h-3.5 w-3.5" />
               Add stock
             </Button>
+            {active.items.length > 0 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/10"
+                onClick={openWatchlistAi}
+              >
+                <Sparkles className="mr-1 h-3.5 w-3.5" />
+                AI advice
+              </Button>
+            ) : null}
           </form>
-
-          {active.items.length > 0 ? (
-            <div className="rounded-lg border border-cyan-500/25 bg-gradient-to-r from-cyan-500/10 to-violet-500/5 p-3">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
-                <span className="text-xs font-semibold tracking-wide text-cyan-200">
-                  AI SUGGESTION
-                </span>
-                <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">
-                  BUY {listSnapshot.buys}
-                </span>
-                <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-300">
-                  SELL {listSnapshot.sells}
-                </span>
-                <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-200">
-                  HOLD {listSnapshot.holds}
-                </span>
-                {aiProvider ? (
-                  <span className="text-[10px] text-zinc-500">via {aiProvider}</span>
-                ) : null}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="ml-auto h-7 border-zinc-600 text-zinc-300"
-                  disabled={aiLoading}
-                  onClick={() => void fetchWatchlistAi()}
-                >
-                  {aiLoading ? (
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-1 h-3 w-3" />
-                  )}
-                  Refresh AI
-                </Button>
-              </div>
-              <div className="max-h-28 overflow-auto whitespace-pre-wrap rounded-md border border-zinc-800/80 bg-zinc-950/60 px-3 py-2 text-xs leading-relaxed text-zinc-300">
-                {aiLoading && !aiText
-                  ? 'Asking advisor for a watchlist summary…'
-                  : aiError
-                    ? `AI note unavailable: ${aiError}. Row biases below still apply.`
-                    : aiText || 'AI narrative will appear here.'}
-              </div>
-              <p className="mt-1.5 text-[10px] text-zinc-500">
-                Advisory only — AI never executes. Row AI uses day tape (change, range, buyers/sellers).
-              </p>
-            </div>
-          ) : null}
 
           <div className="overflow-auto rounded-lg border border-zinc-800">
             <table className="w-full min-w-[1080px] text-left text-sm">
@@ -598,8 +566,8 @@ export function WatchlistPanel() {
             </table>
           </div>
           <p className="text-[11px] text-zinc-500">
-            Click a stock row to open its price chart. AI column is tape-based; open Chart for
-            deeper indicators. Quotes refresh every 30s.
+            Click a stock row to open its price chart. Use AI advice when you want a list summary.
+            Row AI is tape-based. Quotes refresh every 30s.
           </p>
         </div>
       ) : (
@@ -609,6 +577,76 @@ export function WatchlistPanel() {
       {chartStock ? (
         <StockChartModal stock={chartStock} onClose={() => setChartStock(null)} />
       ) : null}
+
+      {showAiPopup
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[99998] flex items-center justify-center bg-black/70 p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Watchlist AI advice"
+              onClick={() => setShowAiPopup(false)}
+            >
+              <div
+                className="w-full max-w-lg rounded-xl border border-cyan-500/30 bg-zinc-950 p-4 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-cyan-300" />
+                  <span className="text-sm font-semibold text-cyan-200">AI advice</span>
+                  <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">
+                    BUY {listSnapshot.buys}
+                  </span>
+                  <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-300">
+                    SELL {listSnapshot.sells}
+                  </span>
+                  <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-200">
+                    HOLD {listSnapshot.holds}
+                  </span>
+                  {aiProvider ? (
+                    <span className="text-[10px] text-zinc-500">via {aiProvider}</span>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto h-7 border-zinc-600 text-zinc-300"
+                    disabled={aiLoading}
+                    onClick={() => void fetchWatchlistAi()}
+                  >
+                    {aiLoading ? (
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1 h-3 w-3" />
+                    )}
+                    Refresh
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-zinc-400"
+                    aria-label="Close AI advice"
+                    onClick={() => setShowAiPopup(false)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-sm leading-relaxed text-zinc-300">
+                  {aiLoading && !aiText
+                    ? 'Asking advisor for a watchlist summary…'
+                    : aiError
+                      ? `AI note unavailable: ${aiError}. Row biases in the table still apply.`
+                      : aiText || 'AI narrative will appear here.'}
+                </div>
+                <p className="mt-2 text-[10px] text-zinc-500">
+                  Advisory only — AI never executes. Close anytime with X or outside click.
+                </p>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

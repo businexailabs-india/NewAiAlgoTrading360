@@ -9,16 +9,20 @@ import { estimateCostUsd, normalizeUsage } from '../src/services/llm/usage';
 import { withRetry, isRetryableError } from '../src/services/llm/retry';
 import { MockLLMProvider } from '../src/services/llm/providers/mock.provider';
 import { ClaudeProvider } from '../src/services/llm/providers/claude.provider';
+import { OpenRouterProvider } from '../src/services/llm/providers/openrouter.provider';
 import { LlmProviderRegistry, resetLlmRegistry } from '../src/services/llm/registry';
 import { LlmProviderError } from '../src/services/llm/types';
 import { BaseLLMProvider } from '../src/services/llm/base-llm-provider';
+import { forceAnthropicForAllQueries } from '../src/services/llm/bifrost';
 
 process.env.NODE_ENV = 'test';
 process.env.ALLOW_MOCK_LLM = 'true';
 process.env.LLM_MAX_RETRIES = '2';
 process.env.LLM_TIMEOUT_SECONDS = '5';
+// Unit tests exercise mock/fallback paths; disable Bifrost force for most cases
 process.env.LLM_FORCE_ANTHROPIC = 'false';
-delete process.env.BIFROST_ENABLED;
+process.env.BIFROST_FORCE_ANTHROPIC = 'false';
+process.env.BIFROST_ENABLED = 'false';
 delete process.env.BIFROST_BASE_URL;
 
 function assertTrue(cond: unknown, msg: string) {
@@ -110,12 +114,46 @@ async function run() {
   const validated = mock.validate_response_schema(advisory.data, 'advisory');
   assertTrue((validated as { disclaimer: string }).disclaimer.length > 0, 'validate_response_schema');
 
-  // --- Claude unavailable without key ---
+  // --- Force-Anthropic defaults on (Bifrost/Claude primary) ---
+  delete process.env.LLM_FORCE_ANTHROPIC;
+  delete process.env.BIFROST_FORCE_ANTHROPIC;
+  assertTrue(forceAnthropicForAllQueries(), 'force Anthropic default true');
+
+  // --- Registry default is claude when force-Anthropic on ---
+  delete process.env.DEFAULT_LLM_PROVIDER;
+  delete process.env.OPENROUTER_API_KEY;
+  const bifrostDefaultReg = new LlmProviderRegistry();
+  assertTrue(bifrostDefaultReg.resolveDefault() === 'claude', 'default provider claude via Bifrost force');
+
+  process.env.LLM_FORCE_ANTHROPIC = 'false';
+  process.env.BIFROST_FORCE_ANTHROPIC = 'false';
+  process.env.FALLBACK_LLM_PROVIDER = 'openrouter';
+  assertTrue(bifrostDefaultReg.resolveFallback('claude') === 'mock' || bifrostDefaultReg.resolveFallback('claude') === 'openrouter', 'claude fallback chain');
+
+  // --- OpenRouter unavailable without key ---
+  const or = new OpenRouterProvider();
+  assertTrue(!or.isAvailable(), 'openrouter unavailable without key');
+
+  // --- Claude unavailable without key when Bifrost off ---
   const prevKey = process.env.ANTHROPIC_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
+  process.env.BIFROST_ENABLED = 'false';
   const claude = new ClaudeProvider();
   assertTrue(!claude.isAvailable(), 'claude unavailable without key');
   if (prevKey) process.env.ANTHROPIC_API_KEY = prevKey;
+
+  // Bifrost enabled (default) → Claude available without local ANTHROPIC key
+  delete process.env.BIFROST_ENABLED;
+  delete process.env.ANTHROPIC_API_KEY;
+  assertTrue(new ClaudeProvider().isAvailable(), 'claude available via Bifrost default');
+  process.env.BIFROST_ENABLED = 'false';
+  if (prevKey) process.env.ANTHROPIC_API_KEY = prevKey;
+
+  // Restore for remaining tests
+  process.env.LLM_FORCE_ANTHROPIC = 'false';
+  process.env.BIFROST_FORCE_ANTHROPIC = 'false';
+  process.env.DEFAULT_LLM_PROVIDER = 'mock';
+  process.env.FALLBACK_LLM_PROVIDER = 'mock';
 
   // --- Registry fallback ---
   class FailingPrimary extends BaseLLMProvider {
@@ -135,15 +173,9 @@ async function run() {
   assertTrue(fb.usedFallback === true, 'used fallback');
   assertTrue(fb.provider === 'mock', 'fallback provider mock');
 
-  // Circular / same fallback rejected
+  // Circular claude→claude resolves via chain to mock (test) / openrouter when available
   process.env.FALLBACK_LLM_PROVIDER = 'claude';
-  let circular = false;
-  try {
-    registry.resolveFallback('claude');
-  } catch {
-    circular = true;
-  }
-  assertTrue(circular, 'circular fallback rejected');
+  assertTrue(registry.resolveFallback('claude') === 'mock', 'circular claude fallback → mock');
 
   // Mock blocked as default without ALLOW_MOCK_LLM in non-test — simulate by clearing flags
   process.env.DEFAULT_LLM_PROVIDER = 'mock';

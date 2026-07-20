@@ -1,0 +1,55 @@
+# Global (non-India) broker MCP providers
+providers:
+  - provider_id: ibkr
+    provider_name: Interactive Brokers
+    provider_type: global_broker
+    country: GLOBAL
+    enabled: true
+    supported_exchanges:
+      - SMART
+      - NYSE
+      - NASDAQ
+      - ARCA
+      - IDEALPRO
+    supported_segments:
+      - equity
+      - options
+      - futures
+      - forex
+      - bonds
+    supported_asset_classes:
+      - stocks
+      - etfs
+      - options
+      - futures
+      - forex
+      - bonds
+    capabilities:
+      - account_summary
+      - portfolio
+      - positions
+      - margins
+      - orders
+      - executions
+      - market_data
+      - historical_data
+      - contract_search
+      - scanner
+      - paper_order_execution
+      - live_order_execution_locked
+    auth_type:
+      - tws_socket
+      - ib_gateway
+    credentials_required: []
+    live_trading_default: false
+    paper_trading_default: true
+    status: active
+    documentation_url: https://interactivebrokers.github.io/tws-api/
+    adapter_class: mcp_connectors.global.ibkr.provider.IBKRMCPProvider
+    env_enable_flag: MCP_ENABLE_IBKR
+    priority: 40
+    connection_modes:
+      - tws_api
+      - ib_gateway
+      - client_portal_web_api_placeholder
+      - fix_placeholder

@@ -34,7 +34,7 @@ flowchart LR
 docker compose -f docker-compose.dhanlaxmi.yml up -d --build
 ```
 
-Gateway env (`backend/.env`):
+Gateway / service env (`backend/.env`):
 
 ```
 DHANLAXMI_SERVICE_URL=http://localhost:8095
@@ -42,10 +42,19 @@ VOICE_GATEWAY_SERVICE_URL=http://localhost:8096
 LANGUAGE_INTENT_SERVICE_URL=http://localhost:8097
 TRADE_APPROVAL_SERVICE_URL=http://localhost:8098
 SERVICE_HMAC_SECRET=dev-service-hmac-secret-change-me
-DEFAULT_LLM_PROVIDER=mock
+DEFAULT_LLM_PROVIDER=claude
+FALLBACK_LLM_PROVIDER=openrouter
+BIFROST_ENABLED=true
+BIFROST_BASE_URL=http://localhost:8080
+OPENROUTER_API_KEY=                # optional secondary fallback
+OPENROUTER_MODEL=openai/gpt-4o-mini
+ALLOW_MOCK_LLM=true                # last-resort when Bifrost/OpenRouter unavailable
+LLM_FORCE_ANTHROPIC=true
 DEFAULT_STT_PROVIDER=mock
 DEFAULT_TTS_PROVIDER=mock
 ```
+
+Primary path is Bifrost → Claude. Without Bifrost/OpenRouter, DhanLaxmi falls back to `MockLLMProvider` (deterministic, paper-safe).
 
 Tests:
 

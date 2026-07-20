@@ -7,7 +7,17 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { X, TrendingUp, TrendingDown, Loader2, Sparkles, RefreshCw } from 'lucide-react';
+import {
+  X,
+  TrendingUp,
+  TrendingDown,
+  Loader2,
+  Sparkles,
+  RefreshCw,
+  Minus,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from 'recharts';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/lib/api';
@@ -940,10 +950,16 @@ export function StockChartModal({
   const [aiProvider, setAiProvider] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [showAiHelp, setShowAiHelp] = useState(false);
+  const [winState, setWinState] = useState<'normal' | 'max' | 'min'>('normal');
   const aiReqRef = useRef(0);
+  const savedSizeRef = useRef(panelSize);
 
   const chartWidth = Math.max(280, panelSize.w - 48);
-  const chartHeight = Math.max(180, Math.min(420, Math.round(panelSize.h * 0.38)));
+  const chartHeight = Math.max(
+    160,
+    Math.min(winState === 'max' ? 520 : 420, Math.round(panelSize.h * (showAiHelp ? 0.32 : 0.4)))
+  );
 
   function toggleTool(id: ToolId) {
     setActiveTools((prev) => {
@@ -1014,10 +1030,25 @@ export function StockChartModal({
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (showAiHelp) {
+          setShowAiHelp(false);
+          return;
+        }
+        if (winState === 'max') {
+          setPanelSize(clampPanel(savedSizeRef.current.w, savedSizeRef.current.h));
+          setWinState('normal');
+          return;
+        }
+        onClose();
+      }
     };
     const onWinResize = () => {
-      setPanelSize((s) => clampPanel(s.w, s.h));
+      if (winState === 'max') {
+        setPanelSize(clampPanel(window.innerWidth - 24, window.innerHeight - 24));
+      } else if (winState === 'normal') {
+        setPanelSize((s) => clampPanel(s.w, s.h));
+      }
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('resize', onWinResize);
@@ -1026,7 +1057,7 @@ export function StockChartModal({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onWinResize);
     };
-  }, [onClose, clampPanel]);
+  }, [onClose, clampPanel, showAiHelp, winState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1110,11 +1141,40 @@ export function StockChartModal({
     setAiText(null);
     setAiProvider(null);
     setAiError(null);
-    if (!loading && technicalSuggestion) {
-      void fetchAiSuggestion();
+    setShowAiHelp(false);
+  }, [stock.symbol]);
+
+  function openAiHelp() {
+    if (winState === 'min') {
+      setPanelSize(clampPanel(savedSizeRef.current.w, savedSizeRef.current.h));
+      setWinState('normal');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh on symbol / bar load only
-  }, [stock.symbol, loading, bars.length]);
+    setShowAiHelp(true);
+    if (!aiText && !aiLoading) void fetchAiSuggestion();
+  }
+
+  function toggleMaximize() {
+    if (winState === 'max') {
+      setPanelSize(clampPanel(savedSizeRef.current.w, savedSizeRef.current.h));
+      setWinState('normal');
+      return;
+    }
+    if (winState !== 'min') savedSizeRef.current = panelSize;
+    setPanelSize(clampPanel(window.innerWidth - 24, window.innerHeight - 24));
+    setWinState('max');
+  }
+
+  function minimizeWindow() {
+    if (winState !== 'min') {
+      if (winState === 'normal') savedSizeRef.current = panelSize;
+      setWinState('min');
+    }
+  }
+
+  function restoreWindow() {
+    setPanelSize(clampPanel(savedSizeRef.current.w, savedSizeRef.current.h));
+    setWinState('normal');
+  }
 
   const up = (stats.change ?? 0) >= 0;
   const stroke = up ? '#34d399' : '#f87171';
@@ -1178,6 +1238,90 @@ export function StockChartModal({
     { id: 'bar', label: 'Volume bars' },
     { id: 'line', label: 'Line' },
   ];
+
+
+  if (winState === 'min') {
+    const dock = (
+      <div
+        style={{
+          position: 'fixed',
+          left: 16,
+          bottom: 16,
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '10px 12px',
+          borderRadius: 12,
+          border: '1px solid #3f3f46',
+          background: '#09090b',
+          color: '#e4e4e7',
+          boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+          minWidth: 280,
+        }}
+      >
+        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: '#67e8f9' }}>
+          {stock.symbol}
+        </span>
+        <span style={{ fontSize: 12, color: '#a1a1aa', flex: 1 }}>Chart minimized</span>
+        <button
+          type="button"
+          onClick={openAiHelp}
+          title="AI help"
+          style={{
+            height: 30,
+            padding: '0 8px',
+            borderRadius: 8,
+            border: '1px solid #3f3f46',
+            background: '#18181b',
+            color: '#a5f3fc',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: 11,
+          }}
+        >
+          <Sparkles size={12} />
+          AI
+        </button>
+        <button
+          type="button"
+          onClick={restoreWindow}
+          aria-label="Restore chart"
+          title="Restore"
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 8,
+            border: '1px solid #3f3f46',
+            background: '#18181b',
+            color: '#e4e4e7',
+            cursor: 'pointer',
+          }}
+        >
+          <Maximize2 size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close chart"
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 8,
+            border: '1px solid #3f3f46',
+            background: '#18181b',
+            color: '#e4e4e7',
+            cursor: 'pointer',
+          }}
+        >
+          <X size={14} />
+        </button>
+      </div>
+    );
+    return createPortal(dock, document.body);
+  }
 
   const modal = (
     <div
@@ -1278,23 +1422,83 @@ export function StockChartModal({
               </span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close chart"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              border: '1px solid #3f3f46',
-              background: '#18181b',
-              color: '#e4e4e7',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            <X size={18} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={openAiHelp}
+              title="Need AI help?"
+              style={{
+                height: 36,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: showAiHelp
+                  ? '1px solid rgba(34,211,238,0.55)'
+                  : '1px solid #3f3f46',
+                background: showAiHelp ? 'rgba(34,211,238,0.12)' : '#18181b',
+                color: showAiHelp ? '#a5f3fc' : '#a1a1aa',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              <Sparkles size={14} />
+              AI help
+            </button>
+            <button
+              type="button"
+              onClick={minimizeWindow}
+              aria-label="Minimize chart"
+              title="Minimize"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                border: '1px solid #3f3f46',
+                background: '#18181b',
+                color: '#e4e4e7',
+                cursor: 'pointer',
+              }}
+            >
+              <Minus size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={toggleMaximize}
+              aria-label={winState === 'max' ? 'Restore chart' : 'Maximize chart'}
+              title={winState === 'max' ? 'Restore' : 'Maximize'}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                border: '1px solid #3f3f46',
+                background: '#18181b',
+                color: '#e4e4e7',
+                cursor: 'pointer',
+              }}
+            >
+              {winState === 'max' ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close chart"
+              title="Close"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                border: '1px solid #3f3f46',
+                background: '#18181b',
+                color: '#e4e4e7',
+                cursor: 'pointer',
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Buy / Sell ticket — paper only (top) */}
@@ -1437,167 +1641,6 @@ export function StockChartModal({
               Sell
             </button>
           </div>
-        </div>
-
-        {/* AI suggestion */}
-        <div
-          style={{
-            padding: '10px 20px 12px',
-            borderBottom: '1px solid #27272a',
-            background: 'linear-gradient(90deg, rgba(34,211,238,0.06), rgba(167,139,250,0.05))',
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              gap: 8,
-              marginBottom: 8,
-            }}
-          >
-            <Sparkles size={14} color="#67e8f9" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#a5f3fc', letterSpacing: 0.3 }}>
-              AI SUGGESTION
-            </span>
-            {technicalSuggestion && (
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  padding: '3px 10px',
-                  borderRadius: 999,
-                  border:
-                    technicalSuggestion.bias === 'BUY'
-                      ? '1px solid rgba(52,211,153,0.55)'
-                      : technicalSuggestion.bias === 'SELL'
-                        ? '1px solid rgba(248,113,113,0.55)'
-                        : '1px solid rgba(250,204,21,0.45)',
-                  background:
-                    technicalSuggestion.bias === 'BUY'
-                      ? 'rgba(52,211,153,0.14)'
-                      : technicalSuggestion.bias === 'SELL'
-                        ? 'rgba(248,113,113,0.14)'
-                        : 'rgba(250,204,21,0.12)',
-                  color:
-                    technicalSuggestion.bias === 'BUY'
-                      ? '#a7f3d0'
-                      : technicalSuggestion.bias === 'SELL'
-                        ? '#fecaca'
-                        : '#fde68a',
-                }}
-              >
-                {technicalSuggestion.bias} · {technicalSuggestion.confidence}%
-              </span>
-            )}
-            {aiProvider && (
-              <span style={{ fontSize: 10, color: '#71717a' }}>via {aiProvider}</span>
-            )}
-            <button
-              type="button"
-              onClick={() => void fetchAiSuggestion()}
-              disabled={aiLoading || !technicalSuggestion}
-              style={{
-                marginLeft: 'auto',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                height: 28,
-                padding: '0 10px',
-                borderRadius: 8,
-                border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#a1a1aa',
-                fontSize: 11,
-                cursor: aiLoading ? 'wait' : 'pointer',
-              }}
-            >
-              {aiLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-              Refresh AI
-            </button>
-            {technicalSuggestion && technicalSuggestion.bias !== 'HOLD' && (
-              <button
-                type="button"
-                onClick={() => void placeTrade(technicalSuggestion.bias)}
-                disabled={!!placingSide || aiLoading}
-                style={{
-                  height: 28,
-                  padding: '0 10px',
-                  borderRadius: 8,
-                  border:
-                    technicalSuggestion.bias === 'BUY'
-                      ? '1px solid rgba(52,211,153,0.5)'
-                      : '1px solid rgba(248,113,113,0.5)',
-                  background:
-                    technicalSuggestion.bias === 'BUY'
-                      ? 'rgba(52,211,153,0.12)'
-                      : 'rgba(248,113,113,0.12)',
-                  color: technicalSuggestion.bias === 'BUY' ? '#a7f3d0' : '#fecaca',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Paper {technicalSuggestion.bias}
-              </button>
-            )}
-          </div>
-
-          {technicalSuggestion ? (
-            <>
-              <p style={{ margin: 0, fontSize: 12, color: '#e4e4e7', lineHeight: 1.45 }}>
-                {technicalSuggestion.summary}
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                {technicalSuggestion.reasons.map((r) => (
-                  <span
-                    key={r}
-                    style={{
-                      fontSize: 10,
-                      color: '#a1a1aa',
-                      border: '1px solid #3f3f46',
-                      borderRadius: 999,
-                      padding: '2px 8px',
-                      background: '#18181b',
-                    }}
-                  >
-                    {r}
-                  </span>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p style={{ margin: 0, fontSize: 12, color: '#71717a' }}>
-              Load chart bars to generate a suggestion.
-            </p>
-          )}
-
-          <div
-            style={{
-              marginTop: 8,
-              padding: '8px 10px',
-              borderRadius: 8,
-              border: '1px solid rgba(63,63,70,0.9)',
-              background: 'rgba(9,9,11,0.55)',
-              fontSize: 12,
-              color: '#d4d4d8',
-              lineHeight: 1.45,
-              maxHeight: 96,
-              overflow: 'auto',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {aiLoading && !aiText
-              ? 'Asking advisor…'
-              : aiError
-                ? `AI note unavailable: ${aiError}. Technical bias above still applies.`
-                : aiText || 'AI narrative will appear here.'}
-          </div>
-          <p style={{ margin: '6px 0 0', fontSize: 10, color: '#71717a' }}>
-            Advisory only — AI never executes. Chart Buy/Sell stays paper unless live is explicitly
-            enabled.
-          </p>
         </div>
 
         {/* Chart type + timeframe dropdowns */}
@@ -2008,50 +2051,237 @@ export function StockChartModal({
         </div>
 
 
+        {/* AI suggestion — opt-in, docked at bottom */}
+        {showAiHelp ? (
+        <div
+          style={{
+            padding: '10px 20px 12px',
+            borderTop: '1px solid #27272a',
+            background: 'linear-gradient(90deg, rgba(34,211,238,0.06), rgba(167,139,250,0.05))',
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: 8,
+            }}
+          >
+            <Sparkles size={14} color="#67e8f9" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#a5f3fc', letterSpacing: 0.3 }}>
+              AI SUGGESTION
+            </span>
+            {technicalSuggestion && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  border:
+                    technicalSuggestion.bias === 'BUY'
+                      ? '1px solid rgba(52,211,153,0.55)'
+                      : technicalSuggestion.bias === 'SELL'
+                        ? '1px solid rgba(248,113,113,0.55)'
+                        : '1px solid rgba(250,204,21,0.45)',
+                  background:
+                    technicalSuggestion.bias === 'BUY'
+                      ? 'rgba(52,211,153,0.14)'
+                      : technicalSuggestion.bias === 'SELL'
+                        ? 'rgba(248,113,113,0.14)'
+                        : 'rgba(250,204,21,0.12)',
+                  color:
+                    technicalSuggestion.bias === 'BUY'
+                      ? '#a7f3d0'
+                      : technicalSuggestion.bias === 'SELL'
+                        ? '#fecaca'
+                        : '#fde68a',
+                }}
+              >
+                {technicalSuggestion.bias} · {technicalSuggestion.confidence}%
+              </span>
+            )}
+            {aiProvider && (
+              <span style={{ fontSize: 10, color: '#71717a' }}>via {aiProvider}</span>
+            )}
+            <button
+              type="button"
+              onClick={() => void fetchAiSuggestion()}
+              disabled={aiLoading || !technicalSuggestion}
+              style={{
+                marginLeft: 'auto',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                height: 28,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid #3f3f46',
+                background: '#18181b',
+                color: '#a1a1aa',
+                fontSize: 11,
+                cursor: aiLoading ? 'wait' : 'pointer',
+              }}
+            >
+              {aiLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              Refresh AI
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAiHelp(false)}
+              aria-label="Close AI help"
+              title="Close AI help"
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                border: '1px solid #3f3f46',
+                background: '#18181b',
+                color: '#a1a1aa',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={14} />
+            </button>
+            {technicalSuggestion && technicalSuggestion.bias !== 'HOLD' && (
+              <button
+                type="button"
+                onClick={() => void placeTrade(technicalSuggestion.bias)}
+                disabled={!!placingSide || aiLoading}
+                style={{
+                  height: 28,
+                  padding: '0 10px',
+                  borderRadius: 8,
+                  border:
+                    technicalSuggestion.bias === 'BUY'
+                      ? '1px solid rgba(52,211,153,0.5)'
+                      : '1px solid rgba(248,113,113,0.5)',
+                  background:
+                    technicalSuggestion.bias === 'BUY'
+                      ? 'rgba(52,211,153,0.12)'
+                      : 'rgba(248,113,113,0.12)',
+                  color: technicalSuggestion.bias === 'BUY' ? '#a7f3d0' : '#fecaca',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Paper {technicalSuggestion.bias}
+              </button>
+            )}
+          </div>
+
+          {technicalSuggestion ? (
+            <>
+              <p style={{ margin: 0, fontSize: 12, color: '#e4e4e7', lineHeight: 1.45 }}>
+                {technicalSuggestion.summary}
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                {technicalSuggestion.reasons.map((r) => (
+                  <span
+                    key={r}
+                    style={{
+                      fontSize: 10,
+                      color: '#a1a1aa',
+                      border: '1px solid #3f3f46',
+                      borderRadius: 999,
+                      padding: '2px 8px',
+                      background: '#18181b',
+                    }}
+                  >
+                    {r}
+                  </span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p style={{ margin: 0, fontSize: 12, color: '#71717a' }}>
+              Load chart bars to generate a suggestion.
+            </p>
+          )}
+
+          <div
+            style={{
+              marginTop: 8,
+              padding: '8px 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(63,63,70,0.9)',
+              background: 'rgba(9,9,11,0.55)',
+              fontSize: 12,
+              color: '#d4d4d8',
+              lineHeight: 1.45,
+              maxHeight: 96,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {aiLoading && !aiText
+              ? 'Asking advisor…'
+              : aiError
+                ? `AI note unavailable: ${aiError}. Technical bias above still applies.`
+                : aiText || 'AI narrative will appear here.'}
+          </div>
+          <p style={{ margin: '6px 0 0', fontSize: 10, color: '#71717a' }}>
+            Advisory only — AI never executes. Chart Buy/Sell stays paper unless live is explicitly
+            enabled.
+          </p>
+        </div>
+        ) : null}
+
         {/* Resize handles */}
-        <div
-          onMouseDown={beginResize('e')}
-          title="Drag to resize width"
-          style={{
-            position: 'absolute',
-            top: 12,
-            right: 0,
-            width: 6,
-            bottom: 18,
-            cursor: 'ew-resize',
-            zIndex: 5,
-          }}
-        />
-        <div
-          onMouseDown={beginResize('s')}
-          title="Drag to resize height"
-          style={{
-            position: 'absolute',
-            left: 12,
-            right: 18,
-            bottom: 0,
-            height: 6,
-            cursor: 'ns-resize',
-            zIndex: 5,
-          }}
-        />
-        <div
-          onMouseDown={beginResize('se')}
-          title="Drag to resize"
-          style={{
-            position: 'absolute',
-            right: 2,
-            bottom: 2,
-            width: 16,
-            height: 16,
-            cursor: 'nwse-resize',
-            zIndex: 6,
-            borderRight: '2px solid #52525b',
-            borderBottom: '2px solid #52525b',
-            borderRadius: 2,
-            opacity: 0.85,
-          }}
-        />
+        {winState === 'normal' ? (
+          <>
+            <div
+              onMouseDown={beginResize('e')}
+              title="Drag to resize width"
+              style={{
+                position: 'absolute',
+                top: 12,
+                right: 0,
+                width: 6,
+                bottom: 18,
+                cursor: 'ew-resize',
+                zIndex: 5,
+              }}
+            />
+            <div
+              onMouseDown={beginResize('s')}
+              title="Drag to resize height"
+              style={{
+                position: 'absolute',
+                left: 12,
+                right: 18,
+                bottom: 0,
+                height: 6,
+                cursor: 'ns-resize',
+                zIndex: 5,
+              }}
+            />
+            <div
+              onMouseDown={beginResize('se')}
+              title="Drag to resize"
+              style={{
+                position: 'absolute',
+                right: 2,
+                bottom: 2,
+                width: 16,
+                height: 16,
+                cursor: 'nwse-resize',
+                zIndex: 6,
+                borderRight: '2px solid #52525b',
+                borderBottom: '2px solid #52525b',
+                borderRadius: 2,
+                opacity: 0.85,
+              }}
+            />
+          </>
+        ) : null}
       </div>
     </div>
   );

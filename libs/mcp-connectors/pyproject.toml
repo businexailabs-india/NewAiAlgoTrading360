@@ -9,6 +9,11 @@ dependencies = [
   "pyyaml>=6.0.2",
 ]
 
+[project.optional-dependencies]
+ibkr = [
+  "ibapi>=9.81.1; python_version>='3.12'",
+]
+
 [tool.uv.sources]
 advisory-core = { workspace = true }
 

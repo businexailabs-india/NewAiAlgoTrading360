@@ -47,3 +47,7 @@ sequenceDiagram
 | POST | `/api/approvals/{id}/reject` | Reject |
 
 Kafka topic names (for production wiring): `dhanlaxmi.command.received`, `dhanlaxmi.intent.detected`, `dhanlaxmi.advisory.generated`, `dhanlaxmi.strategy.draft.created`, `dhanlaxmi.paper_test.requested`, `dhanlaxmi.trade_approval.requested|approved|rejected`, `dhanlaxmi.response.generated`, `compliance.audit.created`.
+
+## LLM
+
+Default provider is **Bifrost → Claude** (`DEFAULT_LLM_PROVIDER=claude`, `BIFROST_ENABLED=true`). Optional fallback: OpenRouter (`OPENROUTER_API_KEY` / `OPENROUTER_MODEL`). Without Bifrost or OpenRouter, the service uses `MockLLMProvider`. Broker secrets and PII are redacted before LLM calls; live trades are never executed from chat.

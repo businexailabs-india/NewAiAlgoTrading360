@@ -595,6 +595,223 @@ async def dhan_credential_schema(identity=Depends(require_service)):
     return {"success": True, "data": dhan_credentials_schema()}
 
 
+# ---------------------------------------------------------------------------
+# Interactive Brokers (IBKR) — paper-first global broker
+# ---------------------------------------------------------------------------
+
+
+def _ibkr_provider():
+    from providers.ibkr_provider import get_ibkr_provider
+
+    # Reuse registry singleton so connect state persists across IBKR routes
+    return get_ibkr_provider(fresh=False)
+
+
+class IBKRConnectBody(BaseModel):
+    credentials: dict[str, str] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/mcp/providers/ibkr/connect")
+async def ibkr_connect(body: IBKRConnectBody, identity=Depends(require_service)):
+    provider = _ibkr_provider()
+    cfg = dict(body.config or {})
+    cfg.setdefault("use_mock", True)
+    result = await provider.connect(body.credentials or {}, cfg)
+    return {"success": True, "data": redact_secrets(result)}
+
+
+@app.get("/mcp/providers/ibkr/health")
+async def ibkr_health(identity=Depends(require_service)):
+    provider = _ibkr_provider()
+    return {"success": True, "data": await provider.health_check()}
+
+
+@app.get("/mcp/providers/ibkr/account-summary")
+async def ibkr_account_summary(identity=Depends(require_service)):
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    profile = await provider.get_account_profile()
+    return {"success": True, "data": redact_secrets(profile)}
+
+
+@app.get("/mcp/providers/ibkr/positions")
+async def ibkr_positions(identity=Depends(require_service)):
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    return {"success": True, "data": redact_secrets(await provider.get_positions())}
+
+
+@app.get("/mcp/providers/ibkr/orders")
+async def ibkr_orders(identity=Depends(require_service)):
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    return {"success": True, "data": redact_secrets(await provider.get_orders())}
+
+
+@app.get("/mcp/providers/ibkr/executions")
+async def ibkr_executions(identity=Depends(require_service)):
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    return {"success": True, "data": redact_secrets(await provider.get_trades())}
+
+
+@app.get("/mcp/providers/ibkr/contract-search")
+async def ibkr_contract_search(query: str = Query(...), identity=Depends(require_service)):
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    return {"success": True, "data": await provider.search_instruments(query)}
+
+
+@app.get("/mcp/providers/ibkr/quote/{symbol}")
+async def ibkr_quote(symbol: str, identity=Depends(require_service)):
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    data = await provider.get_live_quotes([symbol])
+    return {"success": True, "data": data}
+
+
+@app.get("/mcp/providers/ibkr/historical-data")
+async def ibkr_historical(
+    symbol: str = Query(...),
+    timeframe: str = Query("1d"),
+    from_date: str = Query(...),
+    to_date: str = Query(...),
+    identity=Depends(require_service),
+):
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    bars = await provider.get_historical_data(symbol, timeframe, from_date, to_date)
+    return {"success": True, "data": bars}
+
+
+class IBKROrderBody(BaseModel):
+    symbol: str
+    side: str = "BUY"
+    quantity: float = 1
+    order_type: str = "MARKET"
+    price: float | None = None
+    trigger_price: float | None = None
+    exchange: str = "SMART"
+    currency: str = "USD"
+    idempotency_key: str | None = None
+    oms_order_id: str | None = None
+    rms_approval_id: str | None = None
+    user_approval_id: str | None = None
+    approval_id: str | None = None
+    caller_role: str | None = None
+    strategy_id: str | None = None
+
+
+@app.post("/mcp/providers/ibkr/orders/preview")
+async def ibkr_order_preview(body: IBKROrderBody, identity=Depends(require_service)):
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    payload = {
+        "tenant_id": str(identity.tenant_id),
+        "user_id": str(identity.user_id),
+        "provider_id": "ibkr",
+        "exchange": body.exchange,
+        "symbol": body.symbol,
+        "side": body.side,
+        "quantity": int(body.quantity),
+        "order_type": body.order_type,
+        "price": body.price,
+        "trigger_price": body.trigger_price,
+        "currency": body.currency,
+        "idempotency_key": body.idempotency_key,
+    }
+    return {"success": True, "data": await provider.preview_order(payload)}
+
+
+@app.post("/mcp/providers/ibkr/orders/paper")
+async def ibkr_paper_order(body: IBKROrderBody, identity=Depends(require_service)):
+    """OMS-approved paper order only. AI/DhanLaxmi callers are rejected."""
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    role = body.caller_role or identity.role
+    payload = {
+        "tenant_id": str(identity.tenant_id),
+        "user_id": str(identity.user_id),
+        "provider_id": "ibkr",
+        "exchange": body.exchange,
+        "symbol": body.symbol,
+        "side": body.side,
+        "quantity": int(body.quantity),
+        "order_type": body.order_type,
+        "price": body.price,
+        "trigger_price": body.trigger_price,
+        "currency": body.currency,
+        "idempotency_key": body.idempotency_key,
+        "oms_order_id": body.oms_order_id,
+        "rms_approval_id": body.rms_approval_id,
+        "user_approval_id": body.user_approval_id or body.approval_id,
+        "caller_role": role,
+        "strategy_id": body.strategy_id,
+    }
+    try:
+        result = await provider.place_paper_order(payload)
+        return {"success": True, "data": result.model_dump(mode="json")}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/mcp/providers/ibkr/orders/live-disabled")
+async def ibkr_live_order_disabled(body: IBKROrderBody, identity=Depends(require_service)):
+    """Explicit live endpoint — always blocked unless IBKR_LIVE_TRADING_ENABLED + full gates."""
+    from mcp_connectors.base.models import LiveOrderGateContext
+    from mcp_connectors.base.provider import LiveTradingBlockedError
+
+    provider = _ibkr_provider()
+    if not provider._connected:
+        await provider.connect({}, {"use_mock": True})
+    payload = {
+        "tenant_id": str(identity.tenant_id),
+        "user_id": str(identity.user_id),
+        "provider_id": "ibkr",
+        "exchange": body.exchange,
+        "symbol": body.symbol,
+        "side": body.side,
+        "quantity": int(body.quantity),
+        "order_type": body.order_type,
+        "price": body.price,
+        "idempotency_key": body.idempotency_key,
+        "oms_order_id": body.oms_order_id,
+        "rms_approval_id": body.rms_approval_id,
+        "user_approval_id": body.user_approval_id or body.approval_id,
+        "caller_role": body.caller_role or identity.role,
+    }
+    gate = LiveOrderGateContext(
+        live_trading_enabled=False,
+        caller_role=payload["caller_role"],
+        rms_approval_id=body.rms_approval_id,
+        user_approval_id=body.user_approval_id or body.approval_id,
+        provider_live_trading_enabled=False,
+        kill_switch_off=True,
+    )
+    try:
+        await provider.place_order_disabled_by_default(payload, gate=gate)
+    except LiveTradingBlockedError as exc:
+        return {
+            "success": False,
+            "blocked": True,
+            "error": str(exc),
+            "data": {"live_trading_enabled": False, "provider_id": "ibkr"},
+        }
+    raise HTTPException(500, "live order unexpectedly accepted")
+
+
 @app.get("/mcp/advisory/provider-context")
 async def advisory_context(identity=Depends(require_service)):
     return {

@@ -78,11 +78,15 @@ export class LlmProviderRegistry {
   }
 
   resolveDefault(): LlmProviderId {
-    // Route every advisory / Ask Advisor query through Anthropic (via Bifrost when enabled).
+    // Bifrost/Claude is the default primary for all AI LLM traffic.
     if (forceAnthropicForAllQueries()) {
       return 'claude';
     }
-    const configured = normalizeProviderId(process.env.DEFAULT_LLM_PROVIDER) || 'claude';
+    const configured =
+      normalizeProviderId(process.env.DEFAULT_LLM_PROVIDER) ||
+      (isBifrostEnabled() ? 'claude' : null) ||
+      (process.env.OPENROUTER_API_KEY ? 'openrouter' : null) ||
+      'claude';
     if (configured === 'mock' && process.env.ALLOW_MOCK_LLM !== 'true' && process.env.NODE_ENV !== 'test') {
       throw new LlmProviderError(
         'Mock provider cannot be DEFAULT_LLM_PROVIDER without ALLOW_MOCK_LLM=true',
@@ -95,21 +99,29 @@ export class LlmProviderRegistry {
   }
 
   resolveFallback(primary: LlmProviderId): LlmProviderId | null {
-    const raw = process.env.FALLBACK_LLM_PROVIDER;
-    if (!raw) return null;
+    const raw = process.env.FALLBACK_LLM_PROVIDER || 'openrouter';
     const fb = normalizeProviderId(raw);
     if (!fb) {
       throw new LlmProviderError(`Invalid FALLBACK_LLM_PROVIDER: ${raw}`, primary, 400, false);
     }
     if (fb === primary) {
-      throw new LlmProviderError(
-        'FALLBACK_LLM_PROVIDER must differ from DEFAULT_LLM_PROVIDER',
-        primary,
-        400,
-        false
-      );
+      // Default chain: claude/bifrost → openrouter → mock (or local if mock disallowed)
+      if (primary === 'claude' || primary === 'openrouter') {
+        if (primary === 'claude') {
+          const openrouter = this.providers.get('openrouter');
+          if (openrouter?.isAvailable()) return 'openrouter';
+        }
+        if (process.env.ALLOW_MOCK_LLM === 'true' || process.env.NODE_ENV === 'test') {
+          return 'mock';
+        }
+        const local = this.providers.get('local');
+        return local?.isAvailable() ? 'local' : null;
+      }
+      return null;
     }
     if (fb === 'mock' && process.env.ALLOW_MOCK_LLM !== 'true' && process.env.NODE_ENV !== 'test') {
+      const local = this.providers.get('local');
+      if (local?.isAvailable()) return 'local';
       throw new LlmProviderError(
         'Mock provider cannot be FALLBACK_LLM_PROVIDER without ALLOW_MOCK_LLM=true',
         'mock',

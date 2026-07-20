@@ -1,6 +1,6 @@
-"""DhanLaxmi LLM facade — MockLLMProvider is the Phase 2 default.
+"""DhanLaxmi LLM facade — OpenRouter is the default primary; Mock is the fallback.
 
-ClaudeProvider and OpenAIProvider interfaces are available via llm_providers.
+ClaudeProvider and OpenAIProvider interfaces remain available via llm_providers.
 """
 
 from __future__ import annotations
@@ -11,11 +11,12 @@ from llm_providers import (
     LLMRouter,
     MockLLMProvider,
     OpenAIProvider,
+    OpenRouterProvider,
     get_default_provider,
     validate_ai_json,
 )
 
-# Backward-compatible local alias
+# Backward-compatible local alias (mock)
 LocalLLMProvider = MockLLMProvider
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "LocalLLMProvider",
     "MockLLMProvider",
     "OpenAIProvider",
+    "OpenRouterProvider",
     "get_default_provider",
     "validate_ai_json",
 ]

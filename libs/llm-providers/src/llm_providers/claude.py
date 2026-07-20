@@ -19,7 +19,10 @@ def _falsy(val: str | None) -> bool:
 
 
 def bifrost_enabled() -> bool:
+    """Bifrost is enabled by default; set BIFROST_ENABLED=false to disable."""
     flag = os.getenv("BIFROST_ENABLED")
+    if flag is None or not str(flag).strip():
+        return True
     if _falsy(flag):
         return False
     if _truthy(flag):

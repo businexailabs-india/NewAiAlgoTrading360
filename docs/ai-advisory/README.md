@@ -33,6 +33,24 @@ flowchart LR
 - `POST /api/strategy-options/{id}/request-live-approval`
 - `POST /api/external-algos/discover`
 
+## LLM provider
+
+Default primary is **Bifrost → Claude** (`DEFAULT_LLM_PROVIDER=claude`, `BIFROST_ENABLED=true`).
+
+```
+BIFROST_ENABLED=true
+BIFROST_BASE_URL=http://localhost:8080
+DEFAULT_LLM_PROVIDER=claude
+FALLBACK_LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=                 # optional secondary
+OPENROUTER_MODEL=openai/gpt-4o-mini
+ALLOW_MOCK_LLM=true
+LLM_FORCE_ANTHROPIC=true
+```
+
+Start Bifrost with `npm run bifrost:up` (backend) or `docker compose -f docker-compose.bifrost.yml up -d`.  
+Secrets and PII are redacted before any LLM call. If Bifrost is down, traffic falls back to OpenRouter (when keyed) then Mock / deterministic recommendation engine.
+
 ## Safety
 
 - Never promises profit / guaranteed returns.

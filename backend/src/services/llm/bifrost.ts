@@ -4,7 +4,8 @@
  */
 
 export function isBifrostEnabled(): boolean {
-  const flag = (process.env.BIFROST_ENABLED || '').toLowerCase();
+  // Default ON — Bifrost is the primary LLM gateway unless explicitly disabled.
+  const flag = (process.env.BIFROST_ENABLED || 'true').toLowerCase().trim();
   if (flag === 'false' || flag === '0' || flag === 'off') return false;
   if (flag === 'true' || flag === '1' || flag === 'on') return true;
   return Boolean(process.env.BIFROST_BASE_URL?.trim());
@@ -52,9 +53,13 @@ export function resolveAnthropicMessagesUrl(): string {
   );
 }
 
+/**
+ * When true, every LLM call is forced to Claude (via Bifrost when enabled).
+ * Default is true so Bifrost/Claude is the primary path for all AI queries.
+ */
 export function forceAnthropicForAllQueries(): boolean {
   const flag = (process.env.LLM_FORCE_ANTHROPIC || process.env.BIFROST_FORCE_ANTHROPIC || 'true')
     .toLowerCase()
     .trim();
-  return flag !== 'false' && flag !== '0' && flag !== 'off';
+  return flag === 'true' || flag === '1' || flag === 'on';
 }

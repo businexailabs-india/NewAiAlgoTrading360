@@ -108,6 +108,7 @@ class MCPProviderRegistry:
         files = [
             self.config_dir / "india-brokers.yaml",
             self.config_dir / "india-market-data.yaml",
+            self.config_dir / "global-brokers.yaml",
         ]
         loaded: list[ProviderConfig] = []
         for f in files:
@@ -168,6 +169,10 @@ class MCPProviderRegistry:
             "angel": "angelone",
             "breeze": "icici_breeze",
             "shoonya": "finvasia_shoonya",
+            "interactive_brokers": "ibkr",
+            "interactivebrokers": "ibkr",
+            "ib": "ibkr",
+            "tws": "ibkr",
         }
         key = aliases.get(key, key)
         if not self._configs:
@@ -343,7 +348,7 @@ def UpstoxMCPConnector(**kw):  # noqa: N802
 
 
 def InteractiveBrokersMCPConnector(**kw):  # noqa: N802
-    return get_connector("interactive_brokers", **kw)
+    return get_connector("ibkr", **kw)
 
 
 def AlpacaMCPConnector(**kw):  # noqa: N802

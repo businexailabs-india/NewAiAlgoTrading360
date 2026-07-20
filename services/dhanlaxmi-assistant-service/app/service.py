@@ -110,7 +110,18 @@ class DhanLaxmiService:
                         "client_secret",
                     )
                 },
-                "provider_status": dhan_status,
+                "provider_status": {
+                    k: v
+                    for k, v in (dhan_status or {}).items()
+                    if k
+                    not in (
+                        "access_token",
+                        "api_key",
+                        "password",
+                        "totp_secret",
+                        "client_secret",
+                    )
+                },
                 "mcp_provider_context": {
                     k: v
                     for k, v in mcp_ctx.items()

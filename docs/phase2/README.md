@@ -6,7 +6,7 @@
 - `language-intent-service` — language + intent classification
 
 ## Shared libs
-- `llm-providers` — MockLLMProvider (default), ClaudeProvider, OpenAIProvider interfaces; JSON validation
+- `llm-providers` — ClaudeProvider via Bifrost (default), OpenRouterProvider + MockLLMProvider (fallbacks); JSON validation
 - `recommendation-ranking` — ensures 3–5 ranked options
 - `advisory-to-strategy` — recommendation → Phase 1 `StrategyConfig`
 - `prompt-to-strategy` — NL prompt → strategy draft + `StrategyConfig`
@@ -25,4 +25,4 @@
 - Live trading disabled by default
 - Direct buy → order preview + approval + risk warning (no execution)
 - AI output JSON-validated; decisions audited
-- MockLLMProvider is the default provider
+- Bifrost/Claude is the default provider; OpenRouter then MockLLMProvider are fallbacks
