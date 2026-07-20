@@ -28,6 +28,35 @@ export interface AdvisoryRecommendation {
   rationale: string;
   warnings: string[];
   actions: string[];
+  direction?: string;
+  paper_only?: boolean;
+  rank?: number;
+  stop_loss_required?: boolean;
+  target_required?: boolean;
+  explanation?: string;
+  expected_holding_period?: string;
+  max_loss_estimate?: number;
+}
+
+export interface StrategyConfigContract {
+  strategy_id: string;
+  strategy_name: string;
+  strategy_type: string;
+  symbols: string[];
+  timeframe: string;
+  paper_trading_required: boolean;
+  live_trading_enabled: boolean;
+  risk_warning: string;
+}
+
+export interface StrategyOptionContract {
+  id: string;
+  strategy_name: string;
+  strategy_type: string;
+  paper_test_required: boolean;
+  live_enabled: boolean;
+  strategy_config?: StrategyConfigContract;
+  config?: Record<string, unknown>;
 }
 
 export interface LoginAdvisory {
@@ -67,7 +96,7 @@ export const advisoryMarketplaceService = {
     return json(res);
   },
 
-  async convertToAlgo(advisoryId: string, recommendationId: string) {
+  async convertToAlgo(advisoryId: string, recommendationId: string): Promise<StrategyOptionContract> {
     const res = await fetch(
       `${API_BASE_URL}/advisory/${advisoryId}/recommendations/${recommendationId}/convert-to-algo`,
       { method: 'POST', headers: headers(), body: '{}' }

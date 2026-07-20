@@ -8,6 +8,10 @@ dependencies = [
   "strategy-normalizer",
   "risk-explainability",
   "market-regime-detector",
+  "llm-providers",
+  "recommendation-ranking",
+  "advisory-to-strategy",
+  "schemas",
   "fastapi>=0.115.6",
   "uvicorn[standard]>=0.32.1",
   "alembic>=1.14.0",
@@ -24,6 +28,10 @@ mcp-connectors = { workspace = true }
 strategy-normalizer = { workspace = true }
 risk-explainability = { workspace = true }
 market-regime-detector = { workspace = true }
+llm-providers = { workspace = true }
+recommendation-ranking = { workspace = true }
+advisory-to-strategy = { workspace = true }
+schemas = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

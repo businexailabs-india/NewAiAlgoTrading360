@@ -13,12 +13,26 @@ from uuid import UUID
 from advisory_core.contracts import ServiceIdentity
 
 SECRET_KEY_RE = re.compile(
-    r"(access[_-]?token|refresh[_-]?token|api[_-]?key|secret|password|authorization|"
+    r"(access[_-]?token|refresh[_-]?token|api[_-]?key|api[_-]?secret|"
+    r"(?<![a-z])secret(?![a-z])|password|authorization|"
     r"client[_-]?id|credentials?|broker[_-]?token)",
+    re.I,
+)
+# Already-safe metadata / display fields that substring-match secret key patterns.
+SAFE_KEY_RE = re.compile(
+    r"^(masked_.*|.*_masked|.*_redacted|secrets_included|token_validity|"
+    r"has_credentials|credentials_configured|credential_schema)$",
     re.I,
 )
 JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+
+def _is_secret_key(key: str) -> bool:
+    name = str(key)
+    if SAFE_KEY_RE.match(name):
+        return False
+    return bool(SECRET_KEY_RE.search(name))
 
 
 def redact_secrets(value: Any, depth: int = 0) -> Any:
@@ -34,7 +48,7 @@ def redact_secrets(value: Any, depth: int = 0) -> Any:
         return [redact_secrets(v, depth + 1) for v in value]
     if isinstance(value, dict):
         return {
-            k: ("[REDACTED]" if SECRET_KEY_RE.search(str(k)) else redact_secrets(v, depth + 1))
+            k: ("[REDACTED]" if _is_secret_key(str(k)) else redact_secrets(v, depth + 1))
             for k, v in value.items()
         }
     return str(value)

@@ -1,0 +1,177 @@
+{
+  "phase": "phase_2_real_provider_readiness",
+  "generated_at": "2026-07-19T05:34:05.870911+00:00",
+  "total": 24,
+  "passed": 24,
+  "failed": 0,
+  "providers": [
+    {
+      "provider_id": "dhan",
+      "provider_name": "Dhan / DhanHQ",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "zerodha",
+      "provider_name": "Zerodha Kite Connect",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "angelone",
+      "provider_name": "Angel One SmartAPI",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "upstox",
+      "provider_name": "Upstox API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "fyers",
+      "provider_name": "Fyers API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "icici_breeze",
+      "provider_name": "ICICI Direct Breeze API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "kotak_neo",
+      "provider_name": "Kotak Neo API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "alice_blue",
+      "provider_name": "Alice Blue API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "finvasia_shoonya",
+      "provider_name": "Finvasia Shoonya API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "iifl",
+      "provider_name": "IIFL Trading API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "motilal_oswal",
+      "provider_name": "Motilal Oswal MO API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "hdfc_sky",
+      "provider_name": "HDFC Sky API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "groww",
+      "provider_name": "Groww API Placeholder",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "paytm_money",
+      "provider_name": "Paytm Money API Placeholder",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "samco",
+      "provider_name": "Samco StockNote API",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "sharekhan",
+      "provider_name": "Sharekhan API Placeholder",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "paper_trading",
+      "provider_name": "BusineXAi Paper Trading Broker",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "paper"
+    },
+    {
+      "provider_id": "mock_trading",
+      "provider_name": "Mock Trading Provider",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "truedata",
+      "provider_name": "TrueData Market Data",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "globaldatafeeds",
+      "provider_name": "GlobalDataFeeds",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "accord",
+      "provider_name": "Accord Fintech ACE Datafeed",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "bse_direct",
+      "provider_name": "BSE Direct Market Data Placeholder",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "nse_direct",
+      "provider_name": "NSE Direct Market Data Placeholder",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    },
+    {
+      "provider_id": "mock_market_data",
+      "provider_name": "Mock Market Data Provider",
+      "score": 100.0,
+      "overall_passed": true,
+      "mode": "mock"
+    }
+  ]
+}

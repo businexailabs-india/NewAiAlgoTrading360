@@ -7,6 +7,9 @@
     plugins: [react()],
     define: {
       'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || '/api'),
+      'import.meta.env.VITE_MCP_ADMIN_ALLOW_ALL': JSON.stringify(
+        process.env.VITE_MCP_ADMIN_ALLOW_ALL || 'true'
+      ),
     },
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
@@ -51,6 +54,7 @@
         '@radix-ui/react-accordion@1.2.3': '@radix-ui/react-accordion',
         '@jsr/supabase__supabase-js@2.49.8': '@jsr/supabase__supabase-js',
         '@': path.resolve(__dirname, './src'),
+        '@web-admin': path.resolve(__dirname, './apps/web-admin/src'),
       },
     },
     build: {
@@ -65,6 +69,11 @@
           target: process.env.VITE_BACKEND_URL || 'http://localhost:3001',
           changeOrigin: true,
           secure: false
+        },
+        '/socket.io': {
+          target: process.env.VITE_BACKEND_URL || 'http://localhost:3001',
+          changeOrigin: true,
+          ws: true,
         }
       }
     },

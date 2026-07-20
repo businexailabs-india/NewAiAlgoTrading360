@@ -1,0 +1,142 @@
+# BusineXAi TradeOS360 — Indian market data MCP providers
+version: "1.0"
+country: IN
+providers:
+  - provider_id: truedata
+    provider_name: TrueData Market Data
+    provider_type: market_data
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - live_ticks
+      - websocket_feed
+      - historical_data
+      - option_chain
+      - greeks
+      - symbol_master
+    auth_type: [api_key]
+    credentials_required: [api_key, username_optional]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://truedata.in/
+    adapter_class: mcp_connectors.market_data.truedata.TrueDataProvider
+    env_enable_flag: MCP_ENABLE_TRUEDATA
+
+  - provider_id: globaldatafeeds
+    provider_name: GlobalDataFeeds
+    provider_type: market_data
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX, NCDEX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - live_ticks
+      - websocket_feed
+      - historical_data
+      - symbol_master
+    auth_type: [api_key]
+    credentials_required: [api_key]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://globaldatafeeds.in/
+    adapter_class: mcp_connectors.market_data.globaldatafeeds.GlobalDataFeedsProvider
+    env_enable_flag: MCP_ENABLE_GLOBALDATAFEEDS
+
+  - provider_id: accord
+    provider_name: Accord Fintech ACE Datafeed
+    provider_type: market_data
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX, NCDEX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - eod_data
+      - historical_data
+      - corporate_actions
+      - fundamentals
+      - news
+      - reference_data
+      - real_time_placeholder
+    auth_type: [api_key, ftp_credentials]
+    credentials_required: [api_key_optional, ftp_username_optional, ftp_password_optional]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://www.accordfintech.com/
+    adapter_class: mcp_connectors.market_data.accord.AccordProvider
+    env_enable_flag: MCP_ENABLE_ACCORD
+
+  - provider_id: bse_direct
+    provider_name: BSE Direct Market Data Placeholder
+    provider_type: exchange_data
+    country: IN
+    enabled: false
+    supported_exchanges: [BSE]
+    supported_segments: [equity, equity_derivatives]
+    supported_asset_classes: [stocks, futures, options]
+    capabilities:
+      - direct_realtime_feed_placeholder
+      - historical_data_placeholder
+      - reference_data_placeholder
+      - indices_placeholder
+    auth_type: [leased_line_or_vendor_contract]
+    credentials_required: [contract_id_placeholder, connection_config_placeholder]
+    live_trading_default: false
+    paper_trading_default: false
+    status: requires_official_bse_data_agreement
+    documentation_url: https://www.bseindia.com/
+    adapter_class: mcp_connectors.market_data.bse_direct_placeholder.BSEDirectProvider
+    env_enable_flag: MCP_ENABLE_BSE_DIRECT
+
+  - provider_id: nse_direct
+    provider_name: NSE Direct Market Data Placeholder
+    provider_type: exchange_data
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE]
+    supported_segments: [equity, equity_derivatives]
+    supported_asset_classes: [stocks, futures, options]
+    capabilities:
+      - direct_realtime_feed_placeholder
+      - historical_data_placeholder
+      - reference_data_placeholder
+      - indices_placeholder
+    auth_type: [leased_line_or_vendor_contract]
+    credentials_required: [contract_id_placeholder, connection_config_placeholder]
+    live_trading_default: false
+    paper_trading_default: false
+    status: requires_official_nse_data_agreement
+    documentation_url: https://www.nseindia.com/
+    adapter_class: mcp_connectors.market_data.nse_direct_placeholder.NSEDirectProvider
+    env_enable_flag: MCP_ENABLE_NSE_DIRECT
+
+  - provider_id: mock_market_data
+    provider_name: Mock Market Data Provider
+    provider_type: market_data
+    country: IN
+    enabled: true
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - live_ticks
+      - websocket_feed
+      - historical_data
+      - option_chain
+      - greeks
+      - symbol_master
+    auth_type: [none]
+    credentials_required: []
+    live_trading_default: false
+    paper_trading_default: false
+    status: active
+    documentation_url: ""
+    adapter_class: mcp_connectors.market_data.mock.MockMarketDataProvider
+    env_enable_flag: MCP_ENABLE_MOCK_MARKET_DATA

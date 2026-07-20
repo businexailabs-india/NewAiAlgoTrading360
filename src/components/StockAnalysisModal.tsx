@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import { X, TrendingUp, TrendingDown, BarChart3, Activity, Target, AlertTriangle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import { addToDefaultWatchlist } from '@/api/watchlist';
+import { toast } from 'sonner';
 
 interface Stock {
   symbol: string;
@@ -35,6 +38,20 @@ export function StockAnalysisModal({
   keyMetrics = {},
   recommendations = []
 }: StockAnalysisModalProps) {
+  const [adding, setAdding] = useState(false);
+
+  async function handleAddToWatchlist() {
+    setAdding(true);
+    try {
+      await addToDefaultWatchlist(stock.symbol, 'NSE');
+      toast.success(`${stock.symbol} added to watchlist`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to add to watchlist');
+    } finally {
+      setAdding(false);
+    }
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -93,8 +110,12 @@ export function StockAnalysisModal({
               </div>
             </div>
             <div className="flex gap-3">
-              <Button className="bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30">
-                Add to Watchlist
+              <Button
+                className="bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30"
+                disabled={adding}
+                onClick={() => void handleAddToWatchlist()}
+              >
+                {adding ? 'Adding…' : 'Add to Watchlist'}
               </Button>
               <Button className="bg-cyan-500 hover:bg-cyan-600 text-white">
                 Trade Now

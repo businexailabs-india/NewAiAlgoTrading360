@@ -50,7 +50,9 @@ import knowledgeRoutes from './routes/knowledge.routes';
 import llmRoutes from './routes/llm.routes';
 import integrationRoutes from './routes/integration.routes';
 import advisoryMarketplaceRoutes from './routes/advisory-marketplace.routes';
+import mcpProvidersRoutes from './routes/mcp-providers.routes';
 import dhanlaxmiRoutes from './routes/dhanlaxmi.routes';
+import watchlistRoutes from './routes/watchlist.routes';
 import { RiskGateService } from './services/risk-gate.service';
 import { OutboxService } from './events/outbox.service';
 
@@ -149,7 +151,9 @@ app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/llm', llmRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api', advisoryMarketplaceRoutes);
+app.use('/api', mcpProvidersRoutes);
 app.use('/api', dhanlaxmiRoutes);
+app.use('/api', watchlistRoutes);
 
 // WebSocket connection handling
 io.on('connection', (socket) => {
@@ -171,6 +175,26 @@ io.on('connection', (socket) => {
     logger.info(`Client disconnected: ${socket.id}`);
   });
 });
+
+// Poll MCP provider health and broadcast on channel mcp.connection.health.changed
+const MCP_HEALTH_POLL_MS = Number(process.env.MCP_HEALTH_POLL_MS || 15000);
+setInterval(() => {
+  void (async () => {
+    try {
+      const { McpConnectorProxyService } = await import('./services/mcp-connector-proxy.service');
+      const systemUser = process.env.MCP_HEALTH_SYSTEM_USER_ID || '00000000-0000-0000-0000-000000000001';
+      const health = await McpConnectorProxyService.proxy(systemUser, 'admin', '/admin/mcp/provider-health', {
+        asAdmin: true
+      });
+      io.to('mcp.connection.health.changed').emit('mcp.connection.health.changed', {
+        at: new Date().toISOString(),
+        data: health
+      });
+    } catch {
+      // MCP connector may be offline in local/dev — ignore
+    }
+  })();
+}, MCP_HEALTH_POLL_MS);
 
 // Make io accessible to routes
 app.set('io', io);

@@ -7,13 +7,21 @@ import { logger } from '../utils/logger';
 
 export interface Quote {
   symbol: string;
+  name?: string;
   price: number;
   change: number;
   changePercent: number;
   open?: number;
   high?: number;
   low?: number;
+  previousClose?: number;
   volume?: number;
+  /** Best bid / ask */
+  bid?: number;
+  ask?: number;
+  /** Approximate buy-side / sell-side interest (bid/ask size when available) */
+  buyers?: number;
+  sellers?: number;
   timestamp: string;
   /** When the price observation was actually recorded */
   asOf?: string;
@@ -83,11 +91,54 @@ export class MarketService {
     try {
       const lookup = YAHOO_SYMBOL_ALIASES[symbol] || symbol;
       const yahooSymbol = lookup.includes('^') ? lookup : `${lookup}${suffix}`;
+      const headers = { 'User-Agent': 'Mozilla/5.0' };
+      const asOf = new Date().toISOString();
+
+      // Prefer quote endpoint — includes bid/ask sizes for buyers/sellers columns
+      try {
+        const quoteResp = await axios.get('https://query1.finance.yahoo.com/v7/finance/quote', {
+          params: { symbols: yahooSymbol },
+          headers,
+          timeout: 8000
+        });
+        const q = quoteResp.data?.quoteResponse?.result?.[0];
+        if (q && (q.regularMarketPrice > 0 || q.regularMarketPreviousClose > 0)) {
+          const price = Number(q.regularMarketPrice ?? q.regularMarketPreviousClose);
+          const prevClose = Number(q.regularMarketPreviousClose ?? price);
+          const change = price - prevClose;
+          const bidSize = Number(q.bidSize ?? 0);
+          const askSize = Number(q.askSize ?? 0);
+          return {
+            symbol: symbol.replace(suffix, ''),
+            name: q.shortName || q.longName || symbol,
+            price,
+            change: Number(change.toFixed(2)),
+            changePercent: prevClose ? Number(((change / prevClose) * 100).toFixed(2)) : 0,
+            open: q.regularMarketOpen != null ? Number(q.regularMarketOpen) : undefined,
+            high: q.regularMarketDayHigh != null ? Number(q.regularMarketDayHigh) : undefined,
+            low: q.regularMarketDayLow != null ? Number(q.regularMarketDayLow) : undefined,
+            previousClose: prevClose,
+            volume: q.regularMarketVolume != null ? Number(q.regularMarketVolume) : undefined,
+            bid: q.bid != null ? Number(q.bid) : undefined,
+            ask: q.ask != null ? Number(q.ask) : undefined,
+            buyers: bidSize > 0 ? bidSize : undefined,
+            sellers: askSize > 0 ? askSize : undefined,
+            timestamp: asOf,
+            asOf,
+            stale: false,
+            source: 'yahoo',
+            available: true
+          };
+        }
+      } catch {
+        /* fall through to chart endpoint */
+      }
+
       const response = await axios.get(
         `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`,
         {
           params: { interval: '1d', range: '2d' },
-          headers: { 'User-Agent': 'Mozilla/5.0' },
+          headers,
           timeout: 8000
         }
       );
@@ -101,7 +152,17 @@ export class MarketService {
 
       const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
       const change = price - prevClose;
-      const asOf = new Date().toISOString();
+      const high = meta.regularMarketDayHigh ?? price;
+      const low = meta.regularMarketDayLow ?? price;
+      const volume = Number(meta.regularMarketVolume ?? 0);
+      // When exchange depth isn't available, derive a display proxy from day's range position
+      let buyers: number | undefined;
+      let sellers: number | undefined;
+      if (volume > 0 && high > low) {
+        const pos = Math.min(1, Math.max(0, (price - low) / (high - low)));
+        buyers = Math.round(volume * (1 - pos) * 0.15);
+        sellers = Math.round(volume * pos * 0.15);
+      }
 
       return {
         symbol: symbol.replace(suffix, ''),
@@ -109,9 +170,12 @@ export class MarketService {
         change: Number(change.toFixed(2)),
         changePercent: prevClose ? Number(((change / prevClose) * 100).toFixed(2)) : 0,
         open: meta.regularMarketOpen,
-        high: meta.regularMarketDayHigh,
-        low: meta.regularMarketDayLow,
-        volume: meta.regularMarketVolume,
+        high,
+        low,
+        previousClose: prevClose,
+        volume,
+        buyers,
+        sellers,
         timestamp: asOf,
         asOf,
         stale: false,
@@ -220,36 +284,176 @@ export class MarketService {
     return series.bars;
   }
 
-  static async getHistoricalSeries(symbol: string, days = 30): Promise<HistoricalSeries> {
+  /**
+   * Resolve Yahoo chart params.
+   * - range: lookback window (1d, 5d, 1mo, …)
+   * - interval: candle size (1m…4h, 1d, 1wk, 1mo). 2h/4h are fetched as 60m then resampled.
+   */
+  static resolveYahooHistoryParams(
+    daysOrRange?: number | string,
+    intervalHint?: string
+  ): { range: string; interval: string; fetchInterval: string; resampleMinutes: number; cacheDays: number } {
+    const rangeKey = String(daysOrRange ?? '5d').toLowerCase();
+    const rangeMap: Record<string, { range: string; cacheDays: number }> = {
+      '1d': { range: '1d', cacheDays: 1 },
+      '5d': { range: '5d', cacheDays: 5 },
+      '1w': { range: '5d', cacheDays: 7 },
+      '1mo': { range: '1mo', cacheDays: 31 },
+      '1m': { range: '1mo', cacheDays: 31 },
+      '3mo': { range: '3mo', cacheDays: 93 },
+      '3m': { range: '3mo', cacheDays: 93 },
+      '6mo': { range: '6mo', cacheDays: 186 },
+      '6m': { range: '6mo', cacheDays: 186 },
+      '1y': { range: '1y', cacheDays: 370 },
+      '2y': { range: '2y', cacheDays: 740 },
+      '5y': { range: '5y', cacheDays: 1900 },
+      ytd: { range: 'ytd', cacheDays: 370 },
+      max: { range: 'max', cacheDays: 5000 },
+      '7': { range: '5d', cacheDays: 7 },
+      '30': { range: '1mo', cacheDays: 31 },
+      '90': { range: '3mo', cacheDays: 93 },
+      '180': { range: '6mo', cacheDays: 186 },
+      '365': { range: '1y', cacheDays: 370 }
+    };
+
+    // Legacy: if only "1d"/"5d" passed as range without interval, keep prior defaults
+    const legacyIntervalDefaults: Record<string, string> = {
+      '1d': '5m',
+      '5d': '15m',
+      '1w': '30m',
+      '1mo': '1d',
+      '1m': '1d',
+      '3mo': '1d',
+      '3m': '1d',
+      '6mo': '1d',
+      '6m': '1d',
+      '1y': '1d',
+      '2y': '1d',
+      '5y': '1wk',
+      ytd: '1d',
+      max: '1mo'
+    };
+
+    const rangeInfo = rangeMap[rangeKey] || {
+      range: `${Math.max(1, Number(rangeKey) || 30)}d`,
+      cacheDays: Math.max(1, Number(rangeKey) || 30)
+    };
+
+    let interval = (intervalHint || legacyIntervalDefaults[rangeKey] || '1d').toLowerCase();
+    if (interval === '60m') interval = '1h';
+
+    // Yahoo does not support 2h/4h natively — fetch 1h and resample
+    let fetchInterval = interval;
+    let resampleMinutes = 0;
+    if (interval === '2h') {
+      fetchInterval = '60m';
+      resampleMinutes = 120;
+    } else if (interval === '4h') {
+      fetchInterval = '60m';
+      resampleMinutes = 240;
+    } else if (interval === '1h') {
+      fetchInterval = '60m';
+    }
+
+    // Clamp lookback for fine intervals (Yahoo limits)
+    let { range, cacheDays } = rangeInfo;
+    if (['1m', '2m'].includes(fetchInterval) && !['1d', '5d'].includes(range)) {
+      range = '5d';
+      cacheDays = 5;
+    } else if (['5m', '15m', '30m'].includes(fetchInterval) && ['1y', '2y', '5y', 'max'].includes(range)) {
+      range = '1mo';
+      cacheDays = 31;
+    } else if (fetchInterval === '60m' && ['5y', 'max'].includes(range)) {
+      range = '3mo';
+      cacheDays = 93;
+    }
+
+    return { range, interval, fetchInterval, resampleMinutes, cacheDays };
+  }
+
+  private static resampleBars(
+    bars: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>,
+    bucketMinutes: number
+  ) {
+    if (!bars.length || bucketMinutes <= 0) return bars;
+    const out: typeof bars = [];
+    let bucket: (typeof bars)[0] | null = null;
+    let bucketStart = -1;
+
+    for (const b of bars) {
+      const ts = Date.parse(b.date.includes(' ') ? b.date.replace(' ', 'T') + ':00Z' : b.date);
+      if (!Number.isFinite(ts)) continue;
+      const start = Math.floor(ts / (bucketMinutes * 60_000)) * (bucketMinutes * 60_000);
+      if (!bucket || start !== bucketStart) {
+        if (bucket) out.push(bucket);
+        bucketStart = start;
+        const label = new Date(start).toISOString().replace('T', ' ').slice(0, 16);
+        bucket = { date: label, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume };
+      } else {
+        bucket.high = Math.max(bucket.high, b.high);
+        bucket.low = Math.min(bucket.low, b.low);
+        bucket.close = b.close;
+        bucket.volume += b.volume;
+      }
+    }
+    if (bucket) out.push(bucket);
+    return out;
+  }
+
+  static async getHistoricalSeries(
+    symbol: string,
+    daysOrRange: number | string = 30,
+    intervalHint?: string
+  ): Promise<HistoricalSeries> {
+    const { range, fetchInterval, resampleMinutes, cacheDays } = this.resolveYahooHistoryParams(
+      daysOrRange,
+      intervalHint
+    );
+    const lookup = YAHOO_SYMBOL_ALIASES[symbol] || symbol;
+    const yahooSymbol = lookup.includes('^') ? lookup : `${lookup}.NS`;
+    const intraday = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h'].includes(fetchInterval);
+
     try {
       const response = await axios.get(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS`,
+        `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`,
         {
-          params: { interval: '1d', range: `${days}d` },
+          params: { interval: fetchInterval, range },
           headers: { 'User-Agent': 'Mozilla/5.0' },
-          timeout: 10000
+          timeout: 12000
         }
       );
 
       const result = response.data?.chart?.result?.[0];
       if (!result?.timestamp) {
-        return this.historicalFromCache(symbol, days);
+        return this.historicalFromCache(symbol, cacheDays);
       }
 
       const { timestamp, indicators } = result;
       const quote = indicators.quote[0];
 
-      const bars = timestamp.map((ts: number, i: number) => ({
-        date: new Date(ts * 1000).toISOString().split('T')[0],
-        open: quote.open[i] ?? 0,
-        high: quote.high[i] ?? 0,
-        low: quote.low[i] ?? 0,
-        close: quote.close[i] ?? 0,
-        volume: quote.volume[i] ?? 0
-      })).filter((d: { close: number }) => d.close > 0);
+      let bars = timestamp
+        .map((ts: number, i: number) => {
+          const dt = new Date(ts * 1000);
+          const date = intraday
+            ? dt.toISOString().replace('T', ' ').slice(0, 16)
+            : dt.toISOString().split('T')[0];
+          return {
+            date,
+            open: quote.open[i] ?? 0,
+            high: quote.high[i] ?? 0,
+            low: quote.low[i] ?? 0,
+            close: quote.close[i] ?? 0,
+            volume: quote.volume[i] ?? 0
+          };
+        })
+        .filter((d: { close: number }) => d.close > 0);
+
+      if (resampleMinutes > 0) {
+        bars = this.resampleBars(bars, resampleMinutes);
+      }
 
       if (!bars.length) {
-        return this.historicalFromCache(symbol, days);
+        return this.historicalFromCache(symbol, cacheDays);
       }
 
       return {
@@ -259,7 +463,7 @@ export class MarketService {
         asOf: bars[bars.length - 1]?.date ?? null
       };
     } catch {
-      return this.historicalFromCache(symbol, days);
+      return this.historicalFromCache(symbol, cacheDays);
     }
   }
 
@@ -303,22 +507,69 @@ export class MarketService {
   }
 
   static searchSymbols(query: string) {
-    const universe = [
-      { symbol: 'RELIANCE', name: 'Reliance Industries Ltd', exchange: 'NSE' },
-      { symbol: 'TCS', name: 'Tata Consultancy Services Ltd', exchange: 'NSE' },
-      { symbol: 'INFY', name: 'Infosys Ltd', exchange: 'NSE' },
-      { symbol: 'HDFCBANK', name: 'HDFC Bank Ltd', exchange: 'NSE' },
-      { symbol: 'ICICIBANK', name: 'ICICI Bank Ltd', exchange: 'NSE' },
-      { symbol: 'SBIN', name: 'State Bank of India', exchange: 'NSE' },
-      { symbol: 'BHARTIARTL', name: 'Bharti Airtel Ltd', exchange: 'NSE' },
-      { symbol: 'ITC', name: 'ITC Ltd', exchange: 'NSE' },
-      { symbol: 'WIPRO', name: 'Wipro Ltd', exchange: 'NSE' },
-      { symbol: 'LT', name: 'Larsen & Toubro Ltd', exchange: 'NSE' }
-    ];
-    const q = query.toLowerCase();
-    return universe.filter(s =>
-      s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
-    );
+    const names: Record<string, string> = {
+      RELIANCE: 'Reliance Industries Ltd',
+      TCS: 'Tata Consultancy Services Ltd',
+      INFY: 'Infosys Ltd',
+      HDFCBANK: 'HDFC Bank Ltd',
+      ICICIBANK: 'ICICI Bank Ltd',
+      SBIN: 'State Bank of India',
+      BHARTIARTL: 'Bharti Airtel Ltd',
+      ITC: 'ITC Ltd',
+      WIPRO: 'Wipro Ltd',
+      LT: 'Larsen & Toubro Ltd',
+      AXISBANK: 'Axis Bank Ltd',
+      KOTAKBANK: 'Kotak Mahindra Bank Ltd',
+      HCLTECH: 'HCL Technologies Ltd',
+      MARUTI: 'Maruti Suzuki India Ltd',
+      SUNPHARMA: 'Sun Pharmaceutical Industries Ltd',
+      TATAMOTORS: 'Tata Motors Ltd',
+      BAJFINANCE: 'Bajaj Finance Ltd',
+      ASIANPAINT: 'Asian Paints Ltd',
+      TITAN: 'Titan Company Ltd',
+      ULTRACEMCO: 'UltraTech Cement Ltd',
+      NESTLEIND: 'Nestle India Ltd',
+      POWERGRID: 'Power Grid Corporation of India Ltd',
+      NTPC: 'NTPC Ltd',
+      ONGC: 'Oil and Natural Gas Corporation Ltd',
+      COALINDIA: 'Coal India Ltd',
+      JSWSTEEL: 'JSW Steel Ltd',
+      TATASTEEL: 'Tata Steel Ltd',
+      ADANIENT: 'Adani Enterprises Ltd',
+      'M&M': 'Mahindra & Mahindra Ltd',
+      IDFCFIRSTB: 'IDFC First Bank Ltd',
+      PNB: 'Punjab National Bank',
+      BANKBARODA: 'Bank of Baroda',
+      CANBK: 'Canara Bank',
+      IOB: 'Indian Overseas Bank',
+      UCOBANK: 'UCO Bank',
+      CENTRALBK: 'Central Bank of India',
+      SAIL: 'Steel Authority of India Ltd',
+      NMDC: 'NMDC Ltd',
+      NHPC: 'NHPC Ltd',
+      IRFC: 'Indian Railway Finance Corporation Ltd',
+      RVNL: 'Rail Vikas Nigam Ltd',
+      IREDA: 'Indian Renewable Energy Development Agency Ltd',
+      HUDCO: 'Housing & Urban Development Corporation Ltd',
+      IRCTC: 'Indian Railway Catering and Tourism Corporation Ltd',
+      HINDUNILWR: 'Hindustan Unilever Ltd',
+      HINDUNILVR: 'Hindustan Unilever Ltd'
+    };
+
+    const symbols = Array.from(new Set([...LIQUID_UNIVERSE, ...SMALLCAP_UNIVERSE, ...Object.keys(names)]));
+    const universe = symbols.map((symbol) => ({
+      symbol,
+      name: names[symbol] || symbol,
+      exchange: 'NSE' as const
+    }));
+
+    const q = (query || '').trim().toLowerCase();
+    const matches = !q
+      ? universe
+      : universe.filter(
+          (s) => s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
+        );
+    return matches.slice(0, 40);
   }
 
   static async getTopMovers(type: 'gainers' | 'losers', count = 10) {

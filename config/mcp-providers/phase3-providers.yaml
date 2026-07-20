@@ -1,0 +1,49 @@
+# Phase 3 — canonical Indian MCP provider set (preference order).
+# Business logic must resolve providers from YAML registry, not hardcode IDs.
+version: "1.0"
+live_trading_default: false
+providers:
+  - provider_id: dhan
+    display_name: Dhan
+    priority: 1
+    role: primary_broker
+  - provider_id: zerodha
+    display_name: Zerodha
+    priority: 2
+    role: broker
+  - provider_id: angelone
+    display_name: Angel One
+    priority: 3
+    role: broker
+  - provider_id: upstox
+    display_name: Upstox
+    priority: 4
+    role: broker
+  - provider_id: fyers
+    display_name: Fyers
+    priority: 5
+    role: broker
+  - provider_id: icici_breeze
+    display_name: ICICI Breeze
+    priority: 6
+    role: broker
+  - provider_id: kotak_neo
+    display_name: Kotak Neo
+    priority: 7
+    role: broker
+  - provider_id: alice_blue
+    display_name: Alice Blue
+    priority: 8
+    role: broker
+  - provider_id: finvasia_shoonya
+    display_name: Finvasia Shoonya
+    priority: 9
+    role: broker
+  - provider_id: paper_trading
+    display_name: Paper Trading
+    priority: 10
+    role: paper
+  - provider_id: mock_trading
+    display_name: Mock Trading
+    priority: 11
+    role: mock

@@ -23,7 +23,8 @@ import {
   Search,
   Filter,
   MoreVertical,
-  Edit
+  Edit,
+  Network
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -31,6 +32,7 @@ import { Input } from './ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { DhanIntegrationPanel } from './DhanIntegrationPanel';
+import { McpProvidersModule } from '@web-admin/modules/mcp-providers';
 import {
   LineChart,
   Line,
@@ -203,6 +205,10 @@ export function AdminConsole({
           <TabsTrigger value="api" className="data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-400">
             <Activity className="w-4 h-4 mr-2" />
             API Monitor
+          </TabsTrigger>
+          <TabsTrigger value="mcp-providers" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
+            <Network className="w-4 h-4 mr-2" />
+            MCP Providers
           </TabsTrigger>
           <TabsTrigger value="dhan" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
             <Server className="w-4 h-4 mr-2" />
@@ -480,6 +486,10 @@ export function AdminConsole({
               </div>
             )}
           </motion.div>
+        </TabsContent>
+
+        <TabsContent value="mcp-providers" className="space-y-4">
+          <McpProvidersModule />
         </TabsContent>
 
         <TabsContent value="dhan" className="space-y-4">

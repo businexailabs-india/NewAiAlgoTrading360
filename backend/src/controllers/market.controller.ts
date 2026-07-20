@@ -19,13 +19,21 @@ export const getQuotes = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getHistoricalData = asyncHandler(async (req: Request, res: Response) => {
-  const days = parseInt(req.query.days as string) || 30;
-  const series = await MarketService.getHistoricalSeries(req.params.symbol, days);
+  const range =
+    (req.query.range as string) ||
+    (req.query.tf as string) ||
+    (req.query.days as string) ||
+    '1mo';
+  const interval = (req.query.interval as string) || undefined;
+  const resolved = MarketService.resolveYahooHistoryParams(range, interval);
+  const series = await MarketService.getHistoricalSeries(req.params.symbol, range, interval);
   res.status(200).json({
     success: true,
     data: {
       symbol: req.params.symbol,
-      interval: req.query.interval || 'day',
+      range: resolved.range,
+      interval: resolved.interval,
+      fetchInterval: resolved.fetchInterval,
       data: series.bars,
       source: series.source,
       stale: series.stale,
@@ -40,12 +48,8 @@ export const getIndices = asyncHandler(async (_req: Request, res: Response) => {
 });
 
 export const searchSymbols = asyncHandler(async (req: Request, res: Response) => {
-  const { query } = req.query;
-  if (!query) {
-    res.status(400).json({ success: false, message: 'Search query is required' });
-    return;
-  }
-  const results = MarketService.searchSymbols(query as string);
+  const query = String(req.query.query ?? req.query.q ?? '');
+  const results = MarketService.searchSymbols(query);
   res.status(200).json({ success: true, data: results });
 });
 

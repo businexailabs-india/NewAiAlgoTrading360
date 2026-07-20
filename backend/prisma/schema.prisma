@@ -40,6 +40,7 @@ model User {
   executionAttempts  ExecutionAttempt[]
   tenantMemberships  TenantMembership[]
   ownedTenants       Tenant[]             @relation("TenantOwner")
+  watchlists         Watchlist[]
 
   @@map("users")
 }
@@ -558,4 +559,36 @@ model ScreenerResult {
 
   @@index([userId])
   @@map("screener_results")
+}
+
+model Watchlist {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items WatchlistItem[]
+
+  @@index([userId])
+  @@unique([userId, name])
+  @@map("watchlists")
+}
+
+model WatchlistItem {
+  id          String   @id @default(uuid())
+  watchlistId String   @map("watchlist_id")
+  symbol      String
+  exchange    String   @default("NSE")
+  notes       String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  watchlist Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, symbol, exchange])
+  @@index([watchlistId])
+  @@map("watchlist_items")
 }

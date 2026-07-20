@@ -32,6 +32,6 @@ router.get('/dhan-status', getDhanStatus);
 // Authenticated routes
 router.get('/quote/:symbol', optionalAuth, validateSymbolParam, getQuote);
 router.post('/quotes', authenticate, getQuotes);
-router.get('/historical/:symbol', authenticate, validateSymbolParam, getHistoricalData);
+router.get('/historical/:symbol', optionalAuth, validateSymbolParam, getHistoricalData);
 
 export default router;

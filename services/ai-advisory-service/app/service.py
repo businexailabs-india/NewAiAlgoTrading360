@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -22,8 +23,15 @@ from advisory_core.telemetry import (
     timed_generation,
     live_approval_requested_count,
 )
+from advisory_to_strategy import AdvisoryToStrategyConverter
+from llm_providers import LLMRouter, MockLLMProvider
 from market_regime_detector import MarketAdvisoryEngine
-from mcp_connectors import get_connector
+from mcp_connectors import (
+    fetch_provider_account_context,
+    get_connector,
+    resolve_preferred_provider,
+)
+from recommendation_ranking import RecommendationRankingEngine
 from risk_explainability import RiskExplainer
 from strategy_normalizer import StrategyNormalizer
 
@@ -39,6 +47,7 @@ class AIAdvisoryService:
         self,
         store: InMemoryAdvisoryStore | None = None,
         kafka_bootstrap: str | None = "memory://",
+        llm: LLMRouter | None = None,
     ):
         self.store = store or get_store()
         self.kafka_bootstrap = kafka_bootstrap
@@ -46,12 +55,26 @@ class AIAdvisoryService:
         self.reco_engine = StrategyRecommendationEngine()
         self.normalizer = StrategyNormalizer()
         self.risk_explainer = RiskExplainer()
+        self.ranking = RecommendationRankingEngine()
+        self.converter = AdvisoryToStrategyConverter(self.normalizer)
+        self.llm = llm or LLMRouter()
+        self._pending: list[asyncio.Task[Any]] = []
+
+    async def wait_pending(self) -> None:
+        """Await background login-advisory tasks (tests / drain)."""
+        if not self._pending:
+            return
+        pending = list(self._pending)
+        self._pending.clear()
+        await asyncio.gather(*pending, return_exceptions=True)
 
     async def handle_login_event(self, event: EventEnvelope) -> dict[str, Any]:
         if self.store.seen_event(event.idempotency_key):
             latest = self.store.latest_session(event.tenant_id, event.user_id)
-            return latest or {"status": "duplicate"}
-        # Non-blocking path: create preparing session then generate
+            if latest:
+                return self.to_login_response(latest)
+            return {"status": "duplicate"}
+        # Async path: prepare session, publish, generate in background
         session = await self._ensure_preparing_session(event.tenant_id, event.user_id, event.payload)
         await publish_event(
             KafkaTopics.ADVISORY_GENERATION_REQUESTED,
@@ -65,7 +88,20 @@ class AIAdvisoryService:
             ),
             self.kafka_bootstrap,
         )
-        return await self.generate_login_advisory(event.user_id, event.tenant_id, event.payload)
+        task = asyncio.create_task(
+            self.generate_login_advisory(event.user_id, event.tenant_id, event.payload)
+        )
+        self._pending.append(task)
+        self.store.audit(
+            {
+                "tenant_id": event.tenant_id,
+                "user_id": event.user_id,
+                "action": "advisory_generation_queued",
+                "resource": f"advisory_session:{session['id']}",
+                "details": {"async": True},
+            }
+        )
+        return self.to_login_response(session)
 
     async def generate_login_advisory(
         self,
@@ -109,10 +145,78 @@ class AIAdvisoryService:
         broker_ctx = await self.collect_broker_context(user_ctx)
         regime_pack = self.detect_market_regime(market_ctx, broker_ctx, user_ctx)
         options = self.generate_advisory_options(regime_pack, user_ctx, broker_ctx)
+        llm_meta = await self._enrich_with_llm_json(options, regime_pack, user_ctx, broker_ctx)
         scored = self.score_recommendations(options, regime_pack)
         session = self.persist_advisory(tenant_id, user_id, user_ctx, market_ctx, broker_ctx, regime_pack, scored)
+        if llm_meta:
+            session["snapshot"]["data_sources_json"] = {
+                **(session.get("snapshot", {}).get("data_sources_json") or {}),
+                "llm": llm_meta,
+            }
+            self.store.upsert_session(session)
+            self.store.audit(
+                {
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "action": "ai_json_validated",
+                    "resource": f"advisory_session:{session['id']}",
+                    "details": llm_meta,
+                }
+            )
         await self.publish_advisory_generated_event(session)
         return self.to_login_response(session)
+
+    async def _enrich_with_llm_json(
+        self,
+        options: list[dict[str, Any]],
+        regime_pack: dict[str, Any],
+        user_ctx: dict[str, Any],
+        broker_ctx: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Validate MockLLM advisory JSON (default provider). Deterministic options remain source of truth."""
+        try:
+            available = float(
+                (broker_ctx.get("margins") or {}).get("available")
+                or (user_ctx.get("margin") or {}).get("available")
+                or 0
+            )
+            regime = regime_pack.get("regime")
+            regime_dict = regime.model_dump() if hasattr(regime, "model_dump") else (regime or {})
+            prompt = ADVISORY_USER_TEMPLATE.format(
+                risk_profile=(user_ctx.get("risk_profile") or {}).get("level") or "unknown",
+                broker_status=broker_ctx.get("status") or "unknown",
+                margin=available,
+                holdings_count=len(broker_ctx.get("holdings") or []),
+                market=user_ctx.get("market") or "NSE",
+                strategy_performance=user_ctx.get("active_strategies") or [],
+                market_status=user_ctx.get("market_status") or "unknown",
+                volatility=regime_dict.get("volatility") or "moderate",
+                trend=regime_dict.get("trend") or "unknown",
+                volume_anomaly=regime_dict.get("volume_anomaly") or False,
+                sectors=(regime_pack.get("indicators") or {}).get("sectors")
+                if isinstance(regime_pack.get("indicators"), dict)
+                else [],
+                data_stale=bool(regime_pack.get("force_no_trade")),
+            )
+            data, meta = await self.llm.generate_advisory_json(
+                f"{ADVISORY_SYSTEM_PROMPT}\n\n{prompt}",
+                {
+                    "mode": "advisory",
+                    "available_margin": available,
+                    "force_no_trade": bool(regime_pack.get("force_no_trade")),
+                    "data_stale": bool(regime_pack.get("force_no_trade")),
+                    "guardrails": regime_pack.get("guardrails") or [],
+                },
+            )
+            # Merge any extra LLM titles as audit-only; keep ranked deterministic options
+            _ = data.get("recommendations") or []
+            return {**meta, "json_validated": True, "recommendation_count_hint": len(_)}
+        except Exception as exc:
+            logger.warning("LLM advisory JSON skipped: %s", exc)
+            # Fallback still validates mock schema locally for audit
+            mock = MockLLMProvider()
+            data = await mock.generate_advisory_json("", {"force_no_trade": regime_pack.get("force_no_trade")})
+            return {"provider": "mock", "json_validated": True, "fallback": True, "count": len(data.get("recommendations") or [])}
 
     async def collect_user_context(
         self, user_id: str, tenant_id: str, hint: dict[str, Any]
@@ -167,37 +271,58 @@ class AIAdvisoryService:
         }
 
     async def collect_broker_context(self, user_ctx: dict[str, Any]) -> dict[str, Any]:
+        """Fetch broker context via YAML registry — provider IDs are not hardcoded."""
         broker_status = str(user_ctx.get("broker_status") or "disconnected").lower()
-        broker_name = user_ctx.get("broker") or "paper"
-        if broker_status == "connected" and broker_name == "mock":
-            conn = get_connector("mock", connected=True)
-        elif broker_status == "connected":
-            conn = get_connector("paper")
-        else:
-            conn = get_connector("mock", connected=False)
-        await conn.connect()
-        health = await conn.health_check()
-        # Prefer explicit user/gateway broker status over connector self-report.
-        effective_status = broker_status if broker_status in {"connected", "disconnected"} else (
-            "connected" if health.get("ok") else "disconnected"
+        # Optional MCP advisory context from gateway / mcp-connector-service
+        mcp_hint = user_ctx.get("mcp_provider_context") or user_ctx.get("provider_context") or {}
+        connected_ids = list(mcp_hint.get("connected_provider_ids") or [])
+        if mcp_hint.get("preferred_broker"):
+            connected_ids = [mcp_hint["preferred_broker"], *connected_ids]
+        broker_name = resolve_preferred_provider(
+            {
+                "broker": user_ctx.get("broker") or mcp_hint.get("preferred_broker"),
+                "provider_id": user_ctx.get("provider_id"),
+            },
+            connected_provider_ids=connected_ids,
         )
-        margins = await conn.get_margins() if effective_status == "connected" else {"available": 0.0, "utilized": 0.0}
-        holdings = await conn.get_holdings() if effective_status == "connected" else []
-        if effective_status == "disconnected":
-            # Use hint margin when provided for risk gating even without a live broker.
+        if broker_status != "connected":
+            # Disconnected: use mock_trading for safe empty books
+            ctx = await fetch_provider_account_context(
+                "mock_trading",
+                config={"connected": False},
+            )
             hint_margin = user_ctx.get("margin") or {}
             if hint_margin:
-                margins = {**margins, **hint_margin}
-        return _redact(
-            {
-                "broker": broker_name,
-                "status": effective_status,
-                "health": {**health, "ok": effective_status == "connected", "status": effective_status},
-                "margins": margins,
-                "holdings": holdings,
-                "capabilities": (await conn.get_broker_capabilities()).model_dump(),
+                ctx["margins"] = {**(ctx.get("margins") or {}), **hint_margin}
+            ctx["status"] = "disconnected"
+            ctx["broker"] = broker_name if broker_name != "mock_trading" else (user_ctx.get("broker") or "paper")
+            ctx["health"] = {**(ctx.get("health") or {}), "ok": False, "status": "disconnected"}
+            return _redact(ctx)
+
+        cfg: dict[str, Any] = {}
+        if broker_name == "dhan":
+            cfg = {"use_mock": True, "demo": True}
+        elif broker_name == "mock_trading":
+            cfg = {"connected": True}
+        ctx = await fetch_provider_account_context(broker_name, config=cfg)
+        # Prefer explicit user/gateway broker status when provided
+        effective = broker_status if broker_status in {"connected", "disconnected"} else ctx.get("status")
+        ctx["status"] = effective
+        ctx["broker"] = broker_name
+        ctx["health"] = {
+            **(ctx.get("health") or {}),
+            "ok": effective == "connected",
+            "status": effective,
+        }
+        ctx["live_order_execution"] = False
+        # Merge MCP advisory mode if present
+        if mcp_hint:
+            ctx["mcp_advisory"] = {
+                "advisory_mode": mcp_hint.get("advisory_mode"),
+                "live_trading_enabled": False,
+                "available_brokers": mcp_hint.get("available_brokers") or [],
             }
-        )
+        return _redact(ctx)
 
     def detect_market_regime(
         self, market_ctx: dict[str, Any], broker_ctx: dict[str, Any], user_ctx: dict[str, Any]
@@ -231,19 +356,25 @@ class AIAdvisoryService:
     def score_recommendations(
         self, options: list[dict[str, Any]], regime_pack: dict[str, Any]
     ) -> list[dict[str, Any]]:
-        # Adjust confidence by data quality / regime
+        # Adjust confidence by data quality / regime, then rank to 3–5 algos
         vol = regime_pack["regime"].volatility if hasattr(regime_pack["regime"], "volatility") else "moderate"
         scored = []
         for o in options:
             conf = float(o["confidence_score"])
             if vol in ("high", "extreme"):
                 conf *= 0.9
-            if regime_pack.get("force_no_trade") and o["recommendation_type"] != "no_trade":
+            if regime_pack.get("force_no_trade") and o.get("recommendation_type") != "no_trade":
                 conf *= 0.5
             o = {**o, "confidence_score": round(min(conf, 0.95), 2)}
             scored.append(o)
-        recommendations_generated_count.inc(len(scored))
-        return scored
+        ranked = self.ranking.rank(
+            scored,
+            force_no_trade=bool(regime_pack.get("force_no_trade")),
+            min_options=3,
+            max_options=5,
+        )
+        recommendations_generated_count.inc(len(ranked))
+        return ranked
 
     def persist_advisory(
         self,
@@ -353,9 +484,14 @@ class AIAdvisoryService:
                     paper_only=True,
                 ).model_dump()
             )
+        status_raw = session.get("status") or AdvisoryStatus.PREPARING.value
+        try:
+            status = AdvisoryStatus(status_raw)
+        except ValueError:
+            status = AdvisoryStatus.PREPARING
         resp = LoginAdvisoryResponse(
             advisory_id=session["id"],
-            status=AdvisoryStatus(session["status"]),
+            status=status,
             generated_at=datetime.fromisoformat(session["generated_at"]) if session.get("generated_at") else None,
             market_status=session.get("market_status") or "unknown",
             broker_status=session.get("broker_status") or "unknown",
@@ -375,40 +511,15 @@ class AIAdvisoryService:
         rec = self.store.recommendations.get(recommendation_id)
         if not rec or rec["advisory_session_id"] != advisory_id:
             raise KeyError("Recommendation not found")
-        rules = self.normalizer.normalize_from_recommendation(rec)
-        rms = self.normalizer.validate_rms(rules, historical_bars=60)
-        if not rms.allowed:
-            raise ValueError(f"RMS validation failed: {', '.join(rms.reasons)}")
-        cfg = self.normalizer.to_strategy_config(
-            name=rec["title"],
-            rules=rules,
-            source_type="ai_generated",
-            source_name="BusineXAi Advisory",
-            license_status="internal",
+        strategy = self.converter.convert(rec, created_by=user_id)
+        payload = self.converter.to_option_payload(
+            rec,
+            strategy,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            recommendation_id=recommendation_id,
         )
-        option = self.store.add_strategy_option(
-            {
-                "tenant_id": tenant_id,
-                "user_id": user_id,
-                "advisory_recommendation_id": recommendation_id,
-                "strategy_type": rules.strategy_type,
-                "strategy_name": rec["title"],
-                "entry_rules_json": rules.entry_rules,
-                "exit_rules_json": rules.exit_rules,
-                "risk_rules_json": rules.risk_rules,
-                "position_sizing_json": rules.position_sizing,
-                "instruments_json": rules.instruments,
-                "timeframe": rules.timeframe,
-                "paper_test_required": True,
-                "live_enabled": False,
-                "source_type": "ai_generated",
-                "source_name": "BusineXAi Advisory",
-                "source_license_status": "internal",
-                "validation_status": "rms_passed" if rms.allowed else "rms_failed",
-                "config": cfg,
-                "rms": rms.model_dump(),
-            }
-        )
+        option = self.store.add_strategy_option(payload)
         strategies_converted_count.inc()
         self.store.audit(
             {
@@ -416,7 +527,12 @@ class AIAdvisoryService:
                 "user_id": user_id,
                 "action": "strategy_converted",
                 "resource": f"strategy_option:{option['id']}",
-                "details": {"recommendation_id": recommendation_id, "paper_test_required": True},
+                "details": {
+                    "recommendation_id": recommendation_id,
+                    "paper_test_required": True,
+                    "strategy_id": strategy.strategy_id,
+                    "strategy_type": strategy.strategy_type,
+                },
             }
         )
         await publish_event(
@@ -425,7 +541,11 @@ class AIAdvisoryService:
                 KafkaTopics.STRATEGY_GENERATED_FROM_ADVISORY,
                 tenant_id,
                 user_id,
-                {"strategy_option_id": option["id"], "advisory_id": advisory_id},
+                {
+                    "strategy_option_id": option["id"],
+                    "advisory_id": advisory_id,
+                    "strategy_id": strategy.strategy_id,
+                },
                 idempotency_key=f"conv:{option['id']}",
             ),
             self.kafka_bootstrap,
@@ -461,7 +581,14 @@ class AIAdvisoryService:
             blocks.append("External/unknown license cannot deploy live")
         if option.get("source_type") == "third_party_strategy_candidate" and option.get("source_license_status") != "license_validated":
             blocks.append("Third-party strategy not license-validated for live")
-        if any(r.get("type") == "unbounded_options_risk" for r in (option.get("risk_rules_json") or [])):
+        risk_rules = option.get("risk_rules_json") or []
+        if isinstance(risk_rules, dict):
+            # Phase 1 RiskRules dump — options selling off by default
+            if risk_rules.get("allow_options_selling"):
+                blocks.append("Unlimited-loss options strategy blocked for live by default")
+        elif any(
+            isinstance(r, dict) and r.get("type") == "unbounded_options_risk" for r in risk_rules
+        ):
             blocks.append("Unlimited-loss options strategy blocked for live by default")
         if kill_switch:
             blocks.append("Kill switch active")
@@ -472,7 +599,7 @@ class AIAdvisoryService:
         if not option.get("saved"):
             blocks.append("Strategy must be saved before live request")
 
-        status = "blocked" if blocks else "pending"
+        status = "blocked" if blocks else "queued_for_oms"
         req = {
             "id": str(uuid4()),
             "tenant_id": tenant_id,
@@ -481,6 +608,10 @@ class AIAdvisoryService:
             "status": status,
             "block_reasons": blocks,
             "explicit_confirmation": explicit_confirmation,
+            "oms_handoff": None if blocks else {
+                "queued_at": datetime.now(timezone.utc).isoformat(),
+                "note": "Handoff to OMS — advisory never places broker orders",
+            },
         }
         self.store.live_requests[req["id"]] = req
         approval = {
@@ -498,7 +629,7 @@ class AIAdvisoryService:
                 "user_id": user_id,
                 "action": "live_approval_requested",
                 "resource": f"strategy_option:{strategy_option_id}",
-                "details": {"status": status, "block_reasons": blocks},
+                "details": {"status": status, "block_reasons": blocks, "oms_queued": not blocks},
                 "ip_address": ip_address,
             }
         )

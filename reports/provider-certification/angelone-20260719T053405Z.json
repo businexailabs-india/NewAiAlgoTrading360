@@ -1,0 +1,115 @@
+{
+  "provider_id": "angelone",
+  "provider_name": "Angel One SmartAPI",
+  "phase": "phase_2_real_provider_readiness",
+  "generated_at": "2026-07-19T05:34:05.767766Z",
+  "items": [
+    {
+      "item_id": "credentials_configured",
+      "description": "Credentials schema / env readiness documented",
+      "passed": true,
+      "evidence": "schema_only",
+      "details": {
+        "required": [
+          "client_code",
+          "api_key",
+          "password_or_token",
+          "totp_secret_optional"
+        ],
+        "provider_type": "broker"
+      }
+    },
+    {
+      "item_id": "sandbox_mock_tested",
+      "description": "Sandbox/mock connection tested",
+      "passed": true,
+      "evidence": "connected",
+      "details": {
+        "mode": "mock"
+      }
+    },
+    {
+      "item_id": "account_profile_tested",
+      "description": "Account profile tested",
+      "passed": true,
+      "evidence": "profile_ok",
+      "details": {
+        "has_masked_id": true
+      }
+    },
+    {
+      "item_id": "margin_tested",
+      "description": "Margin/funds tested",
+      "passed": true,
+      "evidence": "available=120000.0",
+      "details": {}
+    },
+    {
+      "item_id": "holdings_tested",
+      "description": "Holdings tested",
+      "passed": true,
+      "evidence": "count=1",
+      "details": {}
+    },
+    {
+      "item_id": "positions_tested",
+      "description": "Positions tested",
+      "passed": true,
+      "evidence": "count=0",
+      "details": {}
+    },
+    {
+      "item_id": "quote_tested",
+      "description": "Quote tested",
+      "passed": true,
+      "evidence": "symbols=['NSE:RELIANCE']",
+      "details": {}
+    },
+    {
+      "item_id": "order_preview_tested",
+      "description": "Order preview tested",
+      "passed": true,
+      "evidence": "accepted=True",
+      "details": {}
+    },
+    {
+      "item_id": "rms_integration_tested",
+      "description": "RMS integration tested (gate presence)",
+      "passed": true,
+      "evidence": "gate_enforced",
+      "details": {}
+    },
+    {
+      "item_id": "oms_integration_tested",
+      "description": "OMS integration tested (caller role gate)",
+      "passed": true,
+      "evidence": "gate_enforced",
+      "details": {}
+    },
+    {
+      "item_id": "live_execution_disabled_by_default",
+      "description": "Live execution disabled by default",
+      "passed": true,
+      "evidence": "blocked",
+      "details": {}
+    },
+    {
+      "item_id": "audit_logging_verified",
+      "description": "Audit logging verified",
+      "passed": true,
+      "evidence": "hook_or_default",
+      "details": {}
+    },
+    {
+      "item_id": "security_redaction_verified",
+      "description": "Security redaction verified",
+      "passed": true,
+      "evidence": "redact_secrets_ok",
+      "details": {}
+    }
+  ],
+  "overall_passed": true,
+  "score": 100.0,
+  "mode": "mock",
+  "notes": []
+}

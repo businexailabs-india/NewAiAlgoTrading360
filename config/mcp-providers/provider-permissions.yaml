@@ -1,0 +1,72 @@
+# RBAC + live-trading permission matrix for MCP connector APIs
+version: "1.0"
+roles:
+  user:
+    allow:
+      - mcp.providers.list
+      - mcp.providers.read
+      - mcp.connections.create
+      - mcp.connections.read
+      - mcp.connections.test
+      - mcp.connections.delete_own
+      - mcp.account.read
+      - mcp.market_data.read
+      - mcp.orders.preview
+    deny:
+      - mcp.orders.live_execute
+      - mcp.admin.*
+  advisor:
+    allow:
+      - mcp.providers.list
+      - mcp.providers.read
+      - mcp.connections.read
+      - mcp.account.read
+      - mcp.market_data.read
+      - mcp.orders.preview
+    deny:
+      - mcp.orders.live_execute
+      - mcp.connections.create  # credentials stay with account owner / ops
+  oms_service:
+    allow:
+      - mcp.providers.read
+      - mcp.connections.read
+      - mcp.account.read
+      - mcp.market_data.read
+      - mcp.orders.preview
+      - mcp.orders.live_execute  # only when LIVE_TRADING_ENABLED + RMS + user approval
+  admin:
+    allow:
+      - mcp.*
+      - mcp.admin.*
+live_order_gates:
+  require_all:
+    - LIVE_TRADING_ENABLED=true
+    - caller_role=oms_service
+    - rms_approval_id_present
+    - user_approval_id_present
+    - provider_live_trading_enabled=true
+    - kill_switch_off=true
+credential_rules:
+  never_log_raw: true
+  never_return_raw_via_api: true
+  never_send_to_llm: true
+  mask_in_ui: true
+  rotate_supported: true
+dhanlaxmi_allowed_fields:
+  - connected_providers
+  - preferred_broker
+  - broker_health
+  - account_snapshot_masked
+  - margins
+  - holdings
+  - positions
+  - live_quotes
+  - provider_capabilities
+dhanlaxmi_forbidden_fields:
+  - api_key
+  - access_token
+  - password
+  - totp_secret
+  - raw_account_number
+  - client_secret
+  - feed_token

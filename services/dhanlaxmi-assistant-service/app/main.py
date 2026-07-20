@@ -144,24 +144,17 @@ async def advisory(body: ChatBody, identity=Depends(require_service)):
 
 @app.post("/dhanlaxmi/paper-test")
 async def paper_test(body: PaperTestBody, identity=Depends(require_service)):
-    store = get_store()
-    draft = store.strategy_drafts.get(body.strategy_draft_id)
-    if not draft or draft.get("tenant_id") != str(identity.tenant_id):
-        raise HTTPException(status_code=404, detail="Strategy draft not found")
-    result = {
-        "strategy_draft_id": body.strategy_draft_id,
-        "status": "completed",
-        "paper_only": True,
-        "metrics": {
-            "pnl": 0.0,
-            "max_drawdown": 0.0,
-            "trade_count": 0,
-            "qualified_for_live": False,
-        },
-        "explanation": "Paper test recorded. Live remains blocked until qualification and approval.",
-        "disclaimer": "Paper results are simulated and not a guarantee of future performance.",
-    }
-    store.audit(
+    try:
+        result = svc.run_paper_test(
+            str(identity.tenant_id),
+            str(identity.user_id),
+            body.strategy_draft_id,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Strategy draft not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    get_store().audit(
         {
             "tenant_id": str(identity.tenant_id),
             "user_id": str(identity.user_id),

@@ -1,0 +1,111 @@
+# BusineXAi TradeOS360 — Algo Library + Paper Trading MVP (Phase 1)
+# Live trading disabled. Paper mode only.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: algo
+      POSTGRES_PASSWORD: algo
+      POSTGRES_DB: algo_mvp
+    ports:
+      - "5433:5432"
+    volumes:
+      - algo_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U algo -d algo_mvp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  algo-library-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.algo-service
+      args:
+        SERVICE_NAME: algo-library-service
+        PORT: "8099"
+    ports:
+      - "8099:8099"
+    environment:
+      LIVE_TRADING_ENABLED: "false"
+    depends_on:
+      - redis
+
+  strategy-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.algo-service
+      args:
+        SERVICE_NAME: strategy-service
+        PORT: "8100"
+    ports:
+      - "8100:8100"
+    environment:
+      LIVE_TRADING_ENABLED: "false"
+
+  paper-trading-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.algo-service
+      args:
+        SERVICE_NAME: paper-trading-service
+        PORT: "8101"
+    ports:
+      - "8101:8101"
+    environment:
+      LIVE_TRADING_ENABLED: "false"
+
+  market-data-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.algo-service
+      args:
+        SERVICE_NAME: market-data-service
+        PORT: "8102"
+    ports:
+      - "8102:8102"
+
+  risk-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.algo-service
+      args:
+        SERVICE_NAME: risk-service
+        PORT: "8103"
+    ports:
+      - "8103:8103"
+    environment:
+      LIVE_TRADING_ENABLED: "false"
+
+  portfolio-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.algo-service
+      args:
+        SERVICE_NAME: portfolio-service
+        PORT: "8104"
+    ports:
+      - "8104:8104"
+
+  report-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.algo-service
+      args:
+        SERVICE_NAME: report-service
+        PORT: "8105"
+    ports:
+      - "8105:8105"
+
+volumes:
+  algo_pg:

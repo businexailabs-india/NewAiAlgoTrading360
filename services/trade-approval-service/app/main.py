@@ -7,16 +7,19 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from advisory_core.security import ServiceAuth, redact_secrets
+from live_risk_gate import LiveRiskControls, evaluate_live_order
 
 app = FastAPI(title="Trade Approval Service", version="0.1.0")
 auth = ServiceAuth(os.getenv("SERVICE_HMAC_SECRET", "dev-service-hmac-secret-change-me"))
 
 _APPROVALS: dict[str, dict[str, Any]] = {}
 _AUDITS: list[dict[str, Any]] = []
+OMS_URL = os.getenv("OMS_EXECUTION_URL", "http://localhost:8106")
 
 
 def require_service(
@@ -45,6 +48,7 @@ def require_service(
 class CreateApprovalBody(BaseModel):
     conversation_id: str | None = None
     strategy_id: str | None = None
+    connection_id: str | None = None
     order_preview: dict[str, Any]
     risk_summary: dict[str, Any] = Field(default_factory=dict)
     margin_estimate: dict[str, Any] = Field(default_factory=dict)
@@ -60,6 +64,8 @@ class DecisionBody(BaseModel):
     rms_approved: bool = False
     live_env_enabled: bool = False
     kill_switch: bool = False
+    connection_id: str | None = None
+    queue_oms: bool = True
 
 
 @app.get("/health")
@@ -76,6 +82,7 @@ async def create_trade_approval(body: CreateApprovalBody, identity=Depends(requi
         "user_id": str(identity.user_id),
         "conversation_id": body.conversation_id,
         "strategy_id": body.strategy_id,
+        "connection_id": body.connection_id,
         "order_preview_json": redact_secrets(body.order_preview),
         "risk_summary_json": body.risk_summary,
         "margin_estimate_json": body.margin_estimate,
@@ -88,6 +95,7 @@ async def create_trade_approval(body: CreateApprovalBody, identity=Depends(requi
         "device_id": body.device_id,
         "rms_status": "not_submitted",
         "oms_status": "not_submitted",
+        "rms_approval_id": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     _APPROVALS[aid] = row
@@ -122,24 +130,72 @@ async def approve(approval_id: str, body: DecisionBody, identity=Depends(require
     row["approved_at"] = datetime.now(timezone.utc).isoformat()
     _AUDITS.append({"action": "approval_accepted", "approval_id": approval_id})
 
-    if not body.rms_approved:
+    order = dict(row.get("order_preview_json") or {})
+    decision = evaluate_live_order(
+        order,
+        account={"available": float((row.get("margin_estimate_json") or {}).get("estimated_margin") or 0)},
+        controls=LiveRiskControls(kill_switch=body.kill_switch),
+    )
+    if not body.rms_approved or not decision.allowed:
         row["rms_status"] = "rejected"
         row["oms_status"] = "blocked"
-        _AUDITS.append({"action": "rms_rejected_blocks_oms", "approval_id": approval_id})
+        _AUDITS.append({"action": "rms_rejected_blocks_oms", "approval_id": approval_id, "reasons": decision.reasons})
         return {
             "success": True,
-            "data": {**row, "status": "blocked", "block_reasons": ["rms_rejection_blocks_oms"]},
+            "data": {
+                **row,
+                "status": "blocked",
+                "block_reasons": ["rms_rejection_blocks_oms"] + decision.reasons,
+            },
         }
 
+    row["rms_status"] = "approved"
+    row["rms_approval_id"] = decision.rms_approval_id
+
     if not body.live_env_enabled:
-        row["rms_status"] = "approved"
         row["oms_status"] = "blocked"
         return {
             "success": True,
             "data": {**row, "status": "blocked", "block_reasons": ["live_trading_disabled"]},
         }
 
-    row["rms_status"] = "approved"
+    connection_id = body.connection_id or row.get("connection_id")
+    if body.queue_oms and connection_id:
+        headers = auth.sign(
+            str(identity.tenant_id),
+            str(identity.user_id),
+            "oms_service",
+            str(uuid4()),
+        )
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                oms_resp = await client.post(
+                    f"{OMS_URL.rstrip('/')}/oms/execute",
+                    headers=headers,
+                    json={
+                        "connection_id": connection_id,
+                        "order": order,
+                        "user_approval_id": approval_id,
+                        "rms_approval_id": decision.rms_approval_id,
+                        "run_rms": False,
+                    },
+                )
+            if oms_resp.status_code < 400:
+                row["oms_status"] = "submitted"
+                row["approval_status"] = "oms_submitted"
+                row["oms_result"] = redact_secrets(oms_resp.json().get("data") or {})
+                _AUDITS.append({"action": "oms_submitted", "approval_id": approval_id})
+                return {"success": True, "data": {**row, "status": "approved_oms_submitted"}}
+            row["oms_status"] = "oms_error"
+            row["oms_error"] = oms_resp.text[:300]
+            _AUDITS.append({"action": "oms_error", "approval_id": approval_id})
+            return {"success": True, "data": {**row, "status": "oms_error"}}
+        except Exception as exc:  # noqa: BLE001
+            row["oms_status"] = "oms_unreachable"
+            row["oms_error"] = str(exc)[:200]
+            _AUDITS.append({"action": "oms_unreachable", "approval_id": approval_id})
+            return {"success": True, "data": {**row, "status": "oms_unreachable"}}
+
     row["oms_status"] = "created"
     row["approval_status"] = "oms_created"
     _AUDITS.append({"action": "oms_created", "approval_id": approval_id})
@@ -165,6 +221,7 @@ async def modify(approval_id: str, body: CreateApprovalBody, identity=Depends(re
     row["order_preview_json"] = redact_secrets(body.order_preview)
     row["risk_summary_json"] = body.risk_summary
     row["margin_estimate_json"] = body.margin_estimate
+    row["connection_id"] = body.connection_id or row.get("connection_id")
     row["approval_status"] = "modified_pending"
     _AUDITS.append({"action": "approval_modified", "approval_id": approval_id})
     return {"success": True, "data": row}

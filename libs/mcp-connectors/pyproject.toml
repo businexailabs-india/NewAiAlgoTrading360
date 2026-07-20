@@ -6,6 +6,7 @@ dependencies = [
   "advisory-core",
   "httpx>=0.28.0",
   "pydantic>=2.10.3",
+  "pyyaml>=6.0.2",
 ]
 
 [tool.uv.sources]

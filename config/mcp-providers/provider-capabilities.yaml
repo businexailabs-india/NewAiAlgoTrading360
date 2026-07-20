@@ -1,0 +1,66 @@
+# Normalized capability catalog for Indian MCP providers
+version: "1.0"
+capabilities:
+  - name: ACCOUNT_PROFILE
+    description: Fetch broker/user profile metadata (masked)
+    category: account
+  - name: MARGINS
+    description: Fetch available and utilized margins/funds
+    category: account
+  - name: HOLDINGS
+    description: Fetch demat holdings
+    category: portfolio
+  - name: POSITIONS
+    description: Fetch open positions
+    category: portfolio
+  - name: ORDERS
+    description: Fetch order book
+    category: orders
+  - name: TRADES
+    description: Fetch trade book / fills
+    category: orders
+  - name: LIVE_QUOTES
+    description: REST/snapshot live quotes
+    category: market_data
+  - name: WEBSOCKET_FEED
+    description: Streaming tick / market feed
+    category: market_data
+  - name: HISTORICAL_DATA
+    description: OHLCV historical bars
+    category: market_data
+  - name: OPTION_CHAIN
+    description: Option chain for underlying + expiry
+    category: market_data
+  - name: GREEKS
+    description: Option greeks
+    category: market_data
+  - name: ORDER_PREVIEW
+    description: Validate/preview order without execution
+    category: orders
+  - name: LIVE_ORDER_EXECUTION
+    description: Live broker order placement (OMS/RMS gated)
+    category: orders
+    requires_live_trading: true
+  - name: PAPER_ORDER_EXECUTION
+    description: Simulated paper order fills
+    category: orders
+  - name: MODIFY_ORDER
+    description: Modify open order (OMS/RMS gated for live)
+    category: orders
+    requires_live_trading: true
+  - name: CANCEL_ORDER
+    description: Cancel open order (OMS/RMS gated for live)
+    category: orders
+    requires_live_trading: true
+  - name: MARKET_DEPTH
+    description: Market depth / order book levels
+    category: market_data
+  - name: FUNDAMENTALS
+    description: Fundamental reference data
+    category: reference
+  - name: CORPORATE_ACTIONS
+    description: Dividends, splits, bonuses
+    category: reference
+  - name: NEWS
+    description: Market/news feed
+    category: reference

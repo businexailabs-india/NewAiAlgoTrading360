@@ -1,0 +1,494 @@
+# BusineXAi TradeOS360 — Indian broker / simulated MCP providers
+# Live order execution is disabled by default for every provider.
+version: "1.0"
+country: IN
+providers:
+  - provider_id: dhan
+    provider_name: Dhan / DhanHQ
+    provider_type: broker
+    country: IN
+    enabled: true
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, currency, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - margins
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - market_feed
+      - historical_data
+      - option_chain
+      - order_preview
+      - live_order_execution
+    auth_type: [api_key, access_token]
+    credentials_required: [client_id, access_token, api_key_optional]
+    live_trading_default: false
+    paper_trading_default: false
+    status: active
+    documentation_url: https://dhanhq.co/docs/v2/
+    adapter_class: mcp_connectors.india.dhan.DhanMCPProvider
+    env_enable_flag: MCP_ENABLE_DHAN
+
+  - provider_id: zerodha
+    provider_name: Zerodha Kite Connect
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, currency, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - margins
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - market_feed
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [api_key, api_secret, request_token, access_token]
+    credentials_required: [api_key, api_secret, redirect_url]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://kite.trade/docs/connect/v3/
+    adapter_class: mcp_connectors.india.zerodha.ZerodhaMCPProvider
+    env_enable_flag: MCP_ENABLE_ZERODHA
+
+  - provider_id: angelone
+    provider_name: Angel One SmartAPI
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, currency, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - margins
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - websocket_feed
+      - historical_data
+      - option_chain
+      - order_preview
+      - live_order_execution
+    auth_type: [client_code, api_key, password, totp, jwt, feed_token]
+    credentials_required: [client_code, api_key, password_or_token, totp_secret_optional]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://smartapi.angelbroking.com/
+    adapter_class: mcp_connectors.india.angelone.AngelOneMCPProvider
+    env_enable_flag: MCP_ENABLE_ANGELONE
+
+  - provider_id: upstox
+    provider_name: Upstox API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, currency, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - margins
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - market_feed
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [oauth2]
+    credentials_required: [client_id, client_secret, redirect_url]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://upstox.com/developer/api-documentation/
+    adapter_class: mcp_connectors.india.upstox.UpstoxMCPProvider
+    env_enable_flag: MCP_ENABLE_UPSTOX
+
+  - provider_id: fyers
+    provider_name: Fyers API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - funds
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - market_feed
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [app_id, app_secret, access_token]
+    credentials_required: [app_id, app_secret, redirect_url]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://myapi.fyers.in/docsv3
+    adapter_class: mcp_connectors.india.fyers.FyersMCPProvider
+    env_enable_flag: MCP_ENABLE_FYERS
+
+  - provider_id: icici_breeze
+    provider_name: ICICI Direct Breeze API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE]
+    supported_segments: [equity, equity_derivatives]
+    supported_asset_classes: [stocks, futures, options]
+    capabilities:
+      - account_profile
+      - funds
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [api_key, api_secret, session_token]
+    credentials_required: [api_key, api_secret, session_token]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://api.icicidirect.com/breezeapi/
+    adapter_class: mcp_connectors.india.icici_breeze.ICICIBreezeMCPProvider
+    env_enable_flag: MCP_ENABLE_ICICI_BREEZE
+
+  - provider_id: kotak_neo
+    provider_name: Kotak Neo API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - funds
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [consumer_key, consumer_secret, access_token]
+    credentials_required: [consumer_key, consumer_secret, mobile_or_client_id]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://napi.kotaksecurities.com/
+    adapter_class: mcp_connectors.india.kotak_neo.KotakNeoMCPProvider
+    env_enable_flag: MCP_ENABLE_KOTAK_NEO
+
+  - provider_id: alice_blue
+    provider_name: Alice Blue API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - funds
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [user_id, api_key, access_token]
+    credentials_required: [user_id, api_key]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://a3.aliceblueonline.com/
+    adapter_class: mcp_connectors.india.alice_blue.AliceBlueMCPProvider
+    env_enable_flag: MCP_ENABLE_ALICE_BLUE
+
+  - provider_id: finvasia_shoonya
+    provider_name: Finvasia Shoonya API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - funds
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - market_feed
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [user_id, password, totp, vendor_code, api_secret, imei]
+    credentials_required: [user_id, password_or_token, vendor_code, api_secret]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://shoonya.com/api-documentation
+    adapter_class: mcp_connectors.india.finvasia_shoonya.FinvasiaShoonyaMCPProvider
+    env_enable_flag: MCP_ENABLE_FINVASIA_SHOONYA
+
+  - provider_id: iifl
+    provider_name: IIFL Trading API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE]
+    supported_segments: [equity, equity_derivatives]
+    supported_asset_classes: [stocks, futures, options]
+    capabilities:
+      - account_profile
+      - funds
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [app_key, app_secret, access_token]
+    credentials_required: [app_key, app_secret]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://api.iiflcapital.com/
+    adapter_class: mcp_connectors.india.iifl.IIFLMCPProvider
+    env_enable_flag: MCP_ENABLE_IIFL
+
+  - provider_id: motilal_oswal
+    provider_name: Motilal Oswal MO API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE]
+    supported_segments: [equity, equity_derivatives]
+    supported_asset_classes: [stocks, futures, options]
+    capabilities:
+      - account_profile
+      - funds
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [api_key, access_token]
+    credentials_required: [api_key, client_code]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://openapi.motilaloswal.com/
+    adapter_class: mcp_connectors.india.motilal_oswal.MotilalOswalMCPProvider
+    env_enable_flag: MCP_ENABLE_MOTILAL_OSWAL
+
+  - provider_id: hdfc_sky
+    provider_name: HDFC Sky API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE]
+    supported_segments: [equity, equity_derivatives]
+    supported_asset_classes: [stocks, futures, options]
+    capabilities:
+      - account_profile
+      - funds
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - order_preview
+      - live_order_execution
+    auth_type: [api_key, access_token]
+    credentials_required: [api_key, client_id]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://developer.hdfcsky.com/
+    adapter_class: mcp_connectors.india.hdfc_sky.HDFCSkyMCPProvider
+    env_enable_flag: MCP_ENABLE_HDFC_SKY
+
+  - provider_id: groww
+    provider_name: Groww API Placeholder
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE]
+    supported_segments: [equity]
+    supported_asset_classes: [stocks]
+    capabilities:
+      - account_profile
+      - holdings
+      - positions
+      - orders_placeholder
+      - market_data_placeholder
+    auth_type: [api_key_placeholder]
+    credentials_required: [api_key_optional]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder_until_official_api_confirmed
+    documentation_url: ""
+    adapter_class: mcp_connectors.india.groww.GrowwMCPProvider
+    env_enable_flag: MCP_ENABLE_GROWW
+
+  - provider_id: paytm_money
+    provider_name: Paytm Money API Placeholder
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE]
+    supported_segments: [equity]
+    supported_asset_classes: [stocks]
+    capabilities:
+      - account_profile_placeholder
+      - holdings_placeholder
+      - positions_placeholder
+      - orders_placeholder
+    auth_type: [api_key_placeholder]
+    credentials_required: [api_key_optional]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder_until_official_api_confirmed
+    documentation_url: ""
+    adapter_class: mcp_connectors.india.paytm_money.PaytmMoneyMCPProvider
+    env_enable_flag: MCP_ENABLE_PAYTM_MONEY
+
+  - provider_id: samco
+    provider_name: Samco StockNote API
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - funds
+      - holdings
+      - positions
+      - orders
+      - trades
+      - live_quotes
+      - historical_data
+      - order_preview
+      - live_order_execution
+    auth_type: [user_id, password, api_key]
+    credentials_required: [user_id, password_or_token, api_key]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder
+    documentation_url: https://www.samco.in/stocknote-api
+    adapter_class: mcp_connectors.india.samco.SamcoMCPProvider
+    env_enable_flag: MCP_ENABLE_SAMCO
+
+  - provider_id: sharekhan
+    provider_name: Sharekhan API Placeholder
+    provider_type: broker
+    country: IN
+    enabled: false
+    supported_exchanges: [NSE, BSE]
+    supported_segments: [equity]
+    supported_asset_classes: [stocks]
+    capabilities:
+      - account_profile_placeholder
+      - holdings_placeholder
+      - orders_placeholder
+      - market_data_placeholder
+    auth_type: [api_key_placeholder]
+    credentials_required: [api_key_optional]
+    live_trading_default: false
+    paper_trading_default: false
+    status: placeholder_until_official_api_confirmed
+    documentation_url: ""
+    adapter_class: mcp_connectors.india.sharekhan.SharekhanMCPProvider
+    env_enable_flag: MCP_ENABLE_SHAREKHAN
+
+  - provider_id: paper_trading
+    provider_name: BusineXAi Paper Trading Broker
+    provider_type: simulated_broker
+    country: IN
+    enabled: true
+    supported_exchanges: [NSE, BSE, MCX]
+    supported_segments: [equity, equity_derivatives, commodity]
+    supported_asset_classes: [stocks, futures, options, commodities]
+    capabilities:
+      - account_profile
+      - virtual_margins
+      - virtual_holdings
+      - virtual_positions
+      - simulated_orders
+      - simulated_trades
+      - simulated_live_quotes
+      - historical_replay
+      - paper_order_execution
+    auth_type: [none]
+    credentials_required: []
+    live_trading_default: false
+    paper_trading_default: true
+    status: active
+    documentation_url: ""
+    adapter_class: mcp_connectors.india.paper_trading.PaperTradingProvider
+    env_enable_flag: PAPER_TRADING_ENABLED
+
+  - provider_id: mock_trading
+    provider_name: Mock Trading Provider
+    provider_type: mock
+    country: IN
+    enabled: true
+    supported_exchanges: [NSE, BSE]
+    supported_segments: [equity, equity_derivatives]
+    supported_asset_classes: [stocks, futures, options]
+    capabilities:
+      - test_account_profile
+      - test_margins
+      - test_holdings
+      - test_positions
+      - test_orders
+      - test_market_data
+      - test_order_execution
+    auth_type: [none]
+    credentials_required: []
+    live_trading_default: false
+    paper_trading_default: false
+    status: active
+    documentation_url: ""
+    adapter_class: mcp_connectors.india.mock.MockTradingProvider
+    env_enable_flag: MCP_ENABLE_MOCK

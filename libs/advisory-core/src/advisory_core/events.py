@@ -23,6 +23,20 @@ class KafkaTopics:
     USER_APPROVAL_CREATED = "user.approval.created"
     COMPLIANCE_AUDIT_CREATED = "compliance.audit.created"
 
+    # MCP provider / connection lifecycle (TradeOS360 connector layer)
+    MCP_PROVIDER_REGISTERED = "mcp.provider.registered"
+    MCP_CONNECTION_CREATED = "mcp.connection.created"
+    MCP_CONNECTION_TESTED = "mcp.connection.tested"
+    MCP_CONNECTION_FAILED = "mcp.connection.failed"
+    MCP_CONNECTION_CONNECTED = "mcp.connection.connected"
+    MCP_CONNECTION_DISCONNECTED = "mcp.connection.disconnected"
+    MCP_CONNECTION_HEALTH_CHANGED = "mcp.connection.health.changed"
+    MCP_ACCOUNT_SNAPSHOT_UPDATED = "mcp.account.snapshot.updated"
+    MCP_MARKET_QUOTE_RECEIVED = "mcp.market.quote.received"
+    MCP_MARKET_TICK_RECEIVED = "mcp.market.tick.received"
+    MCP_ORDER_PREVIEW_CREATED = "mcp.order.preview.created"
+    MCP_PROVIDER_RATE_LIMIT_WARNING = "mcp.provider.rate_limit.warning"
+
     ALL = [
         USER_LOGIN_SUCCESS,
         ADVISORY_GENERATION_REQUESTED,
@@ -36,6 +50,18 @@ class KafkaTopics:
         STRATEGY_LIVE_DEPLOYMENT_REQUESTED,
         USER_APPROVAL_CREATED,
         COMPLIANCE_AUDIT_CREATED,
+        MCP_PROVIDER_REGISTERED,
+        MCP_CONNECTION_CREATED,
+        MCP_CONNECTION_TESTED,
+        MCP_CONNECTION_FAILED,
+        MCP_CONNECTION_CONNECTED,
+        MCP_CONNECTION_DISCONNECTED,
+        MCP_CONNECTION_HEALTH_CHANGED,
+        MCP_ACCOUNT_SNAPSHOT_UPDATED,
+        MCP_MARKET_QUOTE_RECEIVED,
+        MCP_MARKET_TICK_RECEIVED,
+        MCP_ORDER_PREVIEW_CREATED,
+        MCP_PROVIDER_RATE_LIMIT_WARNING,
     ]
 
 

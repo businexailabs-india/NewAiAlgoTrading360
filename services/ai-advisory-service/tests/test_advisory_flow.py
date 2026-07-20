@@ -44,9 +44,13 @@ async def test_login_triggers_advisory_generation_async():
         idempotency_key=f"login-test-{user}",
     )
     data = await svc.handle_login_event(event)
-    assert data["status"] == "ready"
+    assert data["status"] == "preparing"
     assert data["advisory_id"]
-    assert len(data["recommendations"]) >= 1
+    assert any(a["action"] == "advisory_generation_queued" for a in svc.store.audits)
+    await svc.wait_pending()
+    ready = svc.to_login_response(svc.store.get_session(data["advisory_id"]))
+    assert ready["status"] == "ready"
+    assert 3 <= len(ready["recommendations"]) <= 5
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,8 @@ import {
   Rocket,
   Sparkles,
   TrendingUp,
-  Zap
+  Zap,
+  Eye
 } from 'lucide-react';
 import { TopBar, TOP_CHROME_H } from './components/TopBar';
 import { AlgosWorkspace } from './components/algos/AlgosWorkspace';
@@ -40,6 +41,7 @@ import { StrategyHeatMapAnalysis } from './components/StrategyHeatMapAnalysis';
 import { AdminConsole } from './components/AdminConsole';
 import { PredictionEngineDashboard } from './components/PredictionEngineDashboard';
 import { TradingOperationsDashboard } from './components/TradingOperationsDashboard';
+import { WatchlistPanel } from './components/WatchlistPanel';
 import { ModuleWindow } from './components/ui/ModuleWindow';
 import { WindowPane } from './components/WindowPane';
 import { useWindowStack } from './contexts/WindowStackContext';
@@ -63,6 +65,7 @@ const SECTION_WINDOWS: Record<string, string[]> = {
   'smart-trading': ['smart-trading'],
   algos: ['algos-workspace'],
   portfolio: ['portfolio-header', 'performance-cards', 'asset-allocation'],
+  watchlist: ['watchlist'],
   'ai-advisor': ['ai-algo-advisory', 'advisory-marketplace'],
   strategies: ['trading-tabs', 'strategies-hub'],
   'knowledge-llm': ['knowledge-llm'],
@@ -216,6 +219,19 @@ export default function App() {
               <AssetAllocationCharts />
             </Win>
           </>
+        );
+
+      case 'watchlist':
+        return (
+          <Win
+            id="watchlist"
+            title="Stock Watchlist"
+            subtitle="Track NSE symbols · create multiple lists"
+            icon={<Eye className="h-4 w-4 text-cyan-300" />}
+            cascadeIndex={1}
+          >
+            <WatchlistPanel />
+          </Win>
         );
 
       case 'ai-advisor':

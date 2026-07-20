@@ -16,7 +16,34 @@ dependencies = [
   "trade-command-parser",
   "safety-guardrails",
   "localized-response-templates",
+  "llm-providers",
+  "prompt-to-strategy",
+  "strategy-engine",
+  "schemas",
+  "paper-broker",
+  "market-simulator",
+  "risk-rules",
+  "mcp-connectors",
+  "live-risk-gate",
 ]
+
+[tool.uv.sources]
+advisory-core = { workspace = true }
+language-core = { workspace = true }
+voice-core = { workspace = true }
+intent-core = { workspace = true }
+trade-command-parser = { workspace = true }
+safety-guardrails = { workspace = true }
+localized-response-templates = { workspace = true }
+llm-providers = { workspace = true }
+prompt-to-strategy = { workspace = true }
+strategy-engine = { workspace = true }
+schemas = { workspace = true }
+paper-broker = { workspace = true }
+market-simulator = { workspace = true }
+risk-rules = { workspace = true }
+mcp-connectors = { workspace = true }
+live-risk-gate = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

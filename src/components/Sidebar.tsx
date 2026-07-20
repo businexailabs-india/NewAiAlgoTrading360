@@ -18,7 +18,8 @@ import {
   FileText,
   LogOut,
   Shield,
-  Rocket
+  Rocket,
+  Eye
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { TOP_CHROME_H } from './TopBar';
@@ -56,6 +57,12 @@ const menuItems = [
     label: 'Portfolio',
     icon: Briefcase,
     badge: null
+  },
+  {
+    id: 'watchlist',
+    label: 'Watchlist',
+    icon: Eye,
+    badge: { text: 'New', color: 'cyan' }
   },
   {
     id: 'ai-advisor',
@@ -122,7 +129,7 @@ const menuItems = [
 const bottomItems = [
   {
     id: 'admin',
-    label: 'Admin',
+    label: 'Admin / MCP',
     icon: Shield
   },
   {

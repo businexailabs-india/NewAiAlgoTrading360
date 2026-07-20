@@ -52,11 +52,39 @@ export const LANGUAGES = [
   { code: 'ur', label: 'اردو' }
 ];
 
+export type DhanLaxmiPaperTestResult = {
+  strategy_draft_id: string;
+  strategy_id?: string;
+  status: string;
+  paper_only: boolean;
+  live_trading_enabled?: boolean;
+  metrics: {
+    pnl: number;
+    max_drawdown: number;
+    trade_count: number;
+    qualified_for_live: boolean;
+  };
+  explanation?: string;
+  disclaimer?: string;
+  risk_warning?: string;
+};
+
+export type DhanLaxmiOrderPreview = {
+  symbol?: string;
+  side?: string;
+  quantity?: number;
+  executed?: boolean;
+  live_trading_enabled?: boolean;
+  requires_approval?: boolean;
+  risk_warning?: string;
+};
+
 export const dhanlaxmiService = {
   async chat(message: string, opts?: {
     conversation_id?: string;
     language_hint?: string;
     mode?: string;
+    context?: Record<string, unknown>;
   }): Promise<DhanLaxmiChatResponse> {
     const res = await fetch(`${API_BASE_URL}/dhanlaxmi/chat`, {
       method: 'POST',
@@ -65,17 +93,45 @@ export const dhanlaxmiService = {
         message,
         conversation_id: opts?.conversation_id,
         language_hint: opts?.language_hint,
-        mode: opts?.mode || 'web'
+        mode: opts?.mode || 'web',
+        context: opts?.context
       })
     });
     return json(res);
   },
 
-  async paperTest(strategy_draft_id: string, conversation_id?: string) {
+  async strategyDraft(message: string, opts?: {
+    conversation_id?: string;
+    language_hint?: string;
+    context?: Record<string, unknown>;
+  }): Promise<DhanLaxmiChatResponse> {
+    const res = await fetch(`${API_BASE_URL}/dhanlaxmi/strategy-draft`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        message,
+        conversation_id: opts?.conversation_id,
+        language_hint: opts?.language_hint,
+        context: opts?.context
+      })
+    });
+    return json(res);
+  },
+
+  async paperTest(strategy_draft_id: string, conversation_id?: string): Promise<DhanLaxmiPaperTestResult> {
     const res = await fetch(`${API_BASE_URL}/dhanlaxmi/paper-test`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({ strategy_draft_id, conversation_id })
+    });
+    return json(res);
+  },
+
+  async intent(message: string) {
+    const res = await fetch(`${API_BASE_URL}/dhanlaxmi/intent`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ message })
     });
     return json(res);
   },

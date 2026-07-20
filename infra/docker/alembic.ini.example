@@ -1,0 +1,2 @@
+# Example Alembic config for algo MVP Postgres (port 5433 in docker-compose.algo-mvp.yml)
+# sqlalchemy.url = postgresql+psycopg://algo:algo@localhost:5433/algo_mvp

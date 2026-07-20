@@ -5,8 +5,14 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
+  "httpx>=0.28.0",
   "advisory-core",
+  "live-risk-gate",
 ]
+
+[tool.uv.sources]
+advisory-core = { workspace = true }
+live-risk-gate = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

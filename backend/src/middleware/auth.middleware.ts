@@ -55,48 +55,63 @@ export const authenticate = async (
 
     const token = authHeader.substring(7);
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-      id: string;
-      email: string;
-      role: string;
-    };
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+        id: string;
+        email: string;
+        role: string;
+      };
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: { id: true, email: true, role: true, isActive: true }
-    });
-
-    if (!user || !user.isActive) {
-      res.status(401).json({
-        success: false,
-        message: 'User not found or inactive'
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: { id: true, email: true, role: true, isActive: true }
       });
+
+      if (!user || !user.isActive) {
+        throw new jwt.JsonWebTokenError('User not found or inactive');
+      }
+
+      req.user = {
+        id: user.id,
+        email: user.email,
+        role: user.role
+      };
+
+      next();
       return;
+    } catch (tokenError) {
+      // Local/dev: stale browser tokens should not block the UI
+      if (process.env.LOCAL_AUTH_BYPASS === 'true') {
+        const localUser = await prisma.user.findFirst({
+          where: { email: process.env.LOCAL_USER_EMAIL || 'local@smarttrade.test' },
+          select: { id: true, email: true, role: true, isActive: true }
+        });
+        if (localUser?.isActive) {
+          req.user = { id: localUser.id, email: localUser.email, role: localUser.role };
+          next();
+          return;
+        }
+      }
+
+      if (tokenError instanceof jwt.TokenExpiredError) {
+        res.status(401).json({
+          success: false,
+          message: 'Token expired'
+        });
+        return;
+      }
+
+      if (tokenError instanceof jwt.JsonWebTokenError) {
+        res.status(401).json({
+          success: false,
+          message: 'Invalid token'
+        });
+        return;
+      }
+
+      throw tokenError;
     }
-
-    req.user = {
-      id: user.id,
-      email: user.email,
-      role: user.role
-    };
-
-    next();
   } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError) {
-      res.status(401).json({
-        success: false,
-        message: 'Invalid token'
-      });
-      return;
-    }
-
-    if (error instanceof jwt.TokenExpiredError) {
-      res.status(401).json({
-        success: false,
-        message: 'Token expired'
-      });
-      return;
-    }
 
     logger.error('Authentication error:', error);
     res.status(500).json({
