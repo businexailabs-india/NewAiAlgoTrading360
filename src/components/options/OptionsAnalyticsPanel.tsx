@@ -12,6 +12,14 @@ function authHeaders(): HeadersInit {
   };
 }
 
+type AnalyticsRow = {
+  strike: number;
+  ceLtp: number | null;
+  peLtp: number | null;
+  ceOi: number | null;
+  peOi: number | null;
+};
+
 export function OptionsAnalyticsPanel({ focus = 'analytics' }: { focus?: 'analytics' | 'greeks' }) {
   const { mode } = useTradingMode();
   const [underlying, setUnderlying] = useState('NIFTY');
@@ -79,6 +87,9 @@ export function OptionsAnalyticsPanel({ focus = 'analytics' }: { focus?: 'analyt
     return () => window.clearInterval(id);
   }, [load]);
 
+  const rows = (Array.isArray(data?.rows) ? data!.rows : []) as AnalyticsRow[];
+  const synthetic = data?.pcrBasis === 'synthetic' || data?.maxPainBasis === 'synthetic';
+
   return (
     <div style={shell}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 12 }}>
@@ -86,8 +97,11 @@ export function OptionsAnalyticsPanel({ focus = 'analytics' }: { focus?: 'analyt
         <span style={{ fontWeight: 650, color: '#ecfeff' }}>
           {focus === 'greeks' ? 'Greeks & IV' : 'Option Analytics'}
         </span>
-        <span style={pill(mode === 'live' ? 'live' : 'paper')}>{mode === 'live' ? 'LIVE MODE' : 'PAPER MODE'}</span>
+        <span style={pill(mode === 'live' ? 'live' : 'paper')}>
+          {mode === 'live' ? 'LIVE MODE' : 'PAPER MODE'}
+        </span>
         <span style={pill(freshness === 'Live' ? 'ok' : 'warn')}>{freshness}</span>
+        {synthetic ? <span style={pill('warn')}>SYNTHETIC OI</span> : null}
         <span style={{ fontSize: 11, color: '#94a3b8' }}>
           {asOf ? `as of ${new Date(asOf).toLocaleTimeString()}` : ''} · polls 15s
         </span>
@@ -116,13 +130,94 @@ export function OptionsAnalyticsPanel({ focus = 'analytics' }: { focus?: 'analyt
       </div>
 
       {data ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-          <Metric label="Spot" value={num(data.spotPrice)} />
-          <Metric label="ATM" value={String(data.atm ?? '—')} />
-          <Metric label="PCR" value={data.pcr != null ? Number(data.pcr).toFixed(2) : '—'} />
-          <Metric label="Max pain" value={String(data.maxPain ?? '—')} />
-          <Metric label="Provider" value={String(data.providerStatus ?? '—')} />
-        </div>
+        <>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+              gap: 10,
+            }}
+          >
+            <Metric label="Spot" value={num(data.spotPrice)} />
+            <Metric label="ATM" value={String(data.atm ?? '—')} />
+            <Metric
+              label="PCR"
+              value={data.pcr != null ? Number(data.pcr).toFixed(2) : '—'}
+              hint={data.pcrBasis === 'synthetic' ? 'proxy (no OI feed)' : 'from OI'}
+            />
+            <Metric
+              label="Max pain"
+              value={String(data.maxPain ?? '—')}
+              hint={data.maxPainBasis === 'synthetic' ? 'proxy (no OI feed)' : 'from OI'}
+            />
+            <Metric label="Provider" value={String(data.providerStatus ?? '—')} />
+            <Metric
+              label="Call / Put OI"
+              value={`${fmtOi(data.callOi)} / ${fmtOi(data.putOi)}`}
+              hint={synthetic ? 'synthetic weights' : 'broker OI'}
+            />
+          </div>
+
+          {typeof data.message === 'string' && data.message ? (
+            <div style={note}>{data.message}</div>
+          ) : null}
+
+          {focus === 'analytics' ? (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 650, color: '#e2e8f0', marginBottom: 8 }}>
+                Chain snapshot ({rows.length} strikes)
+              </div>
+              <div style={tableWrap}>
+                {!rows.length ? (
+                  <div style={{ padding: 24, textAlign: 'center', color: '#64748b', fontSize: 12 }}>
+                    No chain rows for analytics — sync instrument master.
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ color: '#94a3b8' }}>
+                        <th style={th}>CE LTP</th>
+                        <th style={th}>CE OI</th>
+                        <th style={th}>Strike</th>
+                        <th style={th}>PE LTP</th>
+                        <th style={th}>PE OI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => {
+                        const isAtm = Number(data.atm) === r.strike;
+                        return (
+                          <tr
+                            key={r.strike}
+                            style={{
+                              borderTop: '1px solid rgba(148,163,184,0.12)',
+                              background: isAtm ? 'rgba(14,165,233,0.12)' : 'transparent',
+                              color: '#e2e8f0',
+                            }}
+                          >
+                            <td style={td}>{r.ceLtp != null ? r.ceLtp.toFixed(2) : '—'}</td>
+                            <td style={td}>{fmtOi(r.ceOi)}</td>
+                            <td
+                              style={{
+                                ...td,
+                                fontWeight: 700,
+                                color: isAtm ? '#7dd3fc' : '#f8fafc',
+                              }}
+                            >
+                              {r.strike}
+                            </td>
+                            <td style={td}>{r.peLtp != null ? r.peLtp.toFixed(2) : '—'}</td>
+                            <td style={td}>{fmtOi(r.peOi)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : (
         <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading analytics…</div>
       )}
@@ -134,17 +229,40 @@ export function OptionsAnalyticsPanel({ focus = 'analytics' }: { focus?: 'analyt
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div style={{ padding: 10, borderRadius: 8, background: 'rgba(2,6,23,0.5)', border: '1px solid rgba(34,211,238,0.2)' }}>
+    <div
+      style={{
+        padding: 10,
+        borderRadius: 8,
+        background: 'rgba(2,6,23,0.5)',
+        border: '1px solid rgba(34,211,238,0.2)',
+      }}
+    >
       <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 650, color: '#e2e8f0', fontFamily: 'ui-monospace, monospace' }}>{value}</div>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 650,
+          color: '#e2e8f0',
+          fontFamily: 'ui-monospace, monospace',
+        }}
+      >
+        {value}
+      </div>
+      {hint ? <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{hint}</div> : null}
     </div>
   );
 }
 
 function num(v: unknown) {
   return typeof v === 'number' ? v.toFixed(2) : '—';
+}
+
+function fmtOi(v: unknown) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return '—';
+  if (v <= 0) return '0';
+  return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v));
 }
 
 function pill(kind: string): CSSProperties {
@@ -199,3 +317,27 @@ const pre: CSSProperties = {
   overflow: 'auto',
   maxHeight: 260,
 };
+const note: CSSProperties = {
+  marginTop: 10,
+  fontSize: 11,
+  color: '#fbbf24',
+  padding: '6px 8px',
+  borderRadius: 6,
+  border: '1px solid rgba(251,191,36,0.3)',
+  background: 'rgba(120,53,15,0.2)',
+};
+const tableWrap: CSSProperties = {
+  maxHeight: 280,
+  overflow: 'auto',
+  borderRadius: 8,
+  border: '1px solid rgba(34,211,238,0.22)',
+  background: 'rgba(2,6,23,0.85)',
+};
+const th: CSSProperties = {
+  padding: '8px 10px',
+  textAlign: 'left',
+  position: 'sticky',
+  top: 0,
+  background: '#0f172a',
+};
+const td: CSSProperties = { padding: '8px 10px' };

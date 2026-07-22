@@ -257,25 +257,7 @@ export class OptionsChainService {
           )
         : rows[0]?.strike || 0;
 
-    const callOi = rows.reduce((s, r) => s + (r.ce?.oi || 0), 0);
-    const putOi = rows.reduce((s, r) => s + (r.pe?.oi || 0), 0);
-    const pcr = callOi > 0 ? putOi / callOi : null;
-
-    let maxPain: number | null = null;
-    if (callOi + putOi > 0) {
-      let bestPain = Infinity;
-      for (const row of rows) {
-        let pain = 0;
-        for (const r of rows) {
-          pain += (r.ce?.oi || 0) * Math.max(0, r.strike - row.strike);
-          pain += (r.pe?.oi || 0) * Math.max(0, row.strike - r.strike);
-        }
-        if (pain < bestPain) {
-          bestPain = pain;
-          maxPain = row.strike;
-        }
-      }
-    }
+    const metrics = this.computePcrAndMaxPain(rows, spot);
 
     const hasBroker = brokerQuoteCount > 0;
     const quoteFreshness = hasBroker ? overlay.quoteFreshness : 'delayed';
@@ -288,8 +270,12 @@ export class OptionsChainService {
       spotAvailable,
       expiry,
       atm,
-      pcr,
-      maxPain,
+      pcr: metrics.pcr,
+      maxPain: metrics.maxPain,
+      pcrBasis: metrics.pcrBasis,
+      maxPainBasis: metrics.maxPainBasis,
+      callOi: metrics.callOi,
+      putOi: metrics.putOi,
       rows,
       contractCount: contracts.length,
       brokerQuoteCount,
@@ -305,20 +291,99 @@ export class OptionsChainService {
     };
   }
 
+  /**
+   * PCR / max-pain from real OI when present; otherwise synthetic weights from LTP
+   * so analytics stay useful under model-overlay / expired Dhan token.
+   */
+  private static computePcrAndMaxPain(
+    rows: Array<{
+      strike: number;
+      ce?: { oi?: number; ltp?: number } | null;
+      pe?: { oi?: number; ltp?: number } | null;
+    }>,
+    spot: number
+  ) {
+    const callOiRaw = rows.reduce((s, r) => s + (r.ce?.oi || 0), 0);
+    const putOiRaw = rows.reduce((s, r) => s + (r.pe?.oi || 0), 0);
+    const useSynthetic = callOiRaw + putOiRaw <= 0;
+
+    const syntheticOi = (ltp: number, strike: number) => {
+      const dist = Math.abs(strike - (spot || strike)) + 25;
+      const px = Math.max(ltp || 1, 1);
+      // Higher weight near ATM / richer premium — stable proxy when OI feed is empty.
+      return Math.max(1, Math.round((250_000 / dist) * (50 / px)));
+    };
+
+    const weight = (leg: { oi?: number; ltp?: number } | null | undefined, strike: number) => {
+      if (!leg) return 0;
+      if (!useSynthetic) return leg.oi || 0;
+      return syntheticOi(Number(leg.ltp || 0), strike);
+    };
+
+    let callOi = 0;
+    let putOi = 0;
+    for (const r of rows) {
+      callOi += weight(r.ce, r.strike);
+      putOi += weight(r.pe, r.strike);
+    }
+
+    const pcr = callOi > 0 ? putOi / callOi : null;
+    let maxPain: number | null = null;
+    if (callOi + putOi > 0 && rows.length) {
+      let bestPain = Infinity;
+      for (const row of rows) {
+        let pain = 0;
+        for (const r of rows) {
+          pain += weight(r.ce, r.strike) * Math.max(0, r.strike - row.strike);
+          pain += weight(r.pe, r.strike) * Math.max(0, row.strike - r.strike);
+        }
+        if (pain < bestPain) {
+          bestPain = pain;
+          maxPain = row.strike;
+        }
+      }
+    }
+
+    return {
+      pcr: pcr != null ? Number(pcr.toFixed(3)) : null,
+      maxPain,
+      callOi,
+      putOi,
+      pcrBasis: useSynthetic ? ('synthetic' as const) : ('oi' as const),
+      maxPainBasis: useSynthetic ? ('synthetic' as const) : ('oi' as const)
+    };
+  }
+
   static async getAnalytics(underlying: string, expiry: string | undefined, userId?: string) {
     const chain = await this.getChain({ underlying, expiry, userId, includeGreeks: true });
+    const rows = 'rows' in chain ? chain.rows : [];
     return {
       underlying: underlying.toUpperCase(),
       expiry: 'expiry' in chain ? chain.expiry : null,
       atm: 'atm' in chain ? chain.atm : null,
       pcr: 'pcr' in chain ? chain.pcr : null,
       maxPain: 'maxPain' in chain ? chain.maxPain : null,
+      pcrBasis: 'pcrBasis' in chain ? chain.pcrBasis : null,
+      maxPainBasis: 'maxPainBasis' in chain ? chain.maxPainBasis : null,
+      callOi: 'callOi' in chain ? chain.callOi : null,
+      putOi: 'putOi' in chain ? chain.putOi : null,
       spotPrice: chain.spotPrice,
       providerStatus: chain.providerStatus,
       quoteFreshness: 'quoteFreshness' in chain ? chain.quoteFreshness : 'delayed',
       quoteSource: 'quoteSource' in chain ? chain.quoteSource : undefined,
       brokerQuoteCount: 'brokerQuoteCount' in chain ? chain.brokerQuoteCount : 0,
-      analyzedAt: chain.analyzedAt
+      contractCount: 'contractCount' in chain ? chain.contractCount : 0,
+      message: 'message' in chain ? chain.message : null,
+      analyzedAt: chain.analyzedAt,
+      rows: Array.isArray(rows)
+        ? rows.slice(0, 40).map((r) => ({
+            strike: r.strike,
+            ceLtp: r.ce?.ltp ?? null,
+            peLtp: r.pe?.ltp ?? null,
+            ceOi: r.ce?.oi ?? null,
+            peOi: r.pe?.oi ?? null
+          }))
+        : []
     };
   }
 

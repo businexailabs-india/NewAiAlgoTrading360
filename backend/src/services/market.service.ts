@@ -249,7 +249,10 @@ export class MarketService {
         const quote: Quote = {
           ...dhanQuote,
           symbol: displaySymbol,
-          name: displaySymbol !== lookupSymbol ? `${displaySymbol} (via ${lookupSymbol})` : dhanQuote.name,
+          name:
+            displaySymbol !== lookupSymbol
+              ? `${displaySymbol} (via ${lookupSymbol})`
+              : displaySymbol,
           asOf: dhanQuote.timestamp,
           stale: false,
           source: 'dhan',

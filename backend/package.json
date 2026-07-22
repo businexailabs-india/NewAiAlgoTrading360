@@ -4,7 +4,7 @@
   "description": "Backend API for SmartTrade Portfolio Optimizer",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "nodemon src/server.ts",
+    "dev": "nodemon --exec \"ts-node --transpile-only\" src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
@@ -15,6 +15,7 @@
     "verify:dhan-mcp": "ts-node --transpile-only scripts/verify-dhan-mcp.ts",
     "test:unit": "ts-node --transpile-only scripts/unit-encryption-capabilities.ts && ts-node --transpile-only scripts/unit-llm-providers.ts && ts-node --transpile-only scripts/unit-advisory-outbox.ts && ts-node --transpile-only scripts/unit-options-phase1.ts && ts-node --transpile-only scripts/unit-options-phase2.ts && ts-node --transpile-only scripts/unit-options-quotes.ts && ts-node --transpile-only scripts/unit-options-oms.ts && ts-node --transpile-only scripts/unit-strategy-bind.ts && ts-node --transpile-only scripts/unit-options-polish.ts",
     "test:acceptance:paper": "ts-node --transpile-only scripts/paper-acceptance.ts",
+    "seed:paper-agent": "ts-node --transpile-only scripts/seed-paper-agent.ts",
     "test:unlock:live": "ts-node --transpile-only scripts/live-unlock.ts",
     "test:unit:oms": "ts-node --transpile-only scripts/unit-options-oms.ts",
     "test:advisory": "powershell -File ../scripts/run-advisory-tests.ps1",

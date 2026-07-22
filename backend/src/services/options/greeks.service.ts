@@ -19,7 +19,8 @@ export type GreeksResult = {
   vega: number;
   iv: number;
   model: 'black-scholes';
-  estimate: true;
+  estimate: boolean;
+  broker?: boolean;
 };
 
 export function blackScholesGreeks(input: {

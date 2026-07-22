@@ -42,6 +42,7 @@ type ModeState = {
     confirmLive?: boolean;
   }) => Promise<void>;
   setTradingPin: (pin: string, currentPin?: string) => Promise<void>;
+  resetTradingPin: (pin: string, confirmPin: string) => Promise<void>;
 };
 
 const TradingModeContext = createContext<ModeState | null>(null);
@@ -124,6 +125,17 @@ export function TradingModeProvider({ children }: { children: ReactNode }) {
     setHasTradingPin(true);
   }, []);
 
+  const resetTradingPin = useCallback(async (pin: string, confirmPin: string) => {
+    const res = await fetch(`${API_BASE_URL}/mode/pin/reset`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ pin, confirmPin }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.message || 'Failed to reset Trading PIN');
+    setHasTradingPin(true);
+  }, []);
+
   const value = useMemo(
     () => ({
       mode,
@@ -136,6 +148,7 @@ export function TradingModeProvider({ children }: { children: ReactNode }) {
       refresh,
       switchMode,
       setTradingPin,
+      resetTradingPin,
     }),
     [
       mode,
@@ -148,6 +161,7 @@ export function TradingModeProvider({ children }: { children: ReactNode }) {
       refresh,
       switchMode,
       setTradingPin,
+      resetTradingPin,
     ]
   );
 

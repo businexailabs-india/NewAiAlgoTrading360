@@ -14,9 +14,7 @@ import {
   Loader2,
   Sparkles,
   RefreshCw,
-  Minus,
   Maximize2,
-  Minimize2,
 } from 'lucide-react';
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from 'recharts';
 import { toast } from 'sonner';
@@ -481,7 +479,7 @@ function OhlcSvgChart({
 
   if (!data.length) {
     return (
-      <div style={{ height, placeContent: 'center', textAlign: 'center', color: '#a1a1aa' }}>
+      <div style={{ height, placeContent: 'center', textAlign: 'center', color: '#94a3b8' }}>
         No chart data
       </div>
     );
@@ -1271,18 +1269,19 @@ export function StockChartModal({
           alignItems: 'center',
           gap: 10,
           padding: '10px 12px',
-          borderRadius: 12,
-          border: '1px solid #cbd5e1',
-          background: 'linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%)',
-          color: '#0f172a',
-          boxShadow: '0 8px 24px rgba(15,23,42,0.12)',
+          borderRadius: 16,
+          border: '1px solid rgba(34,211,238,0.45)',
+          background: 'rgba(2, 8, 23, 0.96)',
+          color: '#e2e8f0',
+          boxShadow:
+            '0 0 0 1px rgba(34,211,238,0.12), 0 0 24px rgba(34,211,238,0.16), 0 12px 28px rgba(0,0,0,0.45)',
           minWidth: 280,
         }}
       >
-        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: '#334155' }}>
+        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: '#f8fafc' }}>
           {stock.symbol}
         </span>
-        <span style={{ fontSize: 12, color: '#a1a1aa', flex: 1 }}>Chart minimized</span>
+        <span style={{ fontSize: 12, color: '#94a3b8', flex: 1 }}>Chart minimized</span>
         <button
           type="button"
           onClick={openAiHelp}
@@ -1373,11 +1372,12 @@ export function StockChartModal({
           maxWidth: 'calc(100vw - 24px)',
           maxHeight: 'calc(100vh - 24px)',
           overflow: 'hidden',
-          borderRadius: 14,
-          border: '1px solid #cbd5e1',
-          background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 45%, #f1f5f9 100%)',
-          color: '#0f172a',
-          boxShadow: '0 16px 40px rgba(15,23,42,0.14)',
+          borderRadius: 16,
+          border: '1px solid rgba(34, 211, 238, 0.55)',
+          background: 'rgba(2, 8, 23, 0.96)',
+          color: '#e2e8f0',
+          boxShadow:
+            '0 0 0 1px rgba(34,211,238,0.12), 0 0 28px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)',
           display: 'flex',
           flexDirection: 'column',
           resize: 'none',
@@ -1388,9 +1388,11 @@ export function StockChartModal({
             display: 'flex',
             justifyContent: 'space-between',
             gap: 12,
-            padding: '14px 20px',
-            borderBottom: '1px solid #e2e8f0',
-            background: 'linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%)',
+            padding: '12px 16px',
+            borderBottom: '1px solid rgba(34,211,238,0.25)',
+            background:
+              'linear-gradient(90deg, rgba(8,47,73,0.96) 0%, rgba(15,23,42,0.98) 45%, rgba(6,78,59,0.55) 100%)',
+            boxShadow: 'inset 0 -1px 0 rgba(34,211,238,0.18), 0 8px 18px rgba(0,0,0,0.25)',
             flexShrink: 0,
             cursor: 'default',
           }}
@@ -1400,18 +1402,18 @@ export function StockChartModal({
               <span
                 style={{
                   fontFamily: 'ui-monospace, monospace',
-                  fontSize: 24,
+                  fontSize: 20,
                   fontWeight: 700,
-                  color: '#0f172a',
+                  color: '#f8fafc',
                 }}
               >
                 {stock.symbol}
               </span>
-              <span style={{ fontSize: 13, color: '#64748b' }}>{stock.name || stock.exchange}</span>
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>{stock.name || stock.exchange}</span>
             </div>
             <div
               style={{
-                marginTop: 10,
+                marginTop: 8,
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(120px, auto))',
                 gap: '8px 16px',
@@ -1419,13 +1421,14 @@ export function StockChartModal({
                 fontSize: 13,
               }}
             >
-              <span style={{ fontSize: 20, fontWeight: 700, color: '#fff' }}>{fmt(stats.last)}</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: '#f8fafc' }}>{fmt(stats.last)}</span>
               <span
                 style={{
                   color: up ? '#34d399' : '#f87171',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 4,
+                  fontWeight: 600,
                 }}
               >
                 {up ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
@@ -1434,26 +1437,28 @@ export function StockChartModal({
                   ? ` (${up ? '+' : ''}${stats.changePercent.toFixed(2)}%)`
                   : ''}
               </span>
-              <span style={{ color: '#a1a1aa' }}>
+              <span style={{ color: '#94a3b8' }}>
                 High <b style={{ color: '#6ee7b7', fontWeight: 600 }}>{fmt(stats.high)}</b>
               </span>
-              <span style={{ color: '#a1a1aa' }}>
+              <span style={{ color: '#94a3b8' }}>
                 Low <b style={{ color: '#fca5a5', fontWeight: 600 }}>{fmt(stats.low)}</b>
               </span>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <button
               type="button"
               onClick={openAiHelp}
               title="Need AI help?"
               style={{
-                height: 36,
+                height: 32,
                 padding: '0 10px',
                 borderRadius: 8,
-                border: '1px solid #cbd5e1',
-                background: showAiHelp ? '#334155' : '#ffffff',
-                color: showAiHelp ? '#ffffff' : '#475569',
+                border: showAiHelp
+                  ? '1px solid rgba(34,211,238,0.55)'
+                  : '1px solid rgba(148,163,184,0.35)',
+                background: showAiHelp ? 'rgba(34,211,238,0.16)' : 'rgba(15,23,42,0.75)',
+                color: showAiHelp ? '#a5f3fc' : '#cbd5e1',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1470,51 +1475,27 @@ export function StockChartModal({
               onClick={minimizeWindow}
               aria-label="Minimize chart"
               title="Minimize"
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#e4e4e7',
-                cursor: 'pointer',
-              }}
+              className="flex h-4 w-4 items-center justify-center rounded-full bg-[#febc2e] font-bold leading-none text-amber-950 ring-1 ring-black/25 shadow-[0_0_8px_rgba(254,188,46,0.55)] transition hover:brightness-110"
             >
-              <Minus size={16} />
+              <span className="mt-[-1px] text-[11px] leading-none">−</span>
             </button>
             <button
               type="button"
               onClick={toggleMaximize}
               aria-label={winState === 'max' ? 'Restore chart' : 'Maximize chart'}
               title={winState === 'max' ? 'Restore' : 'Maximize'}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#e4e4e7',
-                cursor: 'pointer',
-              }}
+              className="flex h-4 w-4 items-center justify-center rounded-full bg-[#28c840] font-bold leading-none text-green-950 ring-1 ring-black/25 shadow-[0_0_8px_rgba(40,200,64,0.55)] transition hover:brightness-110"
             >
-              {winState === 'max' ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              <span className="text-[9px] leading-none">{winState === 'max' ? '❐' : '＋'}</span>
             </button>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close chart"
               title="Close"
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#e4e4e7',
-                cursor: 'pointer',
-              }}
+              className="flex h-4 w-4 items-center justify-center rounded-full bg-[#ff5f57] font-bold leading-none text-red-950 ring-1 ring-black/25 shadow-[0_0_8px_rgba(255,95,87,0.6)] transition hover:brightness-110"
             >
-              <X size={18} />
+              <span className="text-[10px] leading-none">×</span>
             </button>
           </div>
         </div>
@@ -1526,9 +1507,9 @@ export function StockChartModal({
             flexWrap: 'wrap',
             alignItems: 'flex-end',
             gap: 10,
-            padding: '12px 20px 16px',
-            borderBottom: '1px solid #27272a',
-            background: 'linear-gradient(180deg, #0c0c0e 0%, #09090b 100%)',
+            padding: '12px 16px',
+            borderBottom: '1px solid rgba(34,211,238,0.18)',
+            background: 'rgba(15,23,42,0.85)',
             flexShrink: 0,
           }}
         >
@@ -1668,8 +1649,9 @@ export function StockChartModal({
             flexWrap: 'wrap',
             alignItems: 'flex-end',
             gap: 12,
-            padding: '12px 20px',
-            borderBottom: '1px solid #27272a',
+            padding: '12px 16px',
+            borderBottom: '1px solid rgba(34,211,238,0.15)',
+            background: 'rgba(2,8,23,0.55)',
             flexShrink: 0,
           }}
         >
@@ -1763,12 +1745,13 @@ export function StockChartModal({
             flexWrap: 'wrap',
             alignItems: 'center',
             gap: 8,
-            padding: '10px 20px',
-            borderBottom: '1px solid #27272a',
+            padding: '10px 16px',
+            borderBottom: '1px solid rgba(34,211,238,0.15)',
+            background: 'rgba(2,8,23,0.45)',
             flexShrink: 0,
           }}
         >
-          <span style={{ fontSize: 11, color: '#71717a', marginRight: 4, letterSpacing: 0.3 }}>
+          <span style={{ fontSize: 11, color: '#64748b', marginRight: 4, letterSpacing: 0.3 }}>
             TOOLS
           </span>
           {ANALYSIS_TOOLS.map((tool) => {
@@ -1800,7 +1783,16 @@ export function StockChartModal({
           })}
         </div>
 
-        <div style={{ padding: 16, flex: '1 1 auto', overflow: 'auto', minHeight: 0 }}>
+        <div
+          style={{
+            padding: 16,
+            flex: '1 1 auto',
+            overflow: 'auto',
+            minHeight: 0,
+            background:
+              'radial-gradient(ellipse at top, rgba(8,47,73,0.35) 0%, rgba(2,8,23,0.92) 55%, rgba(2,6,23,1) 100%)',
+          }}
+        >
           {loading ? (
             <div style={{ height: 360, displayContent: 'center', textAlign: 'center', color: '#a1a1aa' }}>
               Loading chart…
@@ -2084,9 +2076,9 @@ export function StockChartModal({
         {showAiHelp ? (
         <div
           style={{
-            padding: '10px 20px 12px',
-            borderTop: '1px solid #27272a',
-            background: 'linear-gradient(90deg, rgba(34,211,238,0.06), rgba(167,139,250,0.05))',
+            padding: '10px 16px 12px',
+            borderTop: '1px solid rgba(34,211,238,0.22)',
+            background: 'linear-gradient(90deg, rgba(8,47,73,0.55), rgba(15,23,42,0.9), rgba(6,78,59,0.25))',
             flexShrink: 0,
           }}
         >

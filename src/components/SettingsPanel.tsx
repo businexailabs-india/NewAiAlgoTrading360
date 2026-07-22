@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { 
   Bell, 
@@ -16,7 +16,8 @@ import {
   DollarSign,
   Lock,
   Save,
-  CheckCircle
+  CheckCircle,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -86,14 +87,40 @@ export function SettingsPanel() {
   const [tradingSettings, setTradingSettings] = useState(loadSettings().trading);
   const [accounts, setAccounts] = useState<BrokerAccountView[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [settingsTab, setSettingsTab] = useState('general');
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  useEffect(() => {
-    integrationService.listAccounts()
-      .then(setAccounts)
-      .catch(() => setAccounts([]))
-      .finally(() => setAccountsLoading(false));
+  const loadAccounts = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setAccountsLoading(true);
+    setAccountsError(null);
+    try {
+      const rows = await integrationService.listAccounts();
+      setAccounts(rows);
+    } catch (e) {
+      setAccounts([]);
+      setAccountsError(e instanceof Error ? e.message : 'Could not reach backend for accounts');
+    } finally {
+      setAccountsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadAccounts();
+  }, [loadAccounts]);
+
+  // Keep Connected Accounts in sync when user opens the tab or returns to the window
+  useEffect(() => {
+    if (settingsTab === 'api') void loadAccounts({ silent: true });
+  }, [settingsTab, loadAccounts]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (settingsTab === 'api') void loadAccounts({ silent: true });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [settingsTab, loadAccounts]);
 
   // Update global theme when changed
   const handleThemeChange = (newTheme: 'dark' | 'light') => {
@@ -185,7 +212,7 @@ export function SettingsPanel() {
       </motion.div>
 
       {/* Settings Tabs */}
-      <Tabs defaultValue="general" className="w-full">
+      <Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
         <TabsList className="bg-gray-800 mb-6 flex-wrap h-auto">
           <TabsTrigger value="general" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
             <Globe className="w-4 h-4 mr-2" />
@@ -455,7 +482,20 @@ export function SettingsPanel() {
             animate={{ opacity: 1, y: 0 }}
             className="bg-gray-800/30 border border-gray-700 rounded-xl p-6"
           >
-            <h3 className="text-white mb-4">Connected Accounts</h3>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h3 className="text-white">Connected Accounts</h3>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void loadAccounts()}
+                disabled={accountsLoading}
+                className="border-cyan-500/40 text-cyan-300"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${accountsLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
             
             <div className="space-y-4">
               <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
@@ -468,20 +508,48 @@ export function SettingsPanel() {
                 </div>
               </div>
 
+              {accountsError && (
+                <div className="p-3 rounded-lg border border-rose-500/40 bg-rose-500/10 text-sm text-rose-200">
+                  Backend unreachable via /api proxy: {accountsError}. Ensure backend is on port 3001, then Refresh.
+                </div>
+              )}
+
               <div className="space-y-3">
                 {accountsLoading ? (
                   <div className="text-center py-6 text-gray-400">Loading connected accounts…</div>
                 ) : accounts.length === 0 ? (
                   <div className="text-center py-6 text-gray-400">No broker accounts connected.</div>
-                ) : accounts.map(account => (
-                  <div key={account.id} className="p-4 bg-gray-900/50 rounded-lg flex items-center justify-between">
-                    <div>
+                ) : accounts.map(account => {
+                  const isError = String(account.status).toUpperCase() === 'ERROR';
+                  const isOk = String(account.status).toUpperCase() === 'CONNECTED';
+                  return (
+                  <div key={account.id} className="p-4 bg-gray-900/50 rounded-lg flex items-center justify-between gap-3">
+                    <div className="min-w-0">
                       <div className="text-white">{account.displayName || account.broker}</div>
-                      <div className="text-sm text-gray-400">{account.maskedClientId || 'Account identifier unavailable'}</div>
+                      <div className="text-sm text-gray-400">
+                        {account.maskedClientId
+                          || (String(account.broker).toLowerCase() === 'paper'
+                            ? 'Local paper account'
+                            : 'Account identifier unavailable')}
+                      </div>
+                      {isError && account.lastError && (
+                        <div className="text-xs text-rose-300/90 mt-1 break-words">{account.lastError}</div>
+                      )}
                     </div>
-                    <Badge className="bg-gray-700 text-gray-300 border-gray-600">{account.status}</Badge>
+                    <Badge
+                      className={
+                        isOk
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                          : isError
+                            ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
+                            : 'bg-gray-700 text-gray-300 border-gray-600'
+                      }
+                    >
+                      {account.status}
+                    </Badge>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </motion.div>

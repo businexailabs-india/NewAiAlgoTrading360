@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Shield } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,22 +15,58 @@ export function ModeSwitchModal({
   onClose: () => void;
   onNeedBrokers?: () => void;
 }) {
-  const { switchMode, setTradingPin, hasTradingPin, liveLocked } = useTradingMode();
+  const { switchMode, setTradingPin, resetTradingPin, hasTradingPin, liveLocked, refresh } =
+    useTradingMode();
   const [pin, setPin] = useState('');
   const [confirmLive, setConfirmLive] = useState(false);
   const [busy, setBusy] = useState(false);
   const [setupPin, setSetupPin] = useState('');
+  const [forgot, setForgot] = useState(false);
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+
+  useEffect(() => {
+    if (!open) {
+      setPin('');
+      setSetupPin('');
+      setConfirmLive(false);
+      setForgot(false);
+      setNewPin('');
+      setConfirmPin('');
+      setBusy(false);
+    }
+  }, [open]);
 
   if (!open || !target) return null;
 
   const goingLive = target === 'live';
 
+  async function submitReset() {
+    setBusy(true);
+    try {
+      await resetTradingPin(newPin, confirmPin);
+      await refresh();
+      setForgot(false);
+      setPin(newPin);
+      setNewPin('');
+      setConfirmPin('');
+      toast.success('Trading PIN reset — enter it below to confirm mode switch');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'PIN reset failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit() {
     setBusy(true);
     try {
+      let modePin = pin;
       if (!hasTradingPin) {
         await setTradingPin(setupPin);
+        modePin = setupPin;
         toast.success('Trading PIN saved');
+        await refresh();
       }
       if (goingLive && liveLocked) {
         toast.error('Connect a broker first');
@@ -40,7 +76,7 @@ export function ModeSwitchModal({
       }
       await switchMode({
         mode: target,
-        pin: hasTradingPin ? pin : setupPin,
+        pin: modePin,
         confirmLive: goingLive ? confirmLive : false,
       });
       toast.success(goingLive ? 'LIVE MODE enabled' : 'PAPER MODE enabled');
@@ -49,7 +85,11 @@ export function ModeSwitchModal({
       setConfirmLive(false);
       setSetupPin('');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Mode switch failed');
+      const msg = e instanceof Error ? e.message : 'Mode switch failed';
+      toast.error(msg);
+      if (/invalid trading pin/i.test(msg)) {
+        setForgot(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -106,68 +146,144 @@ export function ModeSwitchModal({
           </p>
         )}
 
-        {!hasTradingPin ? (
-          <label style={{ display: 'block', fontSize: 12, marginBottom: 12 }}>
-            Create Trading PIN (4–8 digits)
-            <input
-              type="password"
-              inputMode="numeric"
-              value={setupPin}
-              onChange={(e) => setSetupPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-              style={inputStyle}
-            />
-          </label>
+        {forgot ? (
+          <div style={{ marginBottom: 12 }}>
+            <p style={{ fontSize: 12, color: '#fbbf24', marginBottom: 10 }}>
+              Reset Trading PIN (local/dev). Enter a new 4–8 digit PIN twice, then confirm the mode
+              switch.
+            </p>
+            <label style={{ display: 'block', fontSize: 12, marginBottom: 10 }}>
+              New Trading PIN
+              <input
+                type="password"
+                inputMode="numeric"
+                value={newPin}
+                onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                style={inputStyle}
+                autoFocus
+              />
+            </label>
+            <label style={{ display: 'block', fontSize: 12, marginBottom: 12 }}>
+              Confirm new PIN
+              <input
+                type="password"
+                inputMode="numeric"
+                value={confirmPin}
+                onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                style={inputStyle}
+              />
+            </label>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setForgot(false)} style={ghostBtn} disabled={busy}>
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={busy || newPin.length < 4 || newPin !== confirmPin}
+                onClick={() => void submitReset()}
+                style={{
+                  ...solidBtn,
+                  background: '#0284c7',
+                  opacity: busy || newPin.length < 4 || newPin !== confirmPin ? 0.5 : 1,
+                }}
+              >
+                {busy ? 'Saving…' : 'Save new PIN'}
+              </button>
+            </div>
+          </div>
         ) : (
-          <label style={{ display: 'block', fontSize: 12, marginBottom: 12 }}>
-            Trading PIN
-            <input
-              type="password"
-              inputMode="numeric"
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-              style={inputStyle}
-            />
-          </label>
+          <>
+            {!hasTradingPin ? (
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 12 }}>
+                Create Trading PIN (4–8 digits)
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={setupPin}
+                  onChange={(e) => setSetupPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  style={inputStyle}
+                />
+              </label>
+            ) : (
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 8 }}>
+                Trading PIN
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  style={inputStyle}
+                />
+              </label>
+            )}
+
+            {hasTradingPin ? (
+              <button
+                type="button"
+                onClick={() => setForgot(true)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#67e8f9',
+                  fontSize: 11,
+                  padding: 0,
+                  marginBottom: 12,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                Forgot Trading PIN?
+              </button>
+            ) : null}
+
+            {goingLive ? (
+              <label
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'flex-start',
+                  fontSize: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={confirmLive}
+                  onChange={(e) => setConfirmLive(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>I understand this enables live trading with real funds.</span>
+              </label>
+            ) : null}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={onClose} style={ghostBtn} disabled={busy}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  (hasTradingPin ? pin.length < 4 : setupPin.length < 4) ||
+                  (goingLive && !confirmLive)
+                }
+                onClick={() => void submit()}
+                style={{
+                  ...solidBtn,
+                  background: goingLive ? '#c2410c' : '#0284c7',
+                  opacity:
+                    busy ||
+                    (hasTradingPin ? pin.length < 4 : setupPin.length < 4) ||
+                    (goingLive && !confirmLive)
+                      ? 0.5
+                      : 1,
+                }}
+              >
+                {busy ? 'Working…' : goingLive ? 'Confirm LIVE' : 'Confirm PAPER'}
+              </button>
+            </div>
+          </>
         )}
-
-        {goingLive ? (
-          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, marginBottom: 16 }}>
-            <input
-              type="checkbox"
-              checked={confirmLive}
-              onChange={(e) => setConfirmLive(e.target.checked)}
-              style={{ marginTop: 2 }}
-            />
-            <span>I understand this enables live trading with real funds.</span>
-          </label>
-        ) : null}
-
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onClose} style={ghostBtn} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={
-              busy ||
-              (hasTradingPin ? pin.length < 4 : setupPin.length < 4) ||
-              (goingLive && !confirmLive)
-            }
-            onClick={() => void submit()}
-            style={{
-              ...solidBtn,
-              background: goingLive ? '#c2410c' : '#0284c7',
-              opacity:
-                busy ||
-                (hasTradingPin ? pin.length < 4 : setupPin.length < 4) ||
-                (goingLive && !confirmLive)
-                  ? 0.5
-                  : 1,
-            }}
-          >
-            {busy ? 'Working…' : goingLive ? 'Confirm LIVE' : 'Confirm PAPER'}
-          </button>
-        </div>
       </div>
     </div>,
     document.body

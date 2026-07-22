@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Bookmark, FlaskConical, Rocket, ShieldAlert } from 'lucide-react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { ArrowLeft, Bookmark, FlaskConical, Rocket, Settings2, ShieldAlert } from 'lucide-react';
 import type { AlgoCatalogItem } from './algosCatalog';
 import { formatInr, pctColor } from './algosCatalog';
 import { AlgoMetricsCards } from './AlgoMetricsCards';
@@ -7,8 +7,9 @@ import { AlgoPerformanceChart } from './AlgoPerformanceChart';
 import { advisoryMarketplaceService } from '../../services/advisoryMarketplaceService';
 import { tradingService } from '../../services/tradingService';
 import { portfolioService } from '../../services/portfolioService';
+import { integrationService } from '../../services/integrationService';
 
-type DetailTab = 'performance' | 'best_worst' | 'past_trades' | 'about';
+type DetailTab = 'performance' | 'best_worst' | 'past_trades' | 'about' | 'config';
 
 interface TradeRow {
   id: string;
@@ -21,6 +22,34 @@ interface TradeRow {
   isPaper?: boolean;
 }
 
+interface AgentConfigForm {
+  name: string;
+  mode: 'paper' | 'live';
+  isActive: boolean;
+  symbols: string;
+  minConfidence: number;
+  maxOrdersPerRun: number;
+  defaultQuantity: number;
+  maxPositionValue: number;
+  useScreener: boolean;
+  screenerTopN: number;
+  product: 'CNC' | 'MIS';
+}
+
+const defaultAgentForm = (): AgentConfigForm => ({
+  name: '',
+  mode: 'paper',
+  isActive: true,
+  symbols: 'RELIANCE, TCS, INFY, HDFCBANK',
+  minConfidence: 50,
+  maxOrdersPerRun: 3,
+  defaultQuantity: 1,
+  maxPositionValue: 50000,
+  useScreener: true,
+  screenerTopN: 8,
+  product: 'CNC'
+});
+
 export function AlgoDetailView({
   algo,
   onBack,
@@ -30,7 +59,8 @@ export function AlgoDetailView({
   onBack: () => void;
   onDeployed?: (msg: string) => void;
 }) {
-  const [tab, setTab] = useState<DetailTab>('performance');
+  const isAgent = algo.source === 'agent' && Boolean(algo.agentId);
+  const [tab, setTab] = useState<DetailTab>(isAgent ? 'config' : 'performance');
   const [tf, setTf] = useState<'1m' | '3m' | '6m' | '1y' | 'all'>('3m');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -43,6 +73,9 @@ export function AlgoDetailView({
   const [tradesLoading, setTradesLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [liveMetrics, setLiveMetrics] = useState<Record<string, number> | null>(null);
+  const [agentForm, setAgentForm] = useState<AgentConfigForm>(defaultAgentForm);
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [agentDirty, setAgentDirty] = useState(false);
 
   const tfRet =
     tf === '1m'
@@ -124,7 +157,93 @@ export function AlgoDetailView({
     };
   }, [algo]);
 
+  useEffect(() => {
+    if (!isAgent || !algo.agentId) return;
+    let cancelled = false;
+    setAgentLoading(true);
+    void (async () => {
+      try {
+        const agents = await tradingService.listAgents();
+        const row = (Array.isArray(agents) ? agents : []).find(
+          (a: Record<string, unknown>) => String(a.id) === String(algo.agentId)
+        ) as Record<string, unknown> | undefined;
+        if (!row || cancelled) return;
+        const cfg = (row.config && typeof row.config === 'object' ? row.config : {}) as Record<
+          string,
+          unknown
+        >;
+        const symbols = Array.isArray(cfg.symbols)
+          ? (cfg.symbols as string[]).join(', ')
+          : String(cfg.symbols || 'RELIANCE, TCS, INFY, HDFCBANK');
+        setAgentForm({
+          name: String(row.name || algo.name),
+          mode: String(row.mode || 'paper') === 'live' ? 'live' : 'paper',
+          isActive: Boolean(row.isActive),
+          symbols,
+          minConfidence: Number(cfg.minConfidence ?? 50),
+          maxOrdersPerRun: Number(cfg.maxOrdersPerRun ?? 3),
+          defaultQuantity: Number(cfg.defaultQuantity ?? 1),
+          maxPositionValue: Number(cfg.maxPositionValue ?? 50000),
+          useScreener: cfg.useScreener !== false,
+          screenerTopN: Number(cfg.screenerTopN ?? 8),
+          product: String(cfg.product || 'CNC').toUpperCase() === 'MIS' ? 'MIS' : 'CNC'
+        });
+        setAgentDirty(false);
+      } catch {
+        if (!cancelled) setErr('Could not load agent config');
+      } finally {
+        if (!cancelled) setAgentLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [algo.agentId, algo.name, isAgent]);
+
   const tradeSides = useMemo(() => trades.map((t) => ({ side: t.side })), [trades]);
+
+  const patchAgentForm = (patch: Partial<AgentConfigForm>) => {
+    setAgentForm((prev) => ({ ...prev, ...patch }));
+    setAgentDirty(true);
+  };
+
+  const saveAgentConfig = async () => {
+    if (!algo.agentId) return;
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      const symbols = agentForm.symbols
+        .split(/[\s,]+/)
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+      if (!agentForm.name.trim()) throw new Error('Name is required');
+      if (!symbols.length) throw new Error('Add at least one symbol');
+      await tradingService.updateAgent(algo.agentId, {
+        name: agentForm.name.trim(),
+        mode: agentForm.mode,
+        isActive: agentForm.isActive,
+        config: {
+          symbols,
+          minConfidence: agentForm.minConfidence,
+          maxOrdersPerRun: agentForm.maxOrdersPerRun,
+          defaultQuantity: agentForm.defaultQuantity,
+          maxPositionValue: agentForm.maxPositionValue,
+          useScreener: agentForm.useScreener,
+          screenerTopN: agentForm.screenerTopN,
+          product: agentForm.product
+        }
+      });
+      setAgentDirty(false);
+      const text = `Agent config saved · ${agentForm.mode} · ${symbols.length} symbols · minConfidence ${agentForm.minConfidence}`;
+      setMsg(text);
+      onDeployed?.(text);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to save agent config');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const runPaperFunnel = async (id: string) => {
     await advisoryMarketplaceService.save(id).catch(() => null);
@@ -146,6 +265,67 @@ export function AlgoDetailView({
     return { qualified, paper };
   };
 
+  const brokerLiveHint = async (): Promise<string> => {
+    try {
+      const accounts = await integrationService.listAccounts();
+      const dhan = accounts.find((a) => String(a.broker || '').toLowerCase() === 'dhan');
+      if (!dhan) return ' Connect Dhan under Broker Connections before live deploy.';
+      if (dhan.status === 'CONNECTED') return '';
+      const err = dhan.lastError ? ` (${dhan.lastError})` : '';
+      return ` Dhan is ${dhan.status}${err} — reconnect/validate token for live; paper path still works.`;
+    } catch {
+      return '';
+    }
+  };
+
+  const pickRecommendation = (
+    recs: Array<{
+      id: string;
+      title: string;
+      type: string;
+      symbols?: string[];
+      confidence_score?: number;
+    }>
+  ) => {
+    const under = String(algo.underlying || '')
+      .toLowerCase()
+      .replace(/\s+/g, '');
+    const nameToken = algo.name.split(/\s+/)[0]?.toLowerCase() || '';
+    const bySymbol = recs.find((r) =>
+      (r.symbols || []).some((s) => {
+        const sym = s.toLowerCase().replace(/\s+/g, '');
+        return under.includes(sym) || sym.includes(under) || under.includes('nifty');
+      })
+    );
+    if (bySymbol) return bySymbol;
+    const byName = recs.find((r) => r.title.toLowerCase().includes(nameToken));
+    if (byName) return byName;
+    const byType = recs.find((r) =>
+      String(r.type || '')
+        .toLowerCase()
+        .includes(String(algo.category || algo.tradeType || '').toLowerCase().split('_')[0] || 'x')
+    );
+    if (byType) return byType;
+    return [...recs].sort((a, b) => (b.confidence_score || 0) - (a.confidence_score || 0))[0];
+  };
+
+  const deployFromAdvisory = async (advisoryId: string, recommendationId: string, label: string) => {
+    const converted = (await advisoryMarketplaceService.convertToAlgo(
+      advisoryId,
+      recommendationId
+    )) as Record<string, unknown>;
+    const newId = String(converted?.id || converted?.option_id || converted?.strategy_option_id || '');
+    if (!newId) throw new Error('Convert succeeded but no strategy option id returned.');
+    setOptionId(newId);
+    const { qualified } = await runPaperFunnel(newId);
+    const hint = await brokerLiveHint();
+    const text = qualified
+      ? `${label} → paper deployed. Eligible to request live.${hint}`
+      : `${label} → paper deployed. Keep paper running before live.${hint}`;
+    setMsg(text);
+    onDeployed?.(text);
+  };
+
   const deploy = async () => {
     setBusy(true);
     setMsg(null);
@@ -154,31 +334,38 @@ export function AlgoDetailView({
       if (algo.source === 'option' && (optionId || algo.optionId)) {
         const id = optionId || algo.optionId!;
         const { qualified } = await runPaperFunnel(id);
+        const hint = await brokerLiveHint();
         const text = qualified
-          ? 'Saved · paper-tested · deployed to paper. Eligible to request live approval.'
-          : 'Saved · paper-tested · deployed to paper. Live not qualified yet — keep paper running.';
+          ? `Saved · paper-tested · deployed to paper. Eligible to request live approval.${hint}`
+          : `Saved · paper-tested · deployed to paper. Live not qualified yet — keep paper running.${hint}`;
         setMsg(text);
         onDeployed?.(text);
       } else if (algo.source === 'advisory' && algo.advisoryId && algo.recommendationId) {
-        const converted = (await advisoryMarketplaceService.convertToAlgo(
-          algo.advisoryId,
-          algo.recommendationId
-        )) as Record<string, unknown>;
-        const newId = String(converted?.id || converted?.option_id || converted?.strategy_option_id || '');
-        if (newId) {
-          setOptionId(newId);
-          await runPaperFunnel(newId);
-          const text = 'Converted → saved → paper-tested → deployed to paper.';
-          setMsg(text);
-          onDeployed?.(text);
-        } else {
-          const text = 'Converted to strategy option. Open Deploy again to paper-test & deploy.';
-          setMsg(text);
-          onDeployed?.(text);
+        await deployFromAdvisory(algo.advisoryId, algo.recommendationId, 'Converted');
+      } else if (algo.source === 'demo' || algo.isDemo) {
+        const generated = await advisoryMarketplaceService.generate();
+        const advisoryId = generated.advisory_id;
+        const recs = generated.recommendations || [];
+        if (!advisoryId || !recs.length) {
+          const hint = await brokerLiveHint();
+          throw new Error(
+            `Advisory generated no recommendations.${hint || ' Open Broker Connections, then Sync algos.'}`
+          );
         }
+        const rec = pickRecommendation(recs);
+        if (!rec?.id) throw new Error('No matching advisory recommendation to convert.');
+        await deployFromAdvisory(advisoryId, rec.id, `Generated “${rec.title}”`);
       } else if (algo.source === 'agent' && algo.agentId) {
-        await tradingService.runAgent(algo.agentId);
-        const text = 'Agent run triggered (live paper/live mode per agent config).';
+        const result = (await tradingService.runAgent(algo.agentId)) as {
+          ordersPlaced?: Array<{ symbol?: string; direction?: string; quantity?: number; status?: string }>;
+          signals?: unknown[];
+        };
+        const placed = Array.isArray(result?.ordersPlaced) ? result.ordersPlaced : [];
+        const text = placed.length
+          ? `Paper agent run complete — ${placed.length} order(s): ${placed
+              .map((o) => `${o.direction} ${o.symbol}×${o.quantity} (${o.status})`)
+              .join(', ')}.`
+          : `Agent run finished with ${(result?.signals as unknown[])?.length || 0} signal(s) but 0 orders (HOLD / low confidence / no quote).`;
         setMsg(text);
         onDeployed?.(text);
       } else if (algo.source === 'strategy') {
@@ -211,10 +398,7 @@ export function AlgoDetailView({
         setMsg(text);
         onDeployed?.(text);
       } else {
-        const text = algo.isDemo
-          ? 'Demo item — connect broker / generate advisory for live deploy.'
-          : 'No deploy path for this source yet.';
-        setErr(text);
+        setErr('No deploy path for this source yet.');
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Deploy failed');
@@ -298,6 +482,7 @@ export function AlgoDetailView({
   };
 
   const tabs: Array<{ id: DetailTab; label: string }> = [
+    ...(isAgent ? [{ id: 'config' as const, label: 'Configure' }] : []),
     { id: 'performance', label: 'Algo Performance' },
     { id: 'best_worst', label: 'Best & Worst' },
     { id: 'past_trades', label: 'Past Trades' },
@@ -550,6 +735,236 @@ export function AlgoDetailView({
         ))}
       </div>
 
+      {tab === 'config' && isAgent && (
+        <div
+          className="neon-card"
+          style={{
+            padding: 16,
+            borderRadius: 12,
+            border: '1px solid rgba(34,211,238,0.25)',
+            background: 'rgba(15,23,42,0.75)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#67e8f9', fontWeight: 650 }}>
+            <Settings2 className="h-4 w-4" />
+            Agent configuration
+            {agentDirty ? (
+              <span style={{ fontSize: 11, color: '#fbbf24', fontWeight: 500 }}>Unsaved changes</span>
+            ) : null}
+          </div>
+          {agentLoading ? (
+            <div style={{ color: '#94a3b8', fontSize: 12 }}>Loading agent…</div>
+          ) : (
+            <>
+              <div style={formGrid}>
+                <label style={fieldLabel}>
+                  Name
+                  <input
+                    value={agentForm.name}
+                    onChange={(e) => patchAgentForm({ name: e.target.value })}
+                    style={fieldInput}
+                  />
+                </label>
+                <label style={fieldLabel}>
+                  Mode
+                  <select
+                    value={agentForm.mode}
+                    onChange={(e) =>
+                      patchAgentForm({ mode: e.target.value === 'live' ? 'live' : 'paper' })
+                    }
+                    style={fieldInput}
+                  >
+                    <option value="paper">paper</option>
+                    <option value="live">live</option>
+                  </select>
+                </label>
+                <label style={fieldLabel}>
+                  Product
+                  <select
+                    value={agentForm.product}
+                    onChange={(e) =>
+                      patchAgentForm({ product: e.target.value === 'MIS' ? 'MIS' : 'CNC' })
+                    }
+                    style={fieldInput}
+                  >
+                    <option value="CNC">CNC</option>
+                    <option value="MIS">MIS</option>
+                  </select>
+                </label>
+                <label
+                  style={{
+                    ...fieldLabel,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    paddingTop: 22
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={agentForm.isActive}
+                    onChange={(e) => patchAgentForm({ isActive: e.target.checked })}
+                  />
+                  Active (scheduler / My Algos)
+                </label>
+              </div>
+
+              <label style={fieldLabel}>
+                Symbols (comma-separated)
+                <input
+                  value={agentForm.symbols}
+                  onChange={(e) => patchAgentForm({ symbols: e.target.value })}
+                  style={fieldInput}
+                  placeholder="RELIANCE, TCS, INFY"
+                />
+              </label>
+
+              <div style={formGrid}>
+                <label style={fieldLabel}>
+                  Min confidence
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={agentForm.minConfidence}
+                    onChange={(e) =>
+                      patchAgentForm({ minConfidence: Math.max(0, Number(e.target.value) || 0) })
+                    }
+                    style={fieldInput}
+                  />
+                </label>
+                <label style={fieldLabel}>
+                  Max orders / run
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={agentForm.maxOrdersPerRun}
+                    onChange={(e) =>
+                      patchAgentForm({
+                        maxOrdersPerRun: Math.max(1, Number(e.target.value) || 1)
+                      })
+                    }
+                    style={fieldInput}
+                  />
+                </label>
+                <label style={fieldLabel}>
+                  Default qty
+                  <input
+                    type="number"
+                    min={1}
+                    value={agentForm.defaultQuantity}
+                    onChange={(e) =>
+                      patchAgentForm({
+                        defaultQuantity: Math.max(1, Number(e.target.value) || 1)
+                      })
+                    }
+                    style={fieldInput}
+                  />
+                </label>
+                <label style={fieldLabel}>
+                  Max position value (₹)
+                  <input
+                    type="number"
+                    min={1000}
+                    step={1000}
+                    value={agentForm.maxPositionValue}
+                    onChange={(e) =>
+                      patchAgentForm({
+                        maxPositionValue: Math.max(1000, Number(e.target.value) || 1000)
+                      })
+                    }
+                    style={fieldInput}
+                  />
+                </label>
+              </div>
+
+              <div style={formGrid}>
+                <label
+                  style={{
+                    ...fieldLabel,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    paddingTop: 8
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={agentForm.useScreener}
+                    onChange={(e) => patchAgentForm({ useScreener: e.target.checked })}
+                  />
+                  Use stock screener
+                </label>
+                <label style={fieldLabel}>
+                  Screener top N
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    disabled={!agentForm.useScreener}
+                    value={agentForm.screenerTopN}
+                    onChange={(e) =>
+                      patchAgentForm({ screenerTopN: Math.max(1, Number(e.target.value) || 1) })
+                    }
+                    style={{ ...fieldInput, opacity: agentForm.useScreener ? 1 : 0.5 }}
+                  />
+                </label>
+              </div>
+
+              <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.45 }}>
+                Signals = prediction engine + screener (optional) + momentum on symbols. HOLD / below min
+                confidence are skipped. Live mode still needs TopBar LIVE + PIN + Dhan CONNECTED.
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  disabled={busy || !agentDirty}
+                  onClick={() => void saveAgentConfig()}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #0891b2 0%, #2563eb 100%)',
+                    color: '#fff',
+                    fontWeight: 600,
+                    cursor: busy || !agentDirty ? 'not-allowed' : 'pointer',
+                    opacity: busy || !agentDirty ? 0.5 : 1
+                  }}
+                >
+                  {busy ? 'Saving…' : 'Save configuration'}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void (async () => {
+                      if (agentDirty) await saveAgentConfig();
+                      await deploy();
+                    })()
+                  }
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(34,211,238,0.4)',
+                    background: 'rgba(8,47,73,0.6)',
+                    color: '#a5f3fc',
+                    fontWeight: 600,
+                    cursor: busy ? 'wait' : 'pointer'
+                  }}
+                >
+                  {agentDirty ? 'Save & run once' : 'Run once'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {tab === 'performance' && (
         <>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -675,7 +1090,14 @@ export function AlgoDetailView({
           </p>
           {algo.isDemo && (
             <p style={{ marginTop: 10, color: '#fbbf24' }}>
-              Demo catalog item — generate advisory or link strategies for live rows.
+              Demo catalog item — Deploy generates an advisory recommendation, converts it, and runs the
+              paper funnel. Live deploy still needs a CONNECTED Dhan account + RMS approval.
+            </p>
+          )}
+          {isAgent && (
+            <p style={{ marginTop: 10, color: '#7dd3fc' }}>
+              Use the <strong>Configure</strong> tab to edit symbols, confidence, sizing, screener, and
+              paper/live mode. Deploy runs <code>collectSignals</code> then places orders via OMS.
             </p>
           )}
         </div>
@@ -683,3 +1105,27 @@ export function AlgoDetailView({
     </div>
   );
 }
+
+const formGrid: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+  gap: 10
+};
+
+const fieldLabel: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+  fontSize: 11,
+  color: '#94a3b8'
+};
+
+const fieldInput: CSSProperties = {
+  height: 34,
+  borderRadius: 8,
+  border: '1px solid rgba(148,163,184,0.3)',
+  background: 'rgba(2,6,23,0.7)',
+  color: '#f8fafc',
+  padding: '0 10px',
+  fontSize: 13
+};

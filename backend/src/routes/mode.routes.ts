@@ -37,6 +37,19 @@ router.put(
   })
 );
 
+router.post(
+  '/mode/pin/reset',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { pin, confirmPin } = req.body || {};
+    const data = await TradingModeService.resetTradingPin(
+      req.user!.id,
+      String(pin || ''),
+      String(confirmPin || '')
+    );
+    res.json({ success: true, data });
+  })
+);
+
 router.get(
   '/brokers/status',
   asyncHandler(async (req: Request, res: Response) => {

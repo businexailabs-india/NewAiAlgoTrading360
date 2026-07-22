@@ -65,13 +65,15 @@
       port: 3000,
       open: true,
       proxy: {
+        // Prefer 127.0.0.1 — `localhost` can hit IPv6 (::1) while Node briefly
+        // listens only on IPv4 during nodemon restarts, which looks like FE/BE desync.
         '/api': {
-          target: process.env.VITE_BACKEND_URL || 'http://localhost:3001',
+          target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:3001',
           changeOrigin: true,
           secure: false
         },
         '/socket.io': {
-          target: process.env.VITE_BACKEND_URL || 'http://localhost:3001',
+          target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:3001',
           changeOrigin: true,
           ws: true,
         }

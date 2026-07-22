@@ -35,7 +35,7 @@ export class TradingModeService {
     const brokers = await this.getBrokersStatus(userId);
     const mode: TradingMode = settings.tradingMode === 'live' ? 'live' : 'paper';
     // Self-heal: executionMode must match TradingMode (TopBar / PIN is canonical).
-    await this.syncExecutionMode(userId).catch(() => undefined);
+    await this.syncExecutionMode(userId).catch((): undefined => undefined);
     return {
       mode,
       executionMode: mode === 'live' ? 'LIVE' : 'PAPER',
@@ -75,8 +75,10 @@ export class TradingModeService {
       (globalCtrl?.liveTradingEnabled ?? false) &&
       (userCtrl?.liveTradingEnabled ?? true);
 
+    const connected = connections.filter((c) => c.status === 'CONNECTED' && c.isEnabled !== false);
     return {
-      hasConnectedBroker: connections.length > 0,
+      // LIVE lock requires a CONNECTED broker (paper counts for paper trading; Dhan ERROR does not).
+      hasConnectedBroker: connected.length > 0,
       connections: connections.map((c) => ({
         id: c.id,
         broker: c.broker,
@@ -96,18 +98,58 @@ export class TradingModeService {
   }
 
   static async setTradingPin(userId: string, pin: string, currentPin?: string) {
-    if (!/^\d{4,8}$/.test(pin)) {
+    const nextPin = String(pin || '').trim();
+    if (!/^\d{4,8}$/.test(nextPin)) {
       throw new AppError('Trading PIN must be 4–8 digits', 400);
     }
     const settings = await getSettingsJson(userId);
     if (settings.tradingPinHash) {
-      if (!currentPin || !(await bcrypt.compare(String(currentPin), settings.tradingPinHash))) {
+      if (
+        !currentPin ||
+        !(await bcrypt.compare(String(currentPin).trim(), settings.tradingPinHash))
+      ) {
         throw new AppError('Current Trading PIN is incorrect', 403);
       }
     }
-    const tradingPinHash = await bcrypt.hash(pin, 10);
+    const tradingPinHash = await bcrypt.hash(nextPin, 10);
     await saveSettingsJson(userId, { ...settings, tradingPinHash });
     return { hasTradingPin: true };
+  }
+
+  /** Forgot-PIN path: local/dev guest can reset; production needs ALLOW_TRADING_PIN_RESET=true. */
+  static async resetTradingPin(userId: string, pin: string, confirmPin: string) {
+    const nextPin = String(pin || '').trim();
+    const confirm = String(confirmPin || '').trim();
+    if (!/^\d{4,8}$/.test(nextPin)) {
+      throw new AppError('Trading PIN must be 4–8 digits', 400);
+    }
+    if (nextPin !== confirm) {
+      throw new AppError('PIN confirmation does not match', 400);
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    const email = String(user?.email || '').toLowerCase();
+    const allowEnv = process.env.ALLOW_TRADING_PIN_RESET === 'true';
+    const localGuest =
+      email === 'local@smarttrade.test' ||
+      email.endsWith('.local') ||
+      process.env.NODE_ENV !== 'production';
+    if (!allowEnv && !localGuest) {
+      throw new AppError(
+        'PIN reset is disabled. Set ALLOW_TRADING_PIN_RESET=true or change PIN with current PIN.',
+        403
+      );
+    }
+
+    const settings = await getSettingsJson(userId);
+    const tradingPinHash = await bcrypt.hash(nextPin, 10);
+    await saveSettingsJson(userId, {
+      ...settings,
+      tradingPinHash,
+      // Clear cooldown so a forgotten PIN does not also block the next switch.
+      liveModeSwitchedAt: undefined
+    });
+    return { hasTradingPin: true, reset: true };
   }
 
   static async switchMode(
@@ -121,15 +163,18 @@ export class TradingModeService {
 
     const settings = await getSettingsJson(userId);
     const current: TradingMode = settings.tradingMode === 'live' ? 'live' : 'paper';
-    if (current === next) {
-      return this.getMode(userId);
-    }
+    const pin = String(input.pin || '').trim();
 
+    // Always verify PIN when a hash exists (including no-op same-mode confirms from the UI).
     if (!settings.tradingPinHash) {
       throw new AppError('Set a Trading PIN before switching modes', 400);
     }
-    if (!input.pin || !(await bcrypt.compare(input.pin, settings.tradingPinHash))) {
+    if (!pin || !(await bcrypt.compare(pin, settings.tradingPinHash))) {
       throw new AppError('Invalid Trading PIN', 403);
+    }
+
+    if (current === next) {
+      return this.getMode(userId);
     }
 
     if (settings.liveModeSwitchedAt) {

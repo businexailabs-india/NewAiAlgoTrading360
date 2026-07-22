@@ -462,12 +462,21 @@ export class IntegrationService {
     let capabilities: Record<string, boolean> = {};
 
     try {
-      if (conn.providerType === 'MCP' && conn.mcpServerConfig) {
+      // Paper is local simulation — never require Dhan/MCP credentials.
+      if (String(conn.broker).toLowerCase() === 'paper') {
+        ok = true;
+        capabilities = {
+          'portfolio.funds': true,
+          'trading.place': true,
+          'portfolio.holdings': true,
+          'orderbook.list': true
+        };
+      } else if (conn.providerType === 'MCP' && conn.mcpServerConfig) {
         const result = await this.testMcpServer(userId, conn.mcpServerConfig.id);
         ok = result.health.ok;
         error = result.health.error;
         capabilities = (result.server.capabilities as Record<string, boolean>) || {};
-      } else {
+      } else if (String(conn.broker).toLowerCase() === 'dhan') {
         const creds = EncryptionService.decryptJson<{ clientId: string; accessToken: string }>(
           conn.credentialsEncrypted
         );
@@ -482,6 +491,8 @@ export class IntegrationService {
           'portfolio.holdings': ok,
           'orderbook.list': ok
         };
+      } else {
+        throw new Error(`Unsupported broker for validation: ${conn.broker}`);
       }
     } catch (err) {
       ok = false;
