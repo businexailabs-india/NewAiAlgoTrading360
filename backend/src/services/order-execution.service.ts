@@ -7,6 +7,7 @@ import { RiskGateService } from './risk-gate.service';
 import { OrderReconcilerService } from './order-reconciler.service';
 import { AppError } from '../middleware/error.middleware';
 import { logger } from '../utils/logger';
+import { FnoPositionService } from './options/fno-position.service';
 
 export interface PlaceOrderParams {
   userId: string;
@@ -19,12 +20,21 @@ export interface PlaceOrderParams {
   price?: number;
   triggerPrice?: number;
   instrumentType?: 'EQUITY' | 'OPTION';
-  optionDetails?: { strike: number; expiry: string; optionType: 'CE' | 'PE' };
+  optionDetails?: {
+    strike: number;
+    expiry: string;
+    optionType: 'CE' | 'PE';
+    strategyId?: string;
+    strategyTag?: string;
+  };
   isPaper?: boolean;
   brokerConnectionId?: string;
   agentId?: string;
   idempotencyKey?: string;
   source?: 'MANUAL' | 'AGENT' | 'STRATEGY' | 'MCP' | 'SCHEDULER';
+  /** F&O security id from instrument master */
+  instrumentToken?: string;
+  exchangeSegment?: string;
 }
 
 export class OrderExecutionService {
@@ -33,7 +43,8 @@ export class OrderExecutionService {
       userId, symbol, exchange = 'NSE', tradeType, quantity,
       orderType = 'MARKET', product = 'CNC', price, triggerPrice,
       instrumentType = 'EQUITY', optionDetails,
-      agentId, source = 'MANUAL'
+      agentId, source = 'MANUAL',
+      instrumentToken, exchangeSegment
     } = params;
 
     // Default paper-first; live only when explicitly false
@@ -42,19 +53,74 @@ export class OrderExecutionService {
 
     if (quantity <= 0) throw new AppError('Quantity must be positive', 400);
 
+    // Hard guard: live options path cannot run when feature flag off or user mode is PAPER
+    if (!isPaper && instrumentType === 'OPTION') {
+      if (process.env.FEATURE_LIVE_OPTIONS !== 'true') {
+        throw new AppError(
+          'Live options submit is disabled (FEATURE_LIVE_OPTIONS=false). Use Paper Options Terminal.',
+          403,
+          {
+            reason: 'FEATURE_LIVE_OPTIONS_OFF',
+            correctiveAction: 'Complete paper acceptance tests before enabling FEATURE_LIVE_OPTIONS'
+          }
+        );
+      }
+      const seg = (exchangeSegment || '').toUpperCase();
+      if (!instrumentToken) {
+        throw new AppError('Live F&O order requires instrumentToken (securityId) from instrument master', 400, {
+          reason: 'MISSING_FNO_TOKEN',
+          correctiveAction: 'Place from master-backed chain / live preview legs'
+        });
+      }
+      if (seg && seg !== 'NSE_FNO' && seg !== 'BSE_FNO') {
+        throw new AppError(`Live F&O requires NSE_FNO/BSE_FNO segment, got ${seg}`, 400, {
+          reason: 'INVALID_FNO_SEGMENT',
+          correctiveAction: 'Use NFO/BFO exchange mapping'
+        });
+      }
+      if (!seg) {
+        // default later in execute path; require NFO exchange hint
+        if (exchange !== 'NFO' && exchange !== 'BFO' && exchange !== 'NSE' && exchange !== 'BSE') {
+          throw new AppError('Live F&O exchange must be NFO/BFO', 400);
+        }
+      }
+    }
+    if (!isPaper) {
+      const settings = await prisma.userSettings.findUnique({ where: { userId } });
+      const mode = (settings?.settings as { tradingMode?: string } | null)?.tradingMode;
+      if (mode !== 'live') {
+        throw new AppError('Trading mode is PAPER — live broker submit blocked', 403, {
+          reason: 'PAPER_MODE_ACTIVE',
+          correctiveAction: 'Switch to LIVE MODE with PIN, or place a paper order'
+        });
+      }
+    }
+
     const target = await ExecutionTargetResolver.resolve(userId, {
       brokerConnectionId: params.brokerConnectionId,
       preferPaper: isPaper,
       requireLive: !isPaper
     });
 
-    const quote = await MarketService.getQuote(symbol, userId);
-    if (!(quote.price > 0)) {
-      throw new AppError(`Market quote unavailable or invalid for ${symbol}`, 503);
+    let estPrice = price && price > 0 ? price : 0;
+    try {
+      const quote = await MarketService.getQuote(symbol, userId);
+      if (quote.price > 0 && !(price && price > 0)) {
+        estPrice = quote.price;
+      } else if (quote.price > 0 && price && price > 0) {
+        estPrice = price;
+      } else if (!(estPrice > 0) && quote.price > 0) {
+        estPrice = quote.price;
+      }
+    } catch {
+      /* paper options may use explicit premium without equity quote */
     }
-    const estPrice = price && price > 0 ? price : quote.price;
     if (!(estPrice > 0)) {
-      throw new AppError(`Cannot place order: invalid price for ${symbol}`, 503);
+      if (isPaper && price && price > 0) {
+        estPrice = price;
+      } else {
+        throw new AppError(`Market quote unavailable or invalid for ${symbol}`, 503);
+      }
     }
 
     await RiskGateService.preflight({
@@ -76,7 +142,11 @@ export class OrderExecutionService {
         symbol: symbol.toUpperCase(),
         exchange,
         instrumentType,
-        optionDetails: optionDetails as object | undefined,
+        optionDetails: {
+          ...(optionDetails || {}),
+          ...(instrumentToken ? { instrumentToken } : {}),
+          ...(exchangeSegment ? { exchangeSegment } : {})
+        } as object | undefined,
         tradeType,
         quantity,
         price: estPrice,
@@ -128,17 +198,29 @@ export class OrderExecutionService {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new AppError('Order not found', 404);
 
-    const quote = await MarketService.getQuote(order.symbol, userId);
-    if (!(quote.price > 0)) {
-      throw new AppError(`Quote unavailable for ${order.symbol}; paper fill rejected`, 503);
+    let fillPrice =
+      order.price && Number(order.price) > 0 ? Number(order.price) : 0;
+
+    // Equity paper fills can refresh from market; F&O / explicit premium skip quote
+    if (!(fillPrice > 0) || (order.instrumentType !== 'OPTION' && order.orderType === 'MARKET')) {
+      try {
+        const quote = await MarketService.getQuote(order.symbol, userId);
+        if (quote.price > 0) {
+          fillPrice =
+            order.orderType === 'LIMIT' && order.price && Number(order.price) > 0
+              ? Number(order.price)
+              : quote.price;
+        }
+      } catch {
+        /* keep fillPrice from order */
+      }
     }
 
-    const fillPrice = order.orderType === 'LIMIT' && order.price && Number(order.price) > 0
-      ? Number(order.price)
-      : quote.price;
-
     if (!(fillPrice > 0)) {
-      throw new AppError(`Invalid fill price for ${order.symbol}; paper fill rejected`, 503);
+      throw new AppError(
+        `Invalid fill price for ${order.symbol}; paper fill rejected (provide premium/price)`,
+        503
+      );
     }
 
     const updated = await prisma.order.update({
@@ -151,6 +233,39 @@ export class OrderExecutionService {
     });
 
     await this.recordPaperTrade(updated, userId, fillPrice);
+
+    if (order.instrumentType === 'OPTION') {
+      const details = (order.optionDetails || {}) as {
+        instrumentToken?: string;
+        strike?: number;
+        expiry?: string;
+        optionType?: string;
+        strategyId?: string;
+        strategyTag?: string;
+      };
+      try {
+        await FnoPositionService.applyFill({
+          userId,
+          tradingSymbol: order.symbol,
+          tradeType: order.tradeType as 'BUY' | 'SELL',
+          quantity: order.quantity,
+          fillPrice,
+          isPaper: true,
+          instrumentToken: details.instrumentToken,
+          exchange: order.exchange,
+          segment: order.exchange === 'BFO' || order.exchange === 'BSE' ? 'BFO' : 'NFO',
+          optionType: details.optionType,
+          strike: details.strike,
+          expiry: details.expiry,
+          product: order.product || 'NRML',
+          strategyId: details.strategyId,
+          strategyTag: details.strategyTag
+        });
+      } catch (err) {
+        logger.warn(`Paper F&O position update failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     await prisma.executionAttempt.updateMany({
       where: { orderId },
       data: { brokerStatus: 'COMPLETE', responseRedacted: { fillPrice, paper: true }, reconciledAt: new Date() }
@@ -166,6 +281,60 @@ export class OrderExecutionService {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new AppError('Order not found', 404);
 
+    const details = (order.optionDetails || {}) as {
+      instrumentToken?: string;
+      exchangeSegment?: string;
+      strike?: number;
+      expiry?: string;
+      optionType?: string;
+    };
+
+    let securityId = details.instrumentToken;
+    let exchangeSegment =
+      details.exchangeSegment ||
+      (order.exchange === 'NFO' || order.instrumentType === 'OPTION'
+        ? 'NSE_FNO'
+        : order.exchange === 'BSE'
+          ? 'BSE_EQ'
+          : 'NSE_EQ');
+
+    if (!securityId && order.instrumentType === 'OPTION') {
+      const inst = await prisma.derivativeInstrument.findFirst({
+        where: { tradingSymbol: order.symbol, tradable: true },
+        orderBy: { syncedAt: 'desc' }
+      });
+      if (inst) {
+        securityId = inst.instrumentToken;
+        exchangeSegment = inst.segment === 'BFO' ? 'BSE_FNO' : 'NSE_FNO';
+      }
+    }
+
+    if (order.instrumentType === 'OPTION' && !securityId) {
+      throw new AppError(
+        `Cannot place live F&O order: missing instrumentToken for ${order.symbol}. Sync instrument master.`,
+        400,
+        {
+          reason: 'MISSING_FNO_TOKEN',
+          correctiveAction: 'Run POST /api/options/sync and place from master-backed chain'
+        }
+      );
+    }
+
+    if (
+      order.instrumentType === 'OPTION' &&
+      exchangeSegment !== 'NSE_FNO' &&
+      exchangeSegment !== 'BSE_FNO'
+    ) {
+      throw new AppError(
+        `Refusing live F&O submit on equity segment (${exchangeSegment})`,
+        400,
+        {
+          reason: 'EQUITY_SEGMENT_BLOCKED',
+          correctiveAction: 'Orders must use NSE_FNO or BSE_FNO'
+        }
+      );
+    }
+
     const input = {
       symbol: order.symbol,
       tradeType: order.tradeType as 'BUY' | 'SELL',
@@ -175,7 +344,8 @@ export class OrderExecutionService {
       price: order.price != null ? Number(order.price) : undefined,
       triggerPrice: order.triggerPrice != null ? Number(order.triggerPrice) : undefined,
       correlationId: order.id.slice(0, 30),
-      exchangeSegment: order.exchange === 'BSE' ? 'BSE_EQ' : 'NSE_EQ',
+      exchangeSegment,
+      securityId,
       preflight: true
     };
 
@@ -364,6 +534,9 @@ export class OrderExecutionService {
     if (!order.brokerOrderId || !order.brokerConnectionId) {
       throw new AppError('Order has no broker reference to cancel', 400);
     }
+    if (order.instrumentType === 'OPTION' && process.env.FEATURE_LIVE_OPTIONS !== 'true') {
+      throw new AppError('Live options cancel gated by FEATURE_LIVE_OPTIONS', 403);
+    }
     const target = await ExecutionTargetResolver.resolve(userId, {
       brokerConnectionId: order.brokerConnectionId,
       requireLive: true
@@ -371,6 +544,69 @@ export class OrderExecutionService {
     if (target.mcp) await target.mcp.cancelOrder(order.brokerOrderId);
     else if (target.direct) await target.direct.cancelOrder(order.brokerOrderId);
     else throw new AppError('No cancel adapter', 400);
+    return OrderReconcilerService.reconcileOrder(userId, orderId);
+  }
+
+  static async modifyOrder(
+    userId: string,
+    orderId: string,
+    patch: { quantity?: number; price?: number; triggerPrice?: number; orderType?: string }
+  ) {
+    const order = await prisma.order.findFirst({ where: { id: orderId, userId } });
+    if (!order) throw new AppError('Order not found', 404);
+    if (order.isPaper) {
+      return prisma.order.update({
+        where: { id: orderId },
+        data: {
+          ...(patch.quantity != null && { quantity: patch.quantity }),
+          ...(patch.price != null && { price: patch.price }),
+          ...(patch.triggerPrice != null && { triggerPrice: patch.triggerPrice }),
+          ...(patch.orderType && { orderType: patch.orderType }),
+          status: 'PENDING'
+        }
+      });
+    }
+    if (order.instrumentType === 'OPTION' && process.env.FEATURE_LIVE_OPTIONS !== 'true') {
+      throw new AppError('Live options modify gated by FEATURE_LIVE_OPTIONS', 403);
+    }
+    if (!order.brokerOrderId || !order.brokerConnectionId) {
+      throw new AppError('Order has no broker reference to modify', 400);
+    }
+    const target = await ExecutionTargetResolver.resolve(userId, {
+      brokerConnectionId: order.brokerConnectionId,
+      requireLive: true
+    });
+
+    if (target.direct) {
+      await target.direct.modifyOrder({
+        orderId: order.brokerOrderId,
+        quantity: patch.quantity ?? order.quantity,
+        price: patch.price ?? (order.price != null ? Number(order.price) : undefined),
+        triggerPrice: patch.triggerPrice ?? (order.triggerPrice != null ? Number(order.triggerPrice) : undefined),
+        orderType: patch.orderType || order.orderType
+      });
+    } else if (target.mcp) {
+      await target.mcp.modifyOrder({
+        orderId: order.brokerOrderId,
+        quantity: patch.quantity ?? order.quantity,
+        price: patch.price ?? (order.price != null ? Number(order.price) : undefined),
+        triggerPrice: patch.triggerPrice ?? (order.triggerPrice != null ? Number(order.triggerPrice) : undefined),
+        orderType: patch.orderType || order.orderType
+      });
+    } else {
+      throw new AppError('No modify adapter', 400);
+    }
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        ...(patch.quantity != null && { quantity: patch.quantity }),
+        ...(patch.price != null && { price: patch.price }),
+        ...(patch.triggerPrice != null && { triggerPrice: patch.triggerPrice }),
+        ...(patch.orderType && { orderType: patch.orderType })
+      }
+    });
+
     return OrderReconcilerService.reconcileOrder(userId, orderId);
   }
 }

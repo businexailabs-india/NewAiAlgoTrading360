@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
   BarChart3,
@@ -7,12 +7,14 @@ import {
   Shield,
   Sparkles,
   TrendingDown,
-  TrendingUp
+  TrendingUp,
+  Wallet
 } from 'lucide-react';
 import type { AlgoCatalogItem } from './algosCatalog';
 import { formatInr, pctColor } from './algosCatalog';
 import { useTradingDashboard } from '../../hooks/useTradingDashboard';
 import { portfolioService } from '../../services/portfolioService';
+import { FundTransferModal } from './FundTransferModal';
 
 const DISCOVER = [
   { id: 'equity_swing', label: 'Equity Swing', icon: TrendingUp, tab: 'investing' as const },
@@ -36,24 +38,44 @@ export function AlgosHome({
 }) {
   const { summary, loading } = useTradingDashboard();
   const [allocated, setAllocated] = useState<number | null>(null);
+  const [availableCash, setAvailableCash] = useState<number | null>(null);
+  const [fundOpen, setFundOpen] = useState(false);
+  const [fundMode, setFundMode] = useState<'add' | 'withdraw'>('add');
   const featured = items.filter((a) => a.lane === 'trading').slice(0, 4);
   const gainers = [...items].sort((a, b) => b.returns1m - a.returns1m).slice(0, 5);
   const losers = [...items].sort((a, b) => a.returns1m - b.returns1m).slice(0, 5);
   const [moversTab, setMoversTab] = useState<'gainers' | 'losers'>('gainers');
   const movers = moversTab === 'gainers' ? gainers : losers;
 
-  useEffect(() => {
-    portfolioService
-      .getSummary()
-      .then((s) => setAllocated(Number(s.totalCurrent ?? s.totalInvested ?? 0)))
-      .catch(() => setAllocated(null));
+  const refreshCapital = useCallback(() => {
+    Promise.allSettled([portfolioService.getSummary(), portfolioService.getFunds()]).then(
+      ([summaryResult, fundsResult]) => {
+        if (summaryResult.status === 'fulfilled') {
+          const s = summaryResult.value;
+          const cash = Number(s.availableCash ?? 0);
+          const holdings = Number(s.totalCurrent ?? 0);
+          setAllocated(Number(s.capitalAllocated ?? cash + holdings));
+        } else {
+          setAllocated(null);
+        }
+        if (fundsResult.status === 'fulfilled') {
+          setAvailableCash(fundsResult.value.availableCash);
+        } else {
+          setAvailableCash(null);
+        }
+      }
+    );
   }, []);
+
+  useEffect(() => {
+    refreshCapital();
+  }, [refreshCapital]);
 
   const metrics = [
     ['Capital Allocated', allocated != null ? formatInr(allocated) : '—'],
+    ['Available Cash', availableCash != null ? formatInr(availableCash) : '—'],
     ["Today's P&L", summary ? `₹${Number(summary.totalPnL).toLocaleString('en-IN')}` : '—'],
     ['Trading Now', String(summary?.activeAgents ?? 0)],
-    ['Active on', String(summary?.activeAgents ?? 0)],
     ['Subscribed to', String(items.filter((i) => !i.isDemo).length || items.length)]
   ];
 
@@ -120,6 +142,7 @@ export function AlgosHome({
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: 10,
+              flexWrap: 'wrap',
               padding: '8px 10px',
               borderRadius: 8,
               background: 'rgba(2,6,23,0.45)',
@@ -127,23 +150,71 @@ export function AlgosHome({
               color: '#94a3b8'
             }}
           >
-            <span>Open Positions · Margin Available · Paper-first by default</span>
-            <button
-              type="button"
-              onClick={() => onNavigate('my')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 8,
-                border: 'none',
-                background: '#059669',
-                color: '#fff',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              + Top Up / My Algos
-            </button>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Wallet className="h-3.5 w-3.5 text-cyan-300" />
+              Open Positions · Available cash · Paper-first by default
+            </span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setFundMode('add');
+                  setFundOpen(true);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: '#059669',
+                  color: '#fff',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                + Add Fund
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFundMode('withdraw');
+                  setFundOpen(true);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(248,113,113,0.4)',
+                  background: 'rgba(127,29,29,0.25)',
+                  color: '#fecaca',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Withdraw Fund
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('my')}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(34,211,238,0.35)',
+                  background: 'rgba(34,211,238,0.1)',
+                  color: '#67e8f9',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                My Algos
+              </button>
+            </div>
           </div>
+
+          <FundTransferModal
+            open={fundOpen}
+            initialMode={fundMode}
+            onClose={() => setFundOpen(false)}
+            onDone={() => refreshCapital()}
+          />
           {usedDemo && (
             <div style={{ marginTop: 8, fontSize: 11, color: '#fbbf24' }}>
               Showing demo catalog until advisory/strategy APIs return live algos.

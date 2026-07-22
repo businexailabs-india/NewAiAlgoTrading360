@@ -54,7 +54,34 @@ export const deleteHolding = asyncHandler(async (req: Request, res: Response) =>
 
 export const getPortfolioSummary = asyncHandler(async (req: Request, res: Response) => {
   const summary = await DatabaseService.getPortfolioSummary(req.user!.id);
-  res.status(200).json({ success: true, data: summary });
+  const funds = await DatabaseService.getFunds(req.user!.id);
+  res.status(200).json({
+    success: true,
+    data: {
+      ...summary,
+      availableCash: funds.availableCash,
+      capitalAllocated: funds.availableCash + Number(summary.totalCurrent || 0)
+    }
+  });
+});
+
+export const getFunds = asyncHandler(async (req: Request, res: Response) => {
+  const data = await DatabaseService.getFunds(req.user!.id);
+  res.status(200).json({ success: true, data });
+});
+
+export const addFunds = asyncHandler(async (req: Request, res: Response) => {
+  const amount = Number(req.body.amount);
+  const note = typeof req.body.note === 'string' ? req.body.note : undefined;
+  const data = await DatabaseService.transferFunds(req.user!.id, 'add', amount, note);
+  res.status(200).json({ success: true, message: 'Funds added', data });
+});
+
+export const withdrawFunds = asyncHandler(async (req: Request, res: Response) => {
+  const amount = Number(req.body.amount);
+  const note = typeof req.body.note === 'string' ? req.body.note : undefined;
+  const data = await DatabaseService.transferFunds(req.user!.id, 'withdraw', amount, note);
+  res.status(200).json({ success: true, message: 'Funds withdrawn', data });
 });
 
 export const getTrades = asyncHandler(async (req: Request, res: Response) => {

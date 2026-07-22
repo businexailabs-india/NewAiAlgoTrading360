@@ -32,6 +32,85 @@ interface Props {
   popupToken?: number;
 }
 
+type AdviceTone = 'top' | 'growth' | 'balanced' | 'caution' | 'standaside';
+
+function adviceTone(rec: AdvisoryRecommendation, index: number): AdviceTone {
+  const type = (rec.type || '').toLowerCase();
+  const title = (rec.title || '').toLowerCase();
+  if (type.includes('no_trade') || title.includes('stand') || title.includes('no-trade')) {
+    return 'standaside';
+  }
+  if (rec.risk_score >= 0.65) return 'caution';
+  if (index === 0) return 'top';
+  if (rec.confidence_score >= 0.65) return 'growth';
+  return 'balanced';
+}
+
+const TONE_STYLES: Record<
+  AdviceTone,
+  {
+    label: string;
+    ring: string;
+    card: string;
+    badge: string;
+    adviceBg: string;
+    adviceText: string;
+    accentBar: string;
+    cta: string;
+  }
+> = {
+  top: {
+    label: 'Top pick',
+    ring: '',
+    card: 'border-[rgba(52,211,153,0.45)] bg-[rgba(2,6,23,0.45)]',
+    badge: 'border border-emerald-500/50 bg-emerald-500/15 text-emerald-300',
+    adviceBg: 'border-slate-600/60 bg-slate-950/50',
+    adviceText: 'text-slate-200',
+    accentBar: 'bg-emerald-400',
+    cta: 'bg-[#059669] text-white hover:bg-emerald-600 font-semibold'
+  },
+  growth: {
+    label: 'Growth',
+    ring: '',
+    card: 'border-[rgba(34,211,238,0.28)] bg-[rgba(2,6,23,0.4)]',
+    badge: 'border border-cyan-500/40 bg-cyan-500/10 text-cyan-300',
+    adviceBg: 'border-slate-600/60 bg-slate-950/50',
+    adviceText: 'text-slate-200',
+    accentBar: 'bg-cyan-400',
+    cta: 'bg-[#059669] text-white hover:bg-emerald-600 font-semibold'
+  },
+  balanced: {
+    label: 'Balanced',
+    ring: '',
+    card: 'border-[rgba(148,163,184,0.22)] bg-[rgba(2,6,23,0.4)]',
+    badge: 'border border-slate-500/50 bg-slate-800/80 text-slate-300',
+    adviceBg: 'border-slate-600/60 bg-slate-950/50',
+    adviceText: 'text-slate-200',
+    accentBar: 'bg-slate-400',
+    cta: 'bg-[#059669] text-white hover:bg-emerald-600 font-semibold'
+  },
+  caution: {
+    label: 'Higher risk',
+    ring: '',
+    card: 'border-[rgba(251,191,36,0.35)] bg-[rgba(2,6,23,0.4)]',
+    badge: 'border border-amber-500/40 bg-amber-500/10 text-amber-300',
+    adviceBg: 'border-amber-500/25 bg-amber-500/5',
+    adviceText: 'text-amber-100',
+    accentBar: 'bg-amber-400',
+    cta: 'bg-[#059669] text-white hover:bg-emerald-600 font-semibold'
+  },
+  standaside: {
+    label: 'Stand aside',
+    ring: '',
+    card: 'border-[rgba(248,113,113,0.35)] bg-[rgba(2,6,23,0.4)]',
+    badge: 'border border-rose-500/40 bg-rose-500/10 text-rose-300',
+    adviceBg: 'border-rose-500/25 bg-rose-500/5',
+    adviceText: 'text-rose-100',
+    accentBar: 'bg-rose-400',
+    cta: 'border border-rose-400/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 font-semibold'
+  }
+};
+
 export function LoginAdvisoryCard({
   onConvert,
   onOpenMarketplace,
@@ -133,35 +212,36 @@ export function LoginAdvisoryCard({
     <MacWindow
       windowId="ai-algo-advisory"
       title="AI Algo Trade Advisory"
-      subtitle="Personalized paper-trading strategy candidates"
-      icon={
-        <Sparkles className="h-5 w-5 shrink-0 text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-      }
-      initialWidth={1100}
-      initialHeight={720}
+      subtitle="Same desk as Trading / Investing Algos · paper-first"
+      icon={<Sparkles className="h-5 w-5 shrink-0 text-cyan-300" />}
+      initialWidth={1140}
+      initialHeight={760}
       minWidth={640}
       minHeight={480}
-      initialPosition={{ x: 120, y: 120 }}
+      initialPosition={{ x: 100, y: 96 }}
       defaultMode="inline"
       fitMain
       startClosed={startClosed}
       popupToken={popupToken}
       reopenLabel="Open AI Algo Advisory"
-      className="w-full"
+      className="w-full neon-card"
     >
-      <div className="relative isolate flex min-h-0 flex-col overflow-hidden">
-        <span className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-cyan-400/15 blur-2xl" />
-        <span className="pointer-events-none absolute -bottom-10 -left-6 h-24 w-24 rounded-full bg-emerald-400/10 blur-2xl" />
-
+      <div className="flex min-h-0 flex-col overflow-hidden text-slate-200" style={{ background: 'rgba(15,23,42,0.65)' }}>
         <div
-          className="relative flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-950/45 px-5 py-3 backdrop-blur-xl"
-          style={{ position: 'sticky', top: 0, zIndex: 5 }}
+          className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 5,
+            borderBottom: '1px solid rgba(34,211,238,0.22)',
+            background: 'rgba(15,23,42,0.92)',
+          }}
         >
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-medium text-slate-100">
               <span
                 className={`h-2 w-2 rounded-full ${
-                  autoRefresh ? 'animate-pulse bg-emerald-400' : 'bg-amber-300'
+                  autoRefresh ? 'bg-emerald-400' : 'bg-slate-500'
                 }`}
               />
               {autoRefresh ? 'Live market ranking' : 'Live updates paused'}
@@ -177,7 +257,7 @@ export function LoginAdvisoryCard({
               variant="outline"
               size="sm"
               onClick={() => setAutoRefresh((value) => !value)}
-              className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white"
+              className="border-slate-600 bg-transparent font-medium text-slate-300 hover:bg-slate-800"
               title={autoRefresh ? 'Pause automatic market updates' : 'Resume automatic market updates'}
             >
               {autoRefresh ? <Pause className="mr-1.5 h-3.5 w-3.5" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}
@@ -187,7 +267,7 @@ export function LoginAdvisoryCard({
               size="sm"
               onClick={refresh}
               disabled={busy}
-              className="border border-cyan-200/50 bg-cyan-300 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.45)] hover:bg-cyan-200"
+              className="border-0 bg-[#059669] font-semibold text-white hover:bg-emerald-600"
               title="Generate the latest market advisory now"
             >
               <RefreshCw className={`mr-1.5 h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
@@ -197,13 +277,37 @@ export function LoginAdvisoryCard({
         </div>
 
         <div
-          className="relative min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
-          style={{ maxHeight: 'clamp(360px, 62vh, 680px)', scrollbarGutter: 'stable' }}
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
+          style={{ maxHeight: 'clamp(360px, 62vh, 720px)', scrollbarGutter: 'stable' }}
         >
+          <div
+            className="flex flex-wrap gap-2 rounded-xl px-3 py-2.5 text-[11px]"
+            style={{ border: '1px solid rgba(148,163,184,0.2)', background: 'rgba(2,6,23,0.4)' }}
+          >
+            <span className="mr-1 font-semibold uppercase tracking-wide text-slate-400">Legend</span>
+            {(
+              [
+                ['top', 'Top pick'],
+                ['growth', 'Growth'],
+                ['balanced', 'Balanced'],
+                ['caution', 'Higher risk'],
+                ['standaside', 'Stand aside']
+              ] as const
+            ).map(([key, label]) => (
+              <span
+                key={key}
+                className={`rounded-full px-2.5 py-0.5 font-medium ${TONE_STYLES[key].badge}`}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+
           {error && (
             <div
               role="alert"
-              className="flex items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+              className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-rose-200"
+              style={{ border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(127,29,29,0.25)' }}
             >
               <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
             </div>
@@ -212,45 +316,54 @@ export function LoginAdvisoryCard({
           {actionMessage && (
             <div
               role="status"
-              className="flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100"
+              className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-cyan-200"
+              style={{ background: 'rgba(34,211,238,0.1)' }}
             >
-              <CheckCircle2 className="h-4 w-4 shrink-0" /> {actionMessage}
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" /> {actionMessage}
             </div>
           )}
 
           {preparing ? (
-            <div className="flex items-center justify-center gap-3 py-12 text-cyan-100">
-              <Loader2 className="h-5 w-5 animate-spin" />
+            <div className="flex items-center justify-center gap-3 py-12 text-base text-slate-400">
+              <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />
               AI advisory is being prepared
             </div>
           ) : (
             <>
               <div className="flex flex-wrap gap-2 text-xs">
-                <Badge className="border-emerald-300/35 bg-emerald-400/15 text-emerald-100">
+                <Badge className="border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 font-medium text-emerald-300">
                   <TrendingUp className="mr-1 h-3 w-3" />
                   {advisory.market_status || 'Market status pending'}
                 </Badge>
                 <Badge
-                  variant="outline"
                   className={
                     String(advisory.broker_status || '').toLowerCase().includes('disconnect')
-                      ? 'border-red-400/40 bg-red-500/10 text-red-200'
-                      : 'border-white/20 bg-white/5 text-slate-100'
+                      ? 'border border-rose-500/40 bg-rose-500/10 px-2.5 py-1 font-medium text-rose-300'
+                      : 'border border-slate-600 bg-slate-900/80 px-2.5 py-1 font-medium text-slate-300'
                   }
                 >
                   Broker: {advisory.broker_status || '—'}
                 </Badge>
-                <Badge variant="outline" className="border-white/20 bg-white/5 text-slate-100">
+                <Badge className="border border-slate-600 bg-slate-900/80 px-2.5 py-1 font-medium text-slate-300">
                   Risk: {advisory.risk_profile || '—'}
                 </Badge>
-                <Badge className="border-amber-300/40 bg-amber-400/15 text-amber-100 shadow-[0_0_12px_rgba(251,191,36,0.2)]">
+                <Badge className="border border-cyan-500/35 bg-cyan-500/10 px-2.5 py-1 font-medium text-cyan-300">
                   <Shield className="mr-1 h-3 w-3" /> Paper-first
                 </Badge>
               </div>
 
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div
+                className="rounded-xl p-4"
+                style={{ border: '1px solid rgba(34,211,238,0.22)', background: 'rgba(15,23,42,0.7)' }}
+              >
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">
+                  Market advice
+                </div>
                 <p className="text-sm leading-relaxed text-slate-100">{advisory.summary}</p>
-                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                <p
+                  className="mt-2 rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed text-slate-400"
+                  style={{ border: '1px solid rgba(148,163,184,0.18)', background: 'rgba(2,6,23,0.4)' }}
+                >
                   {advisory.disclaimer ||
                     'Not financial advice. No guaranteed returns. Live trading disabled by default.'}
                 </p>
@@ -258,63 +371,93 @@ export function LoginAdvisoryCard({
 
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h4 className="text-sm font-semibold text-white">Ranked opportunities</h4>
+                  <h4 className="text-base font-semibold text-slate-100">Ranked trade opportunities</h4>
                   <p className="text-[11px] text-slate-400">
-                    Sorted by confidence and risk-adjusted quality
+                    Algos Live layout · emerald tabs · slate cards · convert to paper algo
                   </p>
                 </div>
-                <Badge variant="outline" className="border-cyan-300/25 bg-cyan-400/10 text-cyan-100">
+                <Badge className="border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 font-medium text-emerald-300">
                   {recommendations.length} candidates
                 </Badge>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
                 {recommendations.map((recommendation, index) => {
                   const confidence = Math.round(recommendation.confidence_score * 100);
                   const risk = Math.round(recommendation.risk_score * 100);
-                  const isTop = index === 0;
+                  const tone = adviceTone(recommendation, index);
+                  const style = TONE_STYLES[tone];
+                  const isWide = tone === 'top' || tone === 'standaside';
                   return (
                     <article
                       key={recommendation.id}
-                      className={`relative space-y-3 overflow-hidden rounded-xl border p-4 transition hover:-translate-y-0.5 ${
-                        isTop
-                          ? 'border-cyan-300/60 bg-gradient-to-br from-cyan-400/20 via-white/10 to-emerald-400/10 shadow-[0_0_24px_rgba(34,211,238,0.28)] md:col-span-2'
-                          : 'neon-card-inner border-white/15'
+                      className={`relative space-y-3 overflow-hidden rounded-lg border p-4 ${style.ring} ${style.card} ${
+                        isWide ? 'md:col-span-2' : ''
                       }`}
                     >
-                      {isTop && (
-                        <div className="absolute right-0 top-0 rounded-bl-xl border-b border-l border-cyan-200/30 bg-cyan-300 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-950">
-                          <Zap className="mr-1 inline h-3 w-3" /> Top pick
-                        </div>
-                      )}
+                      <div className={`absolute inset-y-0 left-0 w-1 ${style.accentBar}`} />
 
-                      <div className="pr-20">
-                        <h5 className="text-sm font-semibold text-white">{recommendation.title}</h5>
-                        <div className="mt-1 text-[11px] uppercase tracking-wide text-slate-400">
+                      <div className="absolute right-0 top-0 text-[10px] font-semibold uppercase tracking-wider">
+                        <span className={`inline-block rounded-bl-lg px-3 py-1 ${style.badge}`}>
+                          <Zap className="mr-1 inline h-3 w-3" />
+                          #{index + 1} {style.label}
+                        </span>
+                      </div>
+
+                      <div className="pr-28 pl-2">
+                        <h5 className="text-base font-semibold text-slate-100">{recommendation.title}</h5>
+                        <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
                           {recommendation.type} · {recommendation.timeframe}
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-lg border border-emerald-300/15 bg-emerald-400/10 p-2">
-                          <div className="text-[10px] uppercase tracking-wide text-emerald-200/70">
+                      <div
+                        className={`ml-2 rounded-lg border px-3 py-2 text-xs leading-relaxed ${style.adviceBg} ${style.adviceText}`}
+                      >
+                        <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                          Advice
+                        </span>
+                        {recommendation.rationale}
+                      </div>
+
+                      <div className="ml-2 grid grid-cols-2 gap-2">
+                        <div
+                          className="rounded-lg p-2.5"
+                          style={{ border: '1px solid rgba(148,163,184,0.18)', background: 'rgba(2,6,23,0.4)' }}
+                        >
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                             Confidence
                           </div>
-                          <div className="mt-0.5 text-lg font-semibold text-emerald-200">{confidence}%</div>
-                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-800">
+                          <div className="mt-0.5 text-xl font-semibold text-emerald-300">{confidence}%</div>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
                             <div
                               className="h-full rounded-full bg-emerald-400"
                               style={{ width: `${confidence}%` }}
                             />
                           </div>
                         </div>
-                        <div className="rounded-lg border border-amber-300/15 bg-amber-400/10 p-2">
-                          <div className="text-[10px] uppercase tracking-wide text-amber-200/70">Risk</div>
-                          <div className="mt-0.5 text-lg font-semibold text-amber-100">{risk}%</div>
-                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className="rounded-lg p-2.5"
+                          style={{ border: '1px solid rgba(148,163,184,0.18)', background: 'rgba(2,6,23,0.4)' }}
+                        >
+                          <div
+                            className={`text-[10px] font-semibold uppercase tracking-wide ${
+                              risk > 65 ? 'text-rose-300' : risk > 35 ? 'text-amber-300' : 'text-slate-400'
+                            }`}
+                          >
+                            Risk
+                          </div>
+                          <div
+                            className={`mt-0.5 text-xl font-semibold ${
+                              risk > 65 ? 'text-rose-300' : risk > 35 ? 'text-amber-300' : 'text-slate-100'
+                            }`}
+                          >
+                            {risk}%
+                          </div>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
                             <div
                               className={`h-full rounded-full ${
-                                risk > 65 ? 'bg-red-400' : risk > 35 ? 'bg-amber-400' : 'bg-emerald-400'
+                                risk > 65 ? 'bg-rose-400' : risk > 35 ? 'bg-amber-400' : 'bg-emerald-400'
                               }`}
                               style={{ width: `${risk}%` }}
                             />
@@ -322,38 +465,39 @@ export function LoginAdvisoryCard({
                         </div>
                       </div>
 
-                      <p className="text-xs leading-relaxed text-slate-200/90">
-                        {recommendation.rationale}
-                      </p>
-
                       {(recommendation.warnings || []).length > 0 && (
-                        <div className="flex gap-2 rounded-lg border border-amber-300/15 bg-amber-400/5 px-2.5 py-2 text-[11px] leading-relaxed text-amber-100/85">
-                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <div
+                          className="ml-2 flex gap-2 rounded-lg px-2.5 py-2 text-[11px] leading-relaxed text-amber-100"
+                          style={{ border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(245,158,11,0.08)' }}
+                        >
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
                           {(recommendation.warnings || []).slice(0, 2).join(' · ')}
                         </div>
                       )}
 
                       {recommendation.actions?.includes('convert_to_algo') && advisory.advisory_id && (
-                        <Button
-                          size="sm"
-                          disabled={convertingId === recommendation.id}
-                          className={`w-full justify-between ${
-                            isTop
-                              ? 'bg-cyan-300 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.4)] hover:bg-cyan-200'
-                              : 'border border-cyan-300/30 bg-cyan-400/15 text-cyan-100 hover:bg-cyan-400/25'
-                          }`}
-                          onClick={() => void handleConvert(recommendation)}
-                        >
-                          <span className="flex items-center">
-                            {convertingId === recommendation.id ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <Zap className="mr-2 h-4 w-4" />
-                            )}
-                            {convertingId === recommendation.id ? 'Creating strategy…' : 'Convert to Algo'}
-                          </span>
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
+                        <div className="ml-2 pt-1">
+                          <Button
+                            size="sm"
+                            disabled={convertingId === recommendation.id}
+                            className={`h-10 w-full justify-between text-sm ${style.cta}`}
+                            onClick={() => void handleConvert(recommendation)}
+                          >
+                            <span className="flex items-center">
+                              {convertingId === recommendation.id ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Zap className="mr-2 h-4 w-4" />
+                              )}
+                              {convertingId === recommendation.id
+                                ? 'Creating strategy…'
+                                : tone === 'standaside'
+                                  ? 'Review stand-aside plan'
+                                  : 'Convert to Algo'}
+                            </span>
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
                       )}
                     </article>
                   );
@@ -361,20 +505,22 @@ export function LoginAdvisoryCard({
               </div>
 
               {recommendations.length === 0 && (
-                <div className="rounded-xl border border-dashed border-white/15 bg-white/5 px-4 py-8 text-center text-sm text-slate-400">
+                <div
+                  className="rounded-xl px-4 py-8 text-center text-sm text-slate-400"
+                  style={{ border: '1px dashed rgba(148,163,184,0.25)', background: 'rgba(2,6,23,0.35)' }}
+                >
                   No qualified strategy candidates yet. Keep live updates on or choose Update now.
                 </div>
               )}
 
               {onOpenMarketplace && (
                 <Button
-                  variant="outline"
                   onClick={onOpenMarketplace}
-                  className="w-full justify-between border-white/15 bg-white/5 text-slate-100 hover:bg-white/10 hover:text-white"
+                  className="h-11 w-full justify-between border-0 bg-[#059669] font-semibold text-white hover:bg-emerald-600"
                 >
                   <span className="flex items-center">
-                    <ExternalLink className="mr-2 h-4 w-4 text-cyan-300" />
-                    Browse the full strategy marketplace
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Browse full strategy marketplace
                   </span>
                   <ChevronRight className="h-4 w-4" />
                 </Button>

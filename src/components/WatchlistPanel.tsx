@@ -1,8 +1,14 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { Eye, Plus, Trash2, RefreshCw, Star, LineChart, Sparkles, Loader2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   addWatchlistSymbol,
   createWatchlist,
@@ -12,7 +18,7 @@ import {
   type Watchlist,
   type WatchlistItem,
 } from '@/api/watchlist';
-import { STOCK_CATALOG } from '@/components/StockSymbolPicker';
+import { StockSymbolPicker, STOCK_CATALOG, type StockOption } from '@/components/StockSymbolPicker';
 import { StockChartModal } from '@/components/StockChartModal';
 import { advisorService } from '@/services/advisorService';
 import { toast } from 'sonner';
@@ -84,10 +90,10 @@ function rowSuggestion(item: WatchlistItem): RowSuggestion {
   };
 }
 
-function biasClass(bias: Bias) {
-  if (bias === 'BUY') return 'border-emerald-500/45 bg-emerald-500/10 text-emerald-300';
-  if (bias === 'SELL') return 'border-rose-500/45 bg-rose-500/10 text-rose-300';
-  return 'border-amber-500/40 bg-amber-500/10 text-amber-200';
+function biasColor(bias: Bias) {
+  if (bias === 'BUY') return '#6ee7b7';
+  if (bias === 'SELL') return '#f87171';
+  return '#94a3b8';
 }
 
 function fmtPrice(n?: number) {
@@ -101,18 +107,62 @@ function fmtQty(n?: number) {
 }
 
 function fmtChange(change?: number, pct?: number) {
-  if (change == null || pct == null) return { text: '—', className: 'text-zinc-500' };
+  if (change == null || pct == null) return { text: '—', color: '#64748b' };
   const sign = change >= 0 ? '+' : '';
   return {
     text: `${sign}${change.toFixed(2)} (${sign}${pct.toFixed(2)}%)`,
-    className: change >= 0 ? 'text-emerald-400' : 'text-rose-400',
+    color: change >= 0 ? '#34d399' : '#f87171',
   };
 }
+
+const panelCard: CSSProperties = {
+  borderRadius: 12,
+  border: '1px solid rgba(34,211,238,0.22)',
+  background: 'rgba(15,23,42,0.7)',
+};
+
+const tabBtn = (active: boolean): CSSProperties => ({
+  padding: '6px 12px',
+  borderRadius: 8,
+  fontSize: 12,
+  border: active ? '1px solid rgba(52,211,153,0.55)' : '1px solid rgba(148,163,184,0.2)',
+  background: active ? 'rgba(16,185,129,0.15)' : 'transparent',
+  color: active ? '#6ee7b7' : '#94a3b8',
+  cursor: 'pointer',
+});
+
+const ghostBtn: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: '6px 10px',
+  borderRadius: 8,
+  border: '1px solid rgba(34,211,238,0.35)',
+  background: 'rgba(34,211,238,0.1)',
+  color: '#67e8f9',
+  cursor: 'pointer',
+  fontSize: 12,
+};
+
+const solidBtn: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: '6px 12px',
+  borderRadius: 8,
+  border: 'none',
+  background: '#059669',
+  color: '#fff',
+  cursor: 'pointer',
+  fontSize: 12,
+  fontWeight: 600,
+};
 
 export function WatchlistPanel() {
   const [lists, setLists] = useState<Watchlist[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [symbol, setSymbol] = useState('');
+  const [exchange, setExchange] = useState('NSE');
   const [newListName, setNewListName] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -126,6 +176,7 @@ export function WatchlistPanel() {
   const [aiError, setAiError] = useState<string | null>(null);
   const [showAiPopup, setShowAiPopup] = useState(false);
   const aiReqRef = useRef(0);
+  const refreshReqRef = useRef(0);
 
   const active = useMemo(
     () => lists.find((l) => l.id === activeId) || lists[0] || null,
@@ -200,23 +251,30 @@ export function WatchlistPanel() {
   }
 
   const refresh = useCallback(async (opts?: { quiet?: boolean }) => {
+    const reqId = ++refreshReqRef.current;
     if (!opts?.quiet) setLoading(true);
     else setQuotesLoading(true);
-    setError(null);
+    if (!opts?.quiet) setError(null);
     try {
       const data = await listWatchlists();
+      if (refreshReqRef.current !== reqId) return;
       setLists(Array.isArray(data) ? data : []);
       setActiveId((prev) => {
         if (prev && data.some((l) => l.id === prev)) return prev;
         return data.find((l) => l.isDefault)?.id || data[0]?.id || null;
       });
+      setError(null);
     } catch (e) {
+      if (refreshReqRef.current !== reqId) return;
       const msg = e instanceof Error ? e.message : 'Failed to load watchlists';
+      // Keep showing prior lists on quiet poll failures; only hard-fail on first load.
       setError(msg);
-      toast.error(msg);
+      if (!opts?.quiet) toast.error(msg);
     } finally {
-      setLoading(false);
-      setQuotesLoading(false);
+      if (refreshReqRef.current === reqId) {
+        setLoading(false);
+        setQuotesLoading(false);
+      }
     }
   }, []);
 
@@ -230,24 +288,83 @@ export function WatchlistPanel() {
     return () => window.clearInterval(id);
   }, [refresh]);
 
-  async function onAddSymbol(e?: FormEvent) {
-    e?.preventDefault();
-    if (!active || !symbol.trim()) return;
+  function resolveExchange(sym: string, preferred?: string) {
+    if (preferred) return preferred.toUpperCase();
+    const catalogHit = STOCK_CATALOG.find((s) => s.symbol.toUpperCase() === sym);
+    if (catalogHit?.exchange) return catalogHit.exchange.toUpperCase();
+    if (/^(NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX|BANKEX)\d{3,6}(CE|PE)$/.test(sym)) return 'NFO';
+    if (/^(NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX|BANKEX)FUT$/.test(sym)) return 'NFO';
+    return (exchange || 'NSE').toUpperCase();
+  }
+
+  async function addScriptToWatchlist(symRaw: string, exchangeHint?: string, openChart = false) {
+    if (!active) return;
+    const typed = symRaw.trim().toUpperCase();
+    const sym = typed.includes(' ') ? typed.replace(/\s+/g, '') : typed;
+    if (!/^[A-Z0-9]{1,32}$/.test(sym) || /\d$/.test(sym)) {
+      throw new Error('Pick a script from the list (index, CE/PE, or FUT)');
+    }
+    const ex = resolveExchange(sym, exchangeHint);
     setBusy(true);
     setError(null);
     setInfo(null);
     try {
-      const sym = symbol.trim().toUpperCase();
-      const updated = await addWatchlistSymbol(active.id, sym);
-      setLists((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      let updated;
+      try {
+        updated = await addWatchlistSymbol(active.id, sym, ex);
+        toast.success(`${sym} added`);
+        setInfo(`${sym} added to ${updated.name}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '';
+        if (!/already/i.test(msg)) throw e;
+        const data = await listWatchlists();
+        updated = (Array.isArray(data) ? data : []).find((l) => l.id === active.id) || active;
+        setInfo(`${sym} is already on ${updated.name}`);
+      }
+      setLists((prev) => {
+        const has = prev.some((l) => l.id === updated.id);
+        if (!has) return [updated, ...prev];
+        return prev.map((l) => (l.id === updated.id ? updated : l));
+      });
+      const item =
+        updated.items.find((i) => i.symbol.toUpperCase() === sym) ||
+        ({
+          id: `tmp-${sym}`,
+          symbol: sym,
+          exchange: ex,
+          sortOrder: 0,
+          name: sym,
+        } satisfies WatchlistItem);
       setSymbol('');
-      setInfo(`${sym} added to ${updated.name}`);
-      toast.success(`${sym} added`);
-    } catch (e) {
+      setExchange('NSE');
+      if (openChart) setChartStock(item);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onPickSymbol(stock: StockOption) {
+    const sym = stock.symbol.toUpperCase();
+    const ex = (stock.exchange || 'NSE').toUpperCase();
+    setSymbol(sym);
+    setExchange(ex);
+    void addScriptToWatchlist(sym, ex, true).catch((e) => {
       const msg = e instanceof Error ? e.message : 'Failed to add symbol';
       setError(msg);
       toast.error(msg);
-    } finally {
+      setBusy(false);
+    });
+  }
+
+  async function onAddSymbol(e?: FormEvent) {
+    e?.preventDefault();
+    if (!active || !symbol.trim()) return;
+    try {
+      await addScriptToWatchlist(symbol, exchange, true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to add symbol';
+      setError(msg);
+      toast.error(msg);
       setBusy(false);
     }
   }
@@ -322,326 +439,337 @@ export function WatchlistPanel() {
 
   if (loading) {
     return (
-      <div className="flex h-40 items-center justify-center text-sm text-zinc-400">
+      <div
+        style={{
+          display: 'flex',
+          height: 160,
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          color: '#94a3b8',
+          fontSize: 13,
+        }}
+      >
+        <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />
         Loading watchlists…
       </div>
     );
   }
 
   return (
-    <div className="space-y-4" data-testid="watchlist-panel">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: 420 }} data-testid="watchlist-panel">
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
         <div>
-          <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
-            <Eye className="h-5 w-5 text-cyan-400" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 16, color: '#f1f5f9' }}>
+            <Eye className="h-4 w-4 text-cyan-300" />
             Stock Watchlists
-          </h2>
-          <p className="text-sm text-zinc-400">
-            Track NSE symbols. Default list seeds 10 large-cap names on first open.
-          </p>
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+            Same desk as Trading / Investing Algos · live quotes · tape bias
+          </div>
         </div>
-        <Button
+        <button
           type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => void refresh({ quiet: true })}
           disabled={busy || quotesLoading}
+          onClick={() => void refresh({ quiet: true })}
+          style={{ ...ghostBtn, opacity: busy || quotesLoading ? 0.6 : 1 }}
         >
-          <RefreshCw className={`mr-1 h-3.5 w-3.5 ${quotesLoading ? 'animate-spin' : ''}`} />
-          Refresh quotes
-        </Button>
+          <RefreshCw className={`h-3.5 w-3.5 ${quotesLoading ? 'animate-spin' : ''}`} /> Sync quotes
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: 10,
+          padding: 12,
+          ...panelCard,
+        }}
+      >
+        {[
+          ['Buy bias', listSnapshot.buys, '#6ee7b7'],
+          ['Hold', listSnapshot.holds, '#e2e8f0'],
+          ['Sell bias', listSnapshot.sells, '#f87171'],
+        ].map(([label, value, color]) => (
+          <div key={String(label)}>
+            <div style={{ fontSize: 11, color: '#94a3b8' }}>{label}</div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: String(color), marginTop: 4 }}>{value}</div>
+          </div>
+        ))}
       </div>
 
       {error ? (
-        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
+        <div style={{ fontSize: 12, color: '#fecaca', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(127,29,29,0.25)' }}>
           {error}
         </div>
       ) : null}
       {info ? (
-        <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+        <div style={{ fontSize: 12, color: '#67e8f9', padding: '6px 10px', borderRadius: 8, background: 'rgba(34,211,238,0.1)' }}>
           {info}
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        {lists.map((l) => (
-          <button
-            key={l.id}
-            type="button"
-            onClick={() => setActiveId(l.id)}
-            className={`rounded-lg border px-3 py-1.5 text-xs transition ${
-              active?.id === l.id
-                ? 'border-cyan-500/50 bg-cyan-500/15 text-cyan-200'
-                : 'border-zinc-700 bg-zinc-900/50 text-zinc-300 hover:border-zinc-500'
-            }`}
-          >
-            {l.isDefault ? <Star className="mr-1 inline h-3 w-3 text-amber-400" /> : null}
-            {l.name}
-            <span className="ml-1 text-zinc-500">({l.items.length})</span>
-          </button>
-        ))}
-      </div>
-
-      <form
-        className="flex flex-wrap items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-3"
-        onSubmit={(e) => void onCreateList(e)}
-      >
-        <Input
-          value={newListName}
-          onChange={(e) => setNewListName(e.target.value)}
-          placeholder="New watchlist name"
-          className="max-w-xs border-zinc-600 bg-zinc-950 text-white"
-          disabled={busy}
-          autoComplete="off"
-        />
-        <Button
-          type="submit"
-          size="sm"
-          className="bg-cyan-600 text-white hover:bg-cyan-500"
-          disabled={busy || !newListName.trim()}
+      <div style={{ display: 'flex', gap: 14, minHeight: 320 }}>
+        <aside
+          style={{
+            width: 220,
+            flexShrink: 0,
+            borderRadius: 12,
+            border: '1px solid rgba(148,163,184,0.2)',
+            background: 'rgba(15,23,42,0.65)',
+            padding: 12,
+          }}
         >
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          {busy ? 'Creating…' : 'Create list'}
-        </Button>
-        {active && !active.isDefault ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="destructive"
-            onClick={() => void onDeleteList()}
-            disabled={busy}
-          >
-            <Trash2 className="mr-1 h-3.5 w-3.5" />
-            Delete list
-          </Button>
-        ) : null}
-      </form>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#f1f5f9', marginBottom: 12 }}>Your lists</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+            {lists.map((l) => (
+              <button key={l.id} type="button" onClick={() => setActiveId(l.id)} style={{ ...tabBtn(active?.id === l.id), textAlign: 'left' }}>
+                {l.isDefault ? <Star className="mr-1 inline h-3 w-3 text-amber-400" /> : null}
+                {l.name}
+                <span style={{ marginLeft: 6, opacity: 0.7 }}>({l.items.length})</span>
+              </button>
+            ))}
+            {lists.length === 0 ? <div style={{ fontSize: 11, color: '#64748b' }}>No lists yet</div> : null}
+          </div>
 
-      {active ? (
-        <div className="space-y-3 rounded-xl border border-zinc-700/70 bg-zinc-900/40 p-4">
-          <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => void onAddSymbol(e)}>
-            <select
-              value={symbol}
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#cbd5e1', marginBottom: 8 }}>Create list</div>
+          <form onSubmit={(e) => void onCreateList(e)} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <input
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              placeholder="New watchlist name"
               disabled={busy}
-              onChange={(e) => setSymbol(e.target.value)}
-              className="h-9 min-w-[280px] max-w-md flex-1 rounded-md border border-zinc-600 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/40 disabled:opacity-50"
-              aria-label="Select stock"
-            >
-              <option value="">Select a stock…</option>
-              {STOCK_CATALOG.filter(
-                (s) => !active.items.some((i) => i.symbol.toUpperCase() === s.symbol.toUpperCase())
-              ).map((s) => (
-                <option key={s.symbol} value={s.symbol}>
-                  {s.symbol} — {s.name} ({s.exchange})
-                </option>
-              ))}
-            </select>
-            <Button
-              type="submit"
-              size="sm"
-              className="bg-emerald-600 text-white hover:bg-emerald-500"
-              disabled={busy || !symbol.trim()}
-            >
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Add stock
-            </Button>
-            {active.items.length > 0 ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/10"
-                onClick={openWatchlistAi}
-              >
-                <Sparkles className="mr-1 h-3.5 w-3.5" />
-                AI advice
-              </Button>
+              style={{
+                height: 34,
+                borderRadius: 8,
+                border: '1px solid rgba(148,163,184,0.25)',
+                background: 'rgba(2,6,23,0.45)',
+                color: '#e2e8f0',
+                padding: '0 10px',
+                fontSize: 12,
+              }}
+            />
+            <button type="submit" disabled={busy || !newListName.trim()} style={{ ...solidBtn, opacity: busy || !newListName.trim() ? 0.5 : 1 }}>
+              <Plus className="h-3.5 w-3.5" /> Create
+            </button>
+            {active && !active.isDefault ? (
+              <button type="button" disabled={busy} onClick={() => void onDeleteList()} style={{ ...ghostBtn, border: '1px solid rgba(248,113,113,0.35)', color: '#fca5a5', background: 'rgba(127,29,29,0.2)' }}>
+                <Trash2 className="h-3.5 w-3.5" /> Delete list
+              </button>
             ) : null}
           </form>
+        </aside>
 
-          <div className="overflow-auto rounded-lg border border-zinc-800">
-            <table className="w-full min-w-[1080px] text-left text-sm">
-              <thead className="bg-zinc-950 text-xs uppercase text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2">#</th>
-                  <th className="px-3 py-2">Stock</th>
-                  <th className="px-3 py-2">AI</th>
-                  <th className="px-3 py-2">LTP</th>
-                  <th className="px-3 py-2">Change</th>
-                  <th className="px-3 py-2">Open</th>
-                  <th className="px-3 py-2">Day high</th>
-                  <th className="px-3 py-2">Day low</th>
-                  <th className="px-3 py-2">Volume</th>
-                  <th className="px-3 py-2">Buyers</th>
-                  <th className="px-3 py-2">Sellers</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
+            {lists.map((l) => (
+              <button key={`tab-${l.id}`} type="button" onClick={() => setActiveId(l.id)} style={tabBtn(active?.id === l.id)}>
+                {l.name}
+              </button>
+            ))}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              {active && active.items.length > 0 ? (
+                <button type="button" onClick={openWatchlistAi} style={ghostBtn}>
+                  <Sparkles className="h-3.5 w-3.5" /> AI advice
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {active ? (
+            <>
+              <form onSubmit={(e) => void onAddSymbol(e)} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+                <StockSymbolPicker
+                  value={symbol}
+                  disabled={busy}
+                  excludeSymbols={(active?.items || []).map((i) => i.symbol)}
+                  placeholder="Search stock or index e.g. NIFTY"
+                  onChange={(sym) => {
+                    setSymbol(sym);
+                    if (!sym) setExchange('NSE');
+                  }}
+                  onSelect={onPickSymbol}
+                />
+                <button type="submit" disabled={busy || !symbol.trim()} style={{ ...solidBtn, opacity: busy || !symbol.trim() ? 0.5 : 1 }}>
+                  <Plus className="h-3.5 w-3.5" /> Add stock
+                </button>
+              </form>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.4fr 0.7fr 0.9fr 1.1fr 0.8fr 0.8fr 0.8fr 0.9fr',
+                  gap: 8,
+                  padding: '8px 10px',
+                  fontSize: 11,
+                  color: '#64748b',
+                  borderBottom: '1px solid rgba(148,163,184,0.2)',
+                }}
+              >
+                <span>Stock</span>
+                <span>Bias</span>
+                <span>LTP</span>
+                <span>Change</span>
+                <span>High</span>
+                <span>Low</span>
+                <span>Volume</span>
+                <span />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {active.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={12} className="px-3 py-6 text-center text-zinc-500">
-                      No symbols yet — add one above.
-                    </td>
-                  </tr>
+                  <div style={{ padding: 28, textAlign: 'center', color: '#64748b', fontSize: 13 }}>No symbols yet — add one above</div>
                 ) : (
-                  active.items.map((item, idx) => {
+                  active.items.map((item) => {
                     const ch = fmtChange(item.change, item.changePercent);
                     const idea = rowIdeas.get(item.id);
                     return (
-                      <tr
+                      <button
                         key={item.id}
-                        className="cursor-pointer border-t border-zinc-800 text-zinc-200 hover:bg-cyan-500/5"
+                        type="button"
                         onClick={() => setChartStock(item)}
-                        title={`Open ${item.symbol} chart`}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1.4fr 0.7fr 0.9fr 1.1fr 0.8fr 0.8fr 0.8fr 0.9fr',
+                          gap: 8,
+                          alignItems: 'center',
+                          padding: '12px 10px',
+                          border: 'none',
+                          borderBottom: '1px solid rgba(148,163,184,0.12)',
+                          background: 'transparent',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          color: '#e2e8f0',
+                          width: '100%',
+                        }}
                       >
-                        <td className="px-3 py-2 text-zinc-500">{idx + 1}</td>
-                        <td className="px-3 py-2">
-                          <div className="font-mono font-medium text-cyan-300 underline-offset-2 hover:underline">
-                            {item.symbol}
-                          </div>
-                          <div className="text-[11px] text-zinc-500">
-                            {item.name || item.exchange}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          {idea ? (
-                            <div className="space-y-0.5">
-                              <span
-                                className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${biasClass(idea.bias)}`}
-                              >
-                                {idea.bias} · {idea.confidence}%
-                              </span>
-                              <div className="max-w-[140px] truncate text-[10px] text-zinc-500">
-                                {idea.reason}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-zinc-600">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 font-medium tabular-nums">{fmtPrice(item.price)}</td>
-                        <td className={`px-3 py-2 text-xs tabular-nums ${ch.className}`}>{ch.text}</td>
-                        <td className="px-3 py-2 tabular-nums text-zinc-300">{fmtPrice(item.open)}</td>
-                        <td className="px-3 py-2 tabular-nums text-emerald-300/90">{fmtPrice(item.high)}</td>
-                        <td className="px-3 py-2 tabular-nums text-rose-300/90">{fmtPrice(item.low)}</td>
-                        <td className="px-3 py-2 tabular-nums text-zinc-400">{fmtQty(item.volume)}</td>
-                        <td className="px-3 py-2 tabular-nums text-emerald-400">{fmtQty(item.buyers)}</td>
-                        <td className="px-3 py-2 tabular-nums text-rose-400">{fmtQty(item.sellers)}</td>
-                        <td className="px-3 py-2 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setChartStock(item);
-                              }}
-                            >
-                              <LineChart className="mr-1 h-3.5 w-3.5" />
-                              Chart
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="text-rose-400 hover:text-rose-300"
-                              disabled={busy}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void onRemove(item.id, item.symbol);
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: '#67e8f9' }}>{item.symbol}</div>
+                          <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.name || item.exchange}</div>
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: idea ? biasColor(idea.bias) : '#64748b' }}>
+                          {idea ? `${idea.bias} · ${idea.confidence}%` : '—'}
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtPrice(item.price)}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: ch.color }}>{ch.text}</div>
+                        <div style={{ fontSize: 12, color: '#6ee7b7' }}>{fmtPrice(item.high)}</div>
+                        <div style={{ fontSize: 12, color: '#fca5a5' }}>{fmtPrice(item.low)}</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8' }}>{fmtQty(item.volume)}</div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setChartStock(item);
+                            }}
+                            style={{ ...ghostBtn, padding: '4px 8px', fontSize: 11 }}
+                          >
+                            <LineChart className="h-3 w-3" /> Chart
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void onRemove(item.id, item.symbol);
+                            }}
+                            style={{
+                              ...ghostBtn,
+                              padding: '4px 8px',
+                              border: '1px solid rgba(248,113,113,0.35)',
+                              color: '#fca5a5',
+                              background: 'rgba(127,29,29,0.2)',
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </span>
+                        </div>
+                      </button>
                     );
                   })
                 )}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-[11px] text-zinc-500">
-            Click a stock row to open its price chart. Use AI advice when you want a list summary.
-            Row AI is tape-based. Quotes refresh every 30s.
-          </p>
+              </div>
+              <div style={{ marginTop: 10, fontSize: 11, color: '#64748b' }}>
+                Click a row for the chart · tape bias is local · AI advice summarizes the list · quotes every 30s
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: 28, textAlign: 'center', color: '#64748b', fontSize: 13 }}>No watchlists yet — create one in the left panel</div>
+          )}
         </div>
-      ) : (
-        <p className="text-sm text-zinc-500">No watchlists yet — create one above.</p>
-      )}
+      </div>
 
-      {chartStock ? (
-        <StockChartModal stock={chartStock} onClose={() => setChartStock(null)} />
-      ) : null}
+      {chartStock ? <StockChartModal stock={chartStock} onClose={() => setChartStock(null)} /> : null}
 
       {showAiPopup
         ? createPortal(
             <div
-              className="fixed inset-0 z-[99998] flex items-center justify-center bg-black/70 p-4"
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 99998,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(0,0,0,0.72)',
+                padding: 16,
+              }}
               role="dialog"
               aria-modal="true"
               aria-label="Watchlist AI advice"
               onClick={() => setShowAiPopup(false)}
             >
               <div
-                className="w-full max-w-lg rounded-xl border border-cyan-500/30 bg-zinc-950 p-4 shadow-2xl"
+                style={{
+                  width: '100%',
+                  maxWidth: 520,
+                  borderRadius: 12,
+                  border: '1px solid rgba(34,211,238,0.28)',
+                  background: 'rgba(15,23,42,0.96)',
+                  padding: 16,
+                  color: '#e2e8f0',
+                }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="mb-3 flex flex-wrap items-center gap-2">
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                   <Sparkles className="h-4 w-4 text-cyan-300" />
-                  <span className="text-sm font-semibold text-cyan-200">AI advice</span>
-                  <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">
-                    BUY {listSnapshot.buys}
-                  </span>
-                  <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-300">
-                    SELL {listSnapshot.sells}
-                  </span>
-                  <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-200">
-                    HOLD {listSnapshot.holds}
-                  </span>
-                  {aiProvider ? (
-                    <span className="text-[10px] text-zinc-500">via {aiProvider}</span>
-                  ) : null}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="ml-auto h-7 border-zinc-600 text-zinc-300"
-                    disabled={aiLoading}
-                    onClick={() => void fetchWatchlistAi()}
-                  >
-                    {aiLoading ? (
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="mr-1 h-3 w-3" />
-                    )}
-                    Refresh
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0 text-zinc-400"
-                    aria-label="Close AI advice"
-                    onClick={() => setShowAiPopup(false)}
-                  >
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>AI advice</span>
+                  <span style={{ fontSize: 11, color: '#6ee7b7' }}>BUY {listSnapshot.buys}</span>
+                  <span style={{ fontSize: 11, color: '#f87171' }}>SELL {listSnapshot.sells}</span>
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>HOLD {listSnapshot.holds}</span>
+                  {aiProvider ? <span style={{ fontSize: 10, color: '#64748b' }}>via {aiProvider}</span> : null}
+                  <button type="button" disabled={aiLoading} onClick={() => void fetchWatchlistAi()} style={{ ...ghostBtn, marginLeft: 'auto' }}>
+                    {aiLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Refresh
+                  </button>
+                  <button type="button" aria-label="Close AI advice" onClick={() => setShowAiPopup(false)} style={{ ...ghostBtn, padding: 6 }}>
                     <X className="h-4 w-4" />
-                  </Button>
+                  </button>
                 </div>
-                <div className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-sm leading-relaxed text-zinc-300">
+                <div
+                  style={{
+                    maxHeight: 260,
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    borderRadius: 10,
+                    border: '1px solid rgba(148,163,184,0.18)',
+                    background: 'rgba(2,6,23,0.45)',
+                    padding: '10px 12px',
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    color: '#cbd5e1',
+                  }}
+                >
                   {aiLoading && !aiText
                     ? 'Asking advisor for a watchlist summary…'
                     : aiError
                       ? `AI note unavailable: ${aiError}. Row biases in the table still apply.`
                       : aiText || 'AI narrative will appear here.'}
                 </div>
-                <p className="mt-2 text-[10px] text-zinc-500">
+                <div style={{ marginTop: 8, fontSize: 10, color: '#64748b' }}>
                   Advisory only — AI never executes. Close anytime with X or outside click.
-                </p>
+                </div>
               </div>
             </div>,
             document.body

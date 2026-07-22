@@ -222,6 +222,84 @@ export class DatabaseService {
     });
   }
 
+  /** Paper / algo desk available cash stored in user settings. */
+  static async getFunds(userId: string) {
+    const row = await this.getUserSettings(userId);
+    const settings = (row.settings || {}) as Record<string, unknown>;
+    const funds = (settings.funds || {}) as Record<string, unknown>;
+    const availableCash = Number(funds.availableCash ?? 0);
+    const ledger = Array.isArray(funds.ledger) ? funds.ledger : [];
+    return {
+      availableCash: Number.isFinite(availableCash) ? availableCash : 0,
+      currency: 'INR',
+      ledger: ledger.slice(0, 50)
+    };
+  }
+
+  static async transferFunds(
+    userId: string,
+    type: 'add' | 'withdraw',
+    amount: number,
+    note?: string
+  ) {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new AppError('Enter a valid amount greater than zero', 400);
+    }
+    if (amount > 50_000_000) {
+      throw new AppError('Amount exceeds maximum allowed (₹5 crore)', 400);
+    }
+
+    const row = await this.getUserSettings(userId);
+    const settings = { ...((row.settings || {}) as Record<string, unknown>) };
+    const funds = { ...((settings.funds || {}) as Record<string, unknown>) };
+    const current = Number(funds.availableCash ?? 0) || 0;
+
+    if (type === 'withdraw' && amount > current) {
+      throw new AppError(`Insufficient funds. Available: ₹${current.toLocaleString('en-IN')}`, 400);
+    }
+
+    const next = type === 'add' ? current + amount : current - amount;
+    const entry = {
+      id: `fund-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      amount,
+      note: note?.trim() || (type === 'add' ? 'Add fund' : 'Withdraw fund'),
+      createdAt: new Date().toISOString(),
+      balanceAfter: next
+    };
+    const ledger = [entry, ...(Array.isArray(funds.ledger) ? funds.ledger : [])].slice(0, 100);
+
+    settings.funds = { availableCash: next, ledger };
+    await this.upsertUserSettings(userId, settings);
+
+    // Keep primary portfolio book values in sync for Capital Allocated displays
+    const portfolio = await prisma.portfolio.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { updatedAt: 'desc' }
+    });
+    if (portfolio) {
+      const invested = Math.max(0, Number(portfolio.investedValue) + (type === 'add' ? amount : -amount));
+      const currentVal = Math.max(0, Number(portfolio.currentValue) + (type === 'add' ? amount : -amount));
+      await prisma.portfolio.update({
+        where: { id: portfolio.id },
+        data: {
+          investedValue: invested,
+          currentValue: currentVal,
+          totalValue: currentVal,
+          totalPnL: currentVal - invested,
+          totalPnLPercent: invested > 0 ? ((currentVal - invested) / invested) * 100 : 0
+        }
+      });
+    }
+
+    return {
+      availableCash: next,
+      currency: 'INR',
+      entry,
+      ledger: ledger.slice(0, 50)
+    };
+  }
+
   // ==================== ANALYTICS ====================
 
   static async getPortfolioSummary(userId: string) {

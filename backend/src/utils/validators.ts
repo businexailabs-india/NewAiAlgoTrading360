@@ -27,13 +27,13 @@ export const validatePhone = (phone: string): boolean => {
 };
 
 export const validateSymbol = (symbol: string): boolean => {
-  // Stock symbol validation (alphanumeric, 1-20 chars)
-  const symbolRegex = /^[A-Z0-9]{1,20}$/;
+  // Equity / index / F&O compact symbols (e.g. NIFTY24000CE)
+  const symbolRegex = /^[A-Z0-9]{1,32}$/;
   return symbolRegex.test(symbol.toUpperCase());
 };
 
 export const validateExchange = (exchange: string): boolean => {
-  const validExchanges = ['NSE', 'BSE', 'NFO', 'BFO', 'MCX'];
+  const validExchanges = ['NSE', 'BSE', 'NFO', 'BFO', 'MCX', 'INDEX'];
   return validExchanges.includes(exchange.toUpperCase());
 };
 

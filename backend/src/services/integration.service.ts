@@ -738,11 +738,22 @@ export class IntegrationService {
     executionMode?: 'PAPER' | 'LIVE';
     expectedVersion?: number;
   }) {
-    if (body.executionMode === 'LIVE') {
-      // Force paper-first unless controls allow; still store selection but warn
-      logger.info(`User ${userId} requested LIVE execution mode`);
+    // Mode is owned by TradingModeService (TopBar + PIN). Integrations only select account/MCP.
+    if (body.executionMode != null) {
+      throw new AppError(
+        'executionMode cannot be changed here — use TopBar LIVE/PAPER switch with Trading PIN',
+        400,
+        {
+          reason: 'MODE_VIA_TOPBAR',
+          correctiveAction: 'Switch mode from the TopBar ModeSwitchModal (PIN required for LIVE)'
+        }
+      );
     }
-    const updated = await ExecutionTargetResolver.setContext(userId, body);
+    const updated = await ExecutionTargetResolver.setContext(userId, {
+      activeBrokerConnectionId: body.activeBrokerConnectionId,
+      activeMcpServerConfigId: body.activeMcpServerConfigId,
+      expectedVersion: body.expectedVersion
+    });
     await prisma.auditLog.create({
       data: {
         userId,

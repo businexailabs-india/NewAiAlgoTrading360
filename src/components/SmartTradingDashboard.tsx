@@ -1,10 +1,7 @@
-import { useState } from 'react';
-import { motion } from 'motion/react';
+import { useState, type CSSProperties } from 'react';
 import { Activity, TrendingUp, Zap, Filter, Download, Share2, Mic, Loader2, Radio } from 'lucide-react';
-import { Button } from './ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Badge } from './ui/badge';
 import { StrategyPerformanceDashboard } from './StrategyPerformanceDashboard';
 import { TradeAnalyticsPanel } from './TradeAnalyticsPanel';
 import { AIAdvisorChat } from './AIAdvisorChat';
@@ -17,6 +14,40 @@ import { useTradingDashboard } from '../hooks/useTradingDashboard';
 import { useMarketData } from '../contexts/MarketDataContext';
 import { LiveIndicesBar } from './LiveIndicesBar';
 
+const panelCard: CSSProperties = {
+  borderRadius: 12,
+  border: '1px solid rgba(34,211,238,0.22)',
+  background: 'rgba(15,23,42,0.7)',
+  padding: 16,
+};
+
+const ghostBtn: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '6px 12px',
+  borderRadius: 8,
+  border: '1px solid rgba(34,211,238,0.35)',
+  background: 'rgba(34,211,238,0.1)',
+  color: '#67e8f9',
+  cursor: 'pointer',
+  fontSize: 12,
+};
+
+const solidBtn: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '6px 12px',
+  borderRadius: 8,
+  border: 'none',
+  background: '#059669',
+  color: '#fff',
+  cursor: 'pointer',
+  fontSize: 12,
+  fontWeight: 600,
+};
+
 export function SmartTradingDashboard() {
   const [timeRange, setTimeRange] = useState('1M');
   const [strategyType, setStrategyType] = useState('all');
@@ -25,121 +56,90 @@ export function SmartTradingDashboard() {
   const { summary, agents, orders, trades, loading } = useTradingDashboard(timeRange);
   const { isLive, lastUpdated } = useMarketData();
 
-  const handleExport = () => {
-    console.log('Exporting data to CSV/Excel...');
-    // Implementation for export functionality
-  };
-
-  const handleShare = () => {
-    console.log('Sharing report...');
-    // Implementation for share functionality
-  };
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-2xl p-6 shadow-xl"
-      >
-        <div className="flex items-start justify-between gap-6 flex-wrap">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-gradient-to-r from-green-500/20 to-emerald-500/20 rounded-lg border border-green-500/30">
-                <Activity className="w-6 h-6 text-green-400" />
-              </div>
-              <div>
-                <h2 className="text-2xl text-white">Smart AI Trading Analytics</h2>
-                <p className="text-sm text-gray-400">Real-time strategy monitoring & AI-powered insights</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={panelCard}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                padding: 8,
+                borderRadius: 10,
+                border: '1px solid rgba(34,211,238,0.28)',
+                background: 'rgba(2,6,23,0.45)',
+              }}
+            >
+              <Activity className="h-5 w-5 text-cyan-300" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 16, color: '#f1f5f9' }}>Smart AI Trading Analytics</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                Same desk as Trading / Investing Algos · P&amp;L · agents · AI
               </div>
             </div>
           </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-3 flex-wrap">
-            <Button
-              onClick={() => setShowVoiceAssistant(true)}
-              className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 hover:bg-purple-500/30"
-            >
-              <Mic className="w-4 h-4 mr-2 text-purple-400" />
-              <span className="text-purple-400">EdgeX Voice</span>
-            </Button>
-            <Button
-              onClick={handleExport}
-              variant="outline"
-              className="border-gray-700 hover:bg-gray-800"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Export Report
-            </Button>
-            <Button
-              onClick={handleShare}
-              variant="outline"
-              className="border-gray-700 hover:bg-gray-800"
-            >
-              <Share2 className="w-4 h-4 mr-2" />
-              Share
-            </Button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button type="button" onClick={() => setShowVoiceAssistant(true)} style={solidBtn}>
+              <Mic className="h-3.5 w-3.5" /> EdgeX Voice
+            </button>
+            <button type="button" onClick={() => console.log('export')} style={ghostBtn}>
+              <Download className="h-3.5 w-3.5" /> Export
+            </button>
+            <button type="button" onClick={() => console.log('share')} style={ghostBtn}>
+              <Share2 className="h-3.5 w-3.5" /> Share
+            </button>
           </div>
         </div>
 
-        {/* Summary Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(6, 1fr)',
+            gap: 10,
+            marginTop: 16,
+          }}
+        >
           {loading ? (
-            <div className="col-span-full flex justify-center py-6">
-              <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', padding: 24 }}>
+              <Loader2 className="h-6 w-6 animate-spin text-cyan-300" />
             </div>
           ) : (
-            <>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            <div className="text-xs text-gray-400 mb-1">Total P&L</div>
-            <div className={`text-xl ${(summary?.totalPnL ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              ₹{(summary?.totalPnL ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </div>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            <div className="text-xs text-gray-400 mb-1">Total Trades</div>
-            <div className="text-xl text-white">{summary?.totalTrades ?? 0}</div>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            <div className="text-xs text-gray-400 mb-1">Win Rate</div>
-            <div className="text-xl text-cyan-400">{(summary?.winRate ?? 0).toFixed(1)}%</div>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            <div className="text-xs text-gray-400 mb-1">Avg Return</div>
-            <div className="text-xl text-green-400">{(summary?.avgReturn ?? 0).toFixed(2)}%</div>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            <div className="text-xs text-gray-400 mb-1">Sharpe Ratio</div>
-            <div className="text-xl text-purple-400">{(summary?.sharpeRatio ?? 0).toFixed(2)}</div>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            <div className="text-xs text-gray-400 mb-1">Active Agents</div>
-            <div className="text-xl text-cyan-400">{summary?.activeAgents ?? 0}</div>
-          </div>
-            </>
+            [
+              ['Total P&L', `₹${(summary?.totalPnL ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, (summary?.totalPnL ?? 0) >= 0 ? '#34d399' : '#f87171'],
+              ['Total Trades', String(summary?.totalTrades ?? 0), '#e2e8f0'],
+              ['Win Rate', `${(summary?.winRate ?? 0).toFixed(1)}%`, '#e2e8f0'],
+              ['Avg Return', `${(summary?.avgReturn ?? 0).toFixed(2)}%`, '#e2e8f0'],
+              ['Sharpe Ratio', (summary?.sharpeRatio ?? 0).toFixed(2), '#e2e8f0'],
+              ['Active Agents', String(summary?.activeAgents ?? 0), '#e2e8f0'],
+            ].map(([label, value, color]) => (
+              <div key={String(label)}>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>{label}</div>
+                <div style={{ fontSize: 18, fontWeight: 600, color: String(color), marginTop: 4 }}>{value}</div>
+              </div>
+            ))
           )}
         </div>
-      </motion.div>
+      </div>
 
-      {/* Live market indices strip */}
       <LiveIndicesBar />
 
-      {/* Filters */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="flex flex-wrap gap-4 p-4 bg-gray-900/50 border border-gray-800 rounded-xl"
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 12,
+          alignItems: 'center',
+          padding: 12,
+          borderRadius: 12,
+          border: '1px solid rgba(148,163,184,0.2)',
+          background: 'rgba(15,23,42,0.65)',
+        }}
       >
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-400" />
-          <span className="text-sm text-gray-400">Filters:</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#94a3b8', fontSize: 12 }}>
+          <Filter className="h-3.5 w-3.5" /> Filters
         </div>
-
         <Select value={timeRange} onValueChange={setTimeRange}>
-          <SelectTrigger className="w-[140px] bg-gray-800 border-gray-700">
+          <SelectTrigger className="w-[140px] border-slate-600 bg-slate-950 text-slate-200">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -151,9 +151,8 @@ export function SmartTradingDashboard() {
             <SelectItem value="custom">Custom Range</SelectItem>
           </SelectContent>
         </Select>
-
         <Select value={strategyType} onValueChange={setStrategyType}>
-          <SelectTrigger className="w-[160px] bg-gray-800 border-gray-700">
+          <SelectTrigger className="w-[160px] border-slate-600 bg-slate-950 text-slate-200">
             <SelectValue placeholder="Strategy Type" />
           </SelectTrigger>
           <SelectContent>
@@ -163,9 +162,8 @@ export function SmartTradingDashboard() {
             <SelectItem value="positional">Positional</SelectItem>
           </SelectContent>
         </Select>
-
         <Select value={marketSegment} onValueChange={setMarketSegment}>
-          <SelectTrigger className="w-[160px] bg-gray-800 border-gray-700">
+          <SelectTrigger className="w-[160px] border-slate-600 bg-slate-950 text-slate-200">
             <SelectValue placeholder="Market Segment" />
           </SelectTrigger>
           <SelectContent>
@@ -175,45 +173,49 @@ export function SmartTradingDashboard() {
             <SelectItem value="options">Options</SelectItem>
           </SelectContent>
         </Select>
-
-        <Badge className={isLive ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'}>
-          <Radio className={`w-3 h-3 mr-1 ${isLive ? 'animate-pulse' : ''}`} />
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 10px',
+            borderRadius: 8,
+            fontSize: 11,
+            border: isLive ? '1px solid rgba(52,211,153,0.55)' : '1px solid rgba(148,163,184,0.25)',
+            background: isLive ? 'rgba(16,185,129,0.15)' : 'transparent',
+            color: isLive ? '#6ee7b7' : '#94a3b8',
+          }}
+        >
+          <Radio className={`h-3 w-3 ${isLive ? 'animate-pulse' : ''}`} />
           {isLive ? 'Live' : 'Polling'}
-          {lastUpdated && (
-            <span className="ml-1 text-[10px] opacity-70">
-              {lastUpdated.toLocaleTimeString()}
-            </span>
-          )}
-        </Badge>
-      </motion.div>
+          {lastUpdated ? ` · ${lastUpdated.toLocaleTimeString()}` : ''}
+        </span>
+      </div>
 
-      {/* Main Dashboard Tabs */}
       <Tabs defaultValue="performance" className="w-full">
-        <TabsList className="bg-gray-800 mb-6 flex-wrap h-auto">
-          <TabsTrigger value="performance" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
-            <TrendingUp className="w-4 h-4 mr-2" />
+        <TabsList className="mb-4 flex h-auto flex-wrap gap-1 border border-slate-700/80 bg-slate-950/80 p-1.5">
+          <TabsTrigger value="performance" className="data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-300">
+            <TrendingUp className="mr-2 h-4 w-4" />
             Performance
           </TabsTrigger>
-          <TabsTrigger value="comparison" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
-            <TrendingUp className="w-4 h-4 mr-2" />
+          <TabsTrigger value="comparison" className="data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-300">
             Comparison
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
-            <Activity className="w-4 h-4 mr-2" />
+          <TabsTrigger value="analytics" className="data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-300">
+            <Activity className="mr-2 h-4 w-4" />
             Trade Analytics
           </TabsTrigger>
-          <TabsTrigger value="ai-advisor" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
-            <Zap className="w-4 h-4 mr-2" />
+          <TabsTrigger value="ai-advisor" className="data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-300">
+            <Zap className="mr-2 h-4 w-4" />
             AI Advisor
           </TabsTrigger>
-          <TabsTrigger value="sentiment" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
+          <TabsTrigger value="sentiment" className="data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-300">
             Market Sentiment
           </TabsTrigger>
-          <TabsTrigger value="anomalies" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
+          <TabsTrigger value="anomalies" className="data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-300">
             Anomaly Detection
           </TabsTrigger>
-          <TabsTrigger value="quantconnect" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
-            <Zap className="w-4 h-4 mr-2" />
+          <TabsTrigger value="quantconnect" className="data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-300">
             QuantConnect
           </TabsTrigger>
         </TabsList>
@@ -221,36 +223,27 @@ export function SmartTradingDashboard() {
         <TabsContent value="performance">
           <StrategyPerformanceDashboard timeRange={timeRange} agents={agents} />
         </TabsContent>
-
         <TabsContent value="comparison">
           <PerformanceComparison timeRange={timeRange} />
         </TabsContent>
-
         <TabsContent value="analytics">
           <TradeAnalyticsPanel timeRange={timeRange} trades={trades} orders={orders} />
         </TabsContent>
-
         <TabsContent value="ai-advisor">
           <AIAdvisorChat />
         </TabsContent>
-
         <TabsContent value="sentiment">
           <MarketSentimentDashboard />
         </TabsContent>
-
         <TabsContent value="anomalies">
           <AnomalyDetectionPanel />
         </TabsContent>
-
         <TabsContent value="quantconnect">
           <QuantConnectDashboard />
         </TabsContent>
       </Tabs>
 
-      {/* Voice Assistant Modal */}
-      {showVoiceAssistant && (
-        <VoiceAssistant onClose={() => setShowVoiceAssistant(false)} />
-      )}
+      {showVoiceAssistant && <VoiceAssistant onClose={() => setShowVoiceAssistant(false)} />}
     </div>
   );
 }

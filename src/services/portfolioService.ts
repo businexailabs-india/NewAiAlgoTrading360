@@ -102,6 +102,24 @@ export interface PortfolioSummary {
   holdingsCount: number;
   activeBrokers: number;
   liveStrategies: number;
+  availableCash?: number;
+  capitalAllocated?: number;
+}
+
+export interface FundLedgerEntry {
+  id: string;
+  type: 'add' | 'withdraw';
+  amount: number;
+  note?: string;
+  createdAt: string;
+  balanceAfter: number;
+}
+
+export interface FundsView {
+  availableCash: number;
+  currency: string;
+  ledger: FundLedgerEntry[];
+  entry?: FundLedgerEntry;
 }
 
 function authHeaders(): HeadersInit {
@@ -119,6 +137,17 @@ async function getData<T>(path: string): Promise<T> {
   return body.data as T;
 }
 
+async function postData<T>(path: string, payload: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.message || `Request failed (${response.status})`);
+  return body.data as T;
+}
+
 const emptyStats = (): MultiPeriodStats => ({
   winRate: 0, avgReturn: 0, sharpe: 0, maxDrawdown: 0, trades: 0
 });
@@ -130,6 +159,18 @@ export const portfolioService = {
 
   getSummary(): Promise<PortfolioSummary> {
     return getData('/portfolio/summary');
+  },
+
+  getFunds(): Promise<FundsView> {
+    return getData('/portfolio/funds');
+  },
+
+  addFunds(amount: number, note?: string): Promise<FundsView> {
+    return postData('/portfolio/funds/add', { amount, note });
+  },
+
+  withdrawFunds(amount: number, note?: string): Promise<FundsView> {
+    return postData('/portfolio/funds/withdraw', { amount, note });
   },
 
   getTrades(): Promise<Array<Record<string, unknown>>> {

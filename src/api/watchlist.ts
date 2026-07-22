@@ -54,21 +54,33 @@ async function ensureGuestToken(): Promise<void> {
 }
 
 async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-      ...(init?.headers || {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+        ...(init?.headers || {}),
+      },
+    });
+  } catch {
+    throw new Error('Backend unreachable — start the API on port 3001 and refresh');
+  }
   const json = await res.json().catch(() => ({}));
   if ((res.status === 401 || res.status === 403) && !retried) {
     await ensureGuestToken();
     return request<T>(path, init, true);
   }
   if (!res.ok) {
-    throw new Error(json.message || json.detail || `Watchlist API ${res.status}`);
+    const detail = json.message || json.detail || json.error;
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error(detail || 'Backend unavailable — restart the API and refresh');
+    }
+    if (res.status === 500 && !detail) {
+      throw new Error('Watchlist API 500 — backend error or proxy could not reach port 3001');
+    }
+    throw new Error(detail || `Watchlist API ${res.status}`);
   }
   return (json.data ?? json) as T;
 }

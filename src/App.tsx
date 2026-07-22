@@ -42,10 +42,19 @@ import { AdminConsole } from './components/AdminConsole';
 import { PredictionEngineDashboard } from './components/PredictionEngineDashboard';
 import { TradingOperationsDashboard } from './components/TradingOperationsDashboard';
 import { WatchlistPanel } from './components/WatchlistPanel';
+import { ModeSwitchModal } from './components/ModeSwitchModal';
+import { OptionsWorkspace } from './components/options/OptionsWorkspace';
+import { PaperOptionsTerminal } from './components/options/PaperOptionsTerminal';
+import { LiveOptionsTerminal } from './components/options/LiveOptionsTerminal';
+import { StrategyBuilder } from './components/options/StrategyBuilder';
+import { RiskCenterPanel } from './components/options/RiskCenterPanel';
+import { OptionsAnalyticsPanel } from './components/options/OptionsAnalyticsPanel';
+import { TradeJournalPanel } from './components/options/TradeJournalPanel';
 import { ModuleWindow } from './components/ui/ModuleWindow';
 import { WindowPane } from './components/WindowPane';
 import { useWindowStack } from './contexts/WindowStackContext';
 import { useAuth } from './contexts/AuthContext';
+import { useTradingMode, type TradingMode } from './contexts/TradingModeContext';
 
 /** Window ids owned by each left-menu section — restored on menu click. */
 const SECTION_WINDOWS: Record<string, string[]> = {
@@ -68,8 +77,29 @@ const SECTION_WINDOWS: Record<string, string[]> = {
   watchlist: ['watchlist'],
   'ai-advisor': ['ai-algo-advisory', 'advisory-marketplace'],
   strategies: ['trading-tabs', 'strategies-hub'],
+  'strategies-builder': ['strategy-builder'],
+  'strategies-mine': ['strategies-hub'],
+  'strategies-backtest': ['trading-tabs'],
+  'strategies-deploy': ['strategies-hub'],
   'knowledge-llm': ['knowledge-llm'],
   analytics: ['ai-insights'],
+  'analytics-options': ['options-analytics'],
+  'analytics-greeks': ['options-greeks'],
+  'analytics-pnl': ['trade-journal'],
+  'analytics-journal': ['trade-journal'],
+  'markets-equity': ['markets-equity'],
+  'markets-futures': ['markets-futures'],
+  'markets-options': ['options-workspace'],
+  'markets-fno-scanner': ['fno-scanner'],
+  'trade-paper': ['paper-options-terminal'],
+  'trade-live': ['live-options-terminal'],
+  'trade-orders': ['trading-tabs'],
+  'trade-positions': ['trading-tabs'],
+  'trade-holdings': ['portfolio-header'],
+  alerts: ['alerts-automation'],
+  'broker-connections': ['broker-connections'],
+  'risk-center': ['risk-center'],
+  reports: ['tax-analytics'],
   'tax-reports': ['tax-analytics'],
   anomalies: ['anomalies'],
   'integration-guide': ['integration-guide'],
@@ -117,6 +147,7 @@ function Win({
 
 export default function App() {
   const { user, logout } = useAuth();
+  const { mode } = useTradingMode();
   const { restoreWindow, closeWindow } = useWindowStack();
   const [autoExecute, setAutoExecute] = useState(false);
   const [selectedBroker, setSelectedBroker] = useState('');
@@ -127,6 +158,13 @@ export default function App() {
   const [dhanLaxmiOpen, setDhanLaxmiOpen] = useState(false);
   const [portfolioAdvisorPopupToken, setPortfolioAdvisorPopupToken] = useState(0);
   const [advisoryPopupToken, setAdvisoryPopupToken] = useState(0);
+  const [modeModal, setModeModal] = useState<{ open: boolean; target: TradingMode | null }>({
+    open: false,
+    target: null
+  });
+
+  const openModeSwitch = (target: TradingMode) => setModeModal({ open: true, target });
+  const closeModeSwitch = () => setModeModal({ open: false, target: null });
 
   const handlePortfolioChange = useCallback((portfolioId: string) => {
     setCurrentPortfolio(portfolioId);
@@ -170,8 +208,8 @@ export default function App() {
           <Win
             id="smart-trading"
             title="Smart Trading"
-            subtitle="Live signals and execution workspace"
-            icon={<Zap className="h-4 w-4 text-cyan-300" />}
+            subtitle="Algos Live desk · P&L · agents · AI"
+            icon={<Zap className="h-4 w-4 text-emerald-300" />}
             cascadeIndex={1}
           >
             <SmartTradingDashboard />
@@ -226,7 +264,7 @@ export default function App() {
           <Win
             id="watchlist"
             title="Stock Watchlist"
-            subtitle="Track NSE symbols · create multiple lists"
+            subtitle="Algos Live desk · lists · quotes · charts"
             icon={<Eye className="h-4 w-4 text-cyan-300" />}
             cascadeIndex={1}
           >
@@ -252,6 +290,7 @@ export default function App() {
             <Win
               id="trading-tabs"
               title="Trading Desk"
+              subtitle="Algos Live desk · backtest · paper · live"
               icon={<Activity className="h-4 w-4 text-cyan-300" />}
               cascadeIndex={1}
             >
@@ -369,6 +408,159 @@ export default function App() {
           </Win>
         );
 
+      case 'markets-equity':
+        return (
+          <Win id="markets-equity" title="Equity Markets" subtitle="Cash equities desk" cascadeIndex={1}>
+            <WatchlistPanel />
+          </Win>
+        );
+
+      case 'markets-futures':
+        return (
+          <Win
+            id="markets-futures"
+            title="Futures"
+            subtitle="Index & stock futures — from instrument master"
+            icon={<Activity className="h-4 w-4 text-amber-300" />}
+            cascadeIndex={1}
+          >
+            <OptionsWorkspace segment="FUT" />
+          </Win>
+        );
+
+      case 'markets-options':
+        return (
+          <Win
+            id="options-workspace"
+            title="Options Chain"
+            subtitle="NSE F&O · instrument master · Live/Delayed"
+            icon={<Layers className="h-4 w-4 text-cyan-300" />}
+            cascadeIndex={1}
+          >
+            <OptionsWorkspace />
+          </Win>
+        );
+
+      case 'markets-fno-scanner':
+        return (
+          <Win id="fno-scanner" title="F&O Scanner" subtitle="OI / PCR / momentum scans" cascadeIndex={1}>
+            <OptionsWorkspace scanner />
+          </Win>
+        );
+
+      case 'trade-paper':
+        return (
+          <Win
+            id="paper-options-terminal"
+            title="Paper Options Terminal"
+            subtitle="SIMULATION · blue safe chrome · no live broker submit"
+            icon={<Zap className="h-4 w-4 text-sky-300" />}
+            cascadeIndex={1}
+          >
+            <PaperOptionsTerminal />
+          </Win>
+        );
+
+      case 'trade-live':
+        return (
+          <Win
+            id="live-options-terminal"
+            title="Live Options Terminal"
+            subtitle="REAL MONEY preview · submit gated by FEATURE_LIVE_OPTIONS"
+            icon={<Zap className="h-4 w-4 text-orange-300" />}
+            cascadeIndex={1}
+          >
+            <LiveOptionsTerminal />
+          </Win>
+        );
+
+      case 'trade-orders':
+      case 'trade-positions':
+        return (
+          <Win id="trading-tabs" title="Orders & Positions" cascadeIndex={1}>
+            <TradingTabs />
+          </Win>
+        );
+
+      case 'trade-holdings':
+        return (
+          <Win id="portfolio-header" title="Holdings" cascadeIndex={1}>
+            <PortfolioHeader />
+          </Win>
+        );
+
+      case 'strategies-builder':
+        return (
+          <Win id="strategy-builder" title="Strategy Builder" cascadeIndex={1}>
+            <StrategyBuilder />
+          </Win>
+        );
+
+      case 'strategies-mine':
+      case 'strategies-deploy':
+        return (
+          <Win id="strategies-hub" title="My Strategies" cascadeIndex={1}>
+            <StrategiesHub />
+          </Win>
+        );
+
+      case 'strategies-backtest':
+        return (
+          <Win id="trading-tabs" title="Backtesting" cascadeIndex={1}>
+            <TradingTabs />
+          </Win>
+        );
+
+      case 'analytics-options':
+        return (
+          <Win id="options-analytics" title="Option Analytics" cascadeIndex={1}>
+            <OptionsAnalyticsPanel focus="analytics" />
+          </Win>
+        );
+
+      case 'analytics-greeks':
+        return (
+          <Win id="options-greeks" title="Greeks & IV" cascadeIndex={1}>
+            <OptionsAnalyticsPanel focus="greeks" />
+          </Win>
+        );
+
+      case 'analytics-pnl':
+      case 'analytics-journal':
+        return (
+          <Win id="trade-journal" title="P&L / Trade Journal" cascadeIndex={1}>
+            <TradeJournalPanel />
+          </Win>
+        );
+
+      case 'alerts':
+        return (
+          <Win id="alerts-automation" title="Alerts & Automation" cascadeIndex={1}>
+            <TradingOperationsDashboard />
+          </Win>
+        );
+
+      case 'broker-connections':
+        return (
+          <Win id="broker-connections" title="Broker Connections" cascadeIndex={1}>
+            <SettingsPanel />
+          </Win>
+        );
+
+      case 'risk-center':
+        return (
+          <Win id="risk-center" title="Risk Center" subtitle="F&O preflight · limits · events" cascadeIndex={1}>
+            <RiskCenterPanel />
+          </Win>
+        );
+
+      case 'reports':
+        return (
+          <Win id="tax-analytics" title="Reports" cascadeIndex={1}>
+            <TaxAnalytics />
+          </Win>
+        );
+
       default:
         return (
           <>
@@ -392,6 +584,7 @@ export default function App() {
             <Win
               id="smart-trading-home"
               title="Smart Trading"
+              subtitle="Algos Live desk · P&L · agents · AI"
               icon={<Zap className="h-4 w-4 text-emerald-300" />}
               cascadeIndex={3}
             >
@@ -445,6 +638,7 @@ export default function App() {
             <Win
               id="trading-tabs-home"
               title="Trading Desk"
+              subtitle="Algos Live desk · backtest · paper · live"
               icon={<Activity className="h-4 w-4 text-cyan-300" />}
               cascadeIndex={9}
             >
@@ -476,11 +670,19 @@ export default function App() {
       className="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-gray-100"
       style={{ height: '100vh', overflow: 'hidden' }}
     >
-      <Sidebar activeSection={activeSection} onSectionChange={handleSectionChange} user={user} onLogout={logout} />
+      <Sidebar
+        activeSection={activeSection}
+        onSectionChange={handleSectionChange}
+        user={user}
+        onLogout={logout}
+        onRequestLiveMode={() => openModeSwitch('live')}
+        onRequestPaperMode={() => openModeSwitch('paper')}
+      />
 
       <TopBar
         activeSection={activeSection}
         onSectionChange={handleSectionChange}
+        onRequestModeSwitch={() => openModeSwitch(mode === 'live' ? 'paper' : 'live')}
         onNavigateAlgos={() => {
           if (activeSection !== 'dashboard' && activeSection !== 'algos') {
             handleSectionChange('dashboard');
@@ -566,6 +768,13 @@ export default function App() {
       </div>
 
       <WindowPane />
+
+      <ModeSwitchModal
+        open={modeModal.open}
+        target={modeModal.target}
+        onClose={closeModeSwitch}
+        onNeedBrokers={() => handleSectionChange('broker-connections')}
+      />
     </div>
   );
 }

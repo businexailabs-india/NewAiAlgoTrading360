@@ -87,6 +87,22 @@ export class DhanDirectAdapter {
     return res.data;
   }
 
+  async quote(securities: Record<string, number[]>) {
+    const res = await axios.post(`${DHAN_BASE}/marketfeed/quote`, securities, {
+      headers: this.headers(),
+      timeout: 12000
+    });
+    return res.data;
+  }
+
+  async optionChain(input: { UnderlyingScrip: number; UnderlyingSeg: string; Expiry: string }) {
+    const res = await axios.post(`${DHAN_BASE}/optionchain`, input, {
+      headers: this.headers(),
+      timeout: 15000
+    });
+    return res.data;
+  }
+
   async placeOrder(input: PlaceOrderInput): Promise<BrokerAdapterResult> {
     let securityId = input.securityId ? Number(input.securityId) : null;
     if (!securityId && input.symbol) securityId = DhanDirectAdapter.resolveEquityId(input.symbol);
@@ -132,6 +148,42 @@ export class DhanDirectAdapter {
       timeout: 10000
     });
     return res.data;
+  }
+
+  async modifyOrder(input: {
+    orderId: string;
+    orderType?: string;
+    quantity?: number;
+    price?: number;
+    triggerPrice?: number;
+    validity?: string;
+  }): Promise<BrokerAdapterResult> {
+    const orderTypeMap: Record<string, string> = {
+      MARKET: 'MARKET',
+      LIMIT: 'LIMIT',
+      SL: 'STOP_LOSS',
+      'SL-M': 'STOP_LOSS_MARKET'
+    };
+    const body: Record<string, unknown> = {
+      dhanClientId: this.credentials.clientId,
+      orderId: input.orderId,
+      validity: input.validity || 'DAY'
+    };
+    if (input.orderType) body.orderType = orderTypeMap[input.orderType] || input.orderType;
+    if (input.quantity != null) body.quantity = input.quantity;
+    if (input.price != null) body.price = input.price;
+    if (input.triggerPrice != null) body.triggerPrice = input.triggerPrice;
+
+    const res = await axios.put(`${DHAN_BASE}/orders/${input.orderId}`, body, {
+      headers: this.headers(),
+      timeout: 15000
+    });
+    const data = res.data || {};
+    return {
+      brokerOrderId: data.orderId ? String(data.orderId) : input.orderId,
+      status: String(data.orderStatus || 'TRANSIT'),
+      raw: data
+    };
   }
 
   async probe(): Promise<{ ok: boolean; error?: string }> {

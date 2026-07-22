@@ -41,6 +41,11 @@ model User {
   tenantMemberships  TenantMembership[]
   ownedTenants       Tenant[]             @relation("TenantOwner")
   watchlists         Watchlist[]
+  paperAccounts      PaperAccount[]
+  riskProfiles       RiskProfile[]
+  riskEvents         RiskEvent[]
+  paperStrategies    PaperStrategy[]
+  derivativePositions DerivativePosition[]
 
   @@map("users")
 }
@@ -591,4 +596,193 @@ model WatchlistItem {
   @@unique([watchlistId, symbol, exchange])
   @@index([watchlistId])
   @@map("watchlist_items")
+}
+
+/// NSE/BSE F&O underlying (NIFTY, BANKNIFTY, RELIANCE, …) — never hardcode strikes here
+model DerivativeUnderlying {
+  id           String   @id @default(uuid())
+  symbol       String
+  exchange     String   @default("NSE")
+  segment      String   @default("NFO") // NFO | BFO
+  name         String?
+  instrumentKind String @default("INDEX") // INDEX | STOCK
+  lotSizeHint  Int?     @map("lot_size_hint")
+  tickSize     Float?   @map("tick_size")
+  brokerSource String   @default("dhan") @map("broker_source")
+  tradable     Boolean  @default(true)
+  syncedAt     DateTime? @map("synced_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  instruments DerivativeInstrument[]
+
+  @@unique([symbol, exchange, segment])
+  @@index([tradable])
+  @@map("derivative_underlyings")
+}
+
+model DerivativeInstrument {
+  id               String    @id @default(uuid())
+  underlyingId     String    @map("underlying_id")
+  exchange         String    @default("NSE")
+  segment          String    @default("NFO")
+  tradingSymbol    String    @map("trading_symbol")
+  instrumentToken  String    @map("instrument_token")
+  instrumentType   String    // CE | PE | FUT
+  optionType       String?   @map("option_type") // CE | PE | null for FUT
+  strike           Float?
+  expiry           DateTime
+  lotSize          Int       @map("lot_size")
+  freezeQty        Int?      @map("freeze_qty")
+  tickSize         Float?    @map("tick_size")
+  tradable         Boolean   @default(true)
+  brokerSource     String    @default("dhan") @map("broker_source")
+  rawMeta          Json?     @map("raw_meta")
+  syncedAt         DateTime  @default(now()) @map("synced_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  underlying DerivativeUnderlying @relation(fields: [underlyingId], references: [id], onDelete: Cascade)
+
+  @@unique([brokerSource, instrumentToken])
+  @@index([underlyingId, expiry, strike])
+  @@index([tradingSymbol])
+  @@index([expiry, tradable])
+  @@map("derivative_instruments")
+}
+
+model InstrumentSyncRun {
+  id             String    @id @default(uuid())
+  brokerSource   String    @map("broker_source")
+  status         String    // RUNNING | SUCCESS | FAILED
+  underlyingsUpserted Int  @default(0) @map("underlyings_upserted")
+  instrumentsUpserted Int  @default(0) @map("instruments_upserted")
+  errorMessage   String?   @map("error_message")
+  startedAt      DateTime  @default(now()) @map("started_at")
+  finishedAt     DateTime? @map("finished_at")
+  meta           Json?
+
+  @@index([brokerSource, startedAt])
+  @@map("instrument_sync_runs")
+}
+
+model PaperAccount {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  currency      String   @default("INR")
+  cashBalance   Float    @default(1000000) @map("cash_balance")
+  reservedMargin Float   @default(0) @map("reserved_margin")
+  realizedPnl   Float    @default(0) @map("realized_pnl")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledger  PaperLedgerEntry[]
+
+  @@unique([userId, currency])
+  @@map("paper_accounts")
+}
+
+model PaperLedgerEntry {
+  id             String   @id @default(uuid())
+  paperAccountId String   @map("paper_account_id")
+  kind           String   // TOPUP | RESET | FILL | CHARGE | ADJUST
+  amount         Float
+  balanceAfter   Float    @map("balance_after")
+  note           String?
+  meta           Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  account PaperAccount @relation(fields: [paperAccountId], references: [id], onDelete: Cascade)
+
+  @@index([paperAccountId, createdAt])
+  @@map("paper_ledger_entries")
+}
+
+model PaperStrategy {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  legs      Json
+  meta      Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("paper_strategies")
+}
+
+model RiskProfile {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  maxLotsPerOrder   Int      @default(10) @map("max_lots_per_order")
+  maxDailyLoss      Float    @default(25000) @map("max_daily_loss")
+  blockNakedShort   Boolean  @default(true) @map("block_naked_short")
+  expiryDayWarn     Boolean  @default(true) @map("expiry_day_warn")
+  maxOpenLots       Int      @default(50) @map("max_open_lots")
+  /// 0 = disabled. Absolute portfolio delta (shares-equivalent) limit.
+  maxAbsDelta       Float    @default(0) @map("max_abs_delta")
+  /// 0 = disabled. Absolute portfolio vega limit.
+  maxAbsVega        Float    @default(0) @map("max_abs_vega")
+  /// 0 = disabled. Max net premium notional of open F&O (₹).
+  maxNetNotional    Float    @default(0) @map("max_net_notional")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@map("risk_profiles")
+}
+
+model RiskEvent {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  kind        String
+  severity    String   @default("INFO")
+  reason      String
+  corrective  String?
+  meta        Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("risk_events")
+}
+
+/// Open F&O position (paper or live) with MTM fields
+model DerivativePosition {
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  instrumentId       String?  @map("instrument_id")
+  instrumentToken    String?  @map("instrument_token")
+  tradingSymbol      String   @map("trading_symbol")
+  exchange           String   @default("NFO")
+  segment            String   @default("NFO")
+  optionType         String?  @map("option_type") // CE | PE | FUT
+  strike             Float?
+  expiry             DateTime?
+  side               String   // LONG | SHORT
+  quantity           Int
+  lotSize            Int      @default(1) @map("lot_size")
+  avgPrice           Float    @map("avg_price")
+  lastPrice          Float    @default(0) @map("last_price")
+  mtm                Float    @default(0)
+  realizedPnl        Float    @default(0) @map("realized_pnl")
+  product            String   @default("NRML")
+  isPaper            Boolean  @default(true) @map("is_paper")
+  brokerConnectionId String?  @map("broker_connection_id")
+  meta               Json?
+  openedAt           DateTime @default(now()) @map("opened_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isPaper])
+  @@index([userId, tradingSymbol])
+  @@unique([userId, tradingSymbol, isPaper, product])
+  @@map("derivative_positions")
 }

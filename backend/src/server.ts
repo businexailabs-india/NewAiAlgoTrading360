@@ -53,6 +53,10 @@ import advisoryMarketplaceRoutes from './routes/advisory-marketplace.routes';
 import mcpProvidersRoutes from './routes/mcp-providers.routes';
 import dhanlaxmiRoutes from './routes/dhanlaxmi.routes';
 import watchlistRoutes from './routes/watchlist.routes';
+import modeRoutes from './routes/mode.routes';
+import paperRoutes from './routes/paper.routes';
+import riskRoutes from './routes/risk.routes';
+import liveRoutes from './routes/live.routes';
 import { RiskGateService } from './services/risk-gate.service';
 import { OutboxService } from './events/outbox.service';
 
@@ -154,6 +158,10 @@ app.use('/api', advisoryMarketplaceRoutes);
 app.use('/api', mcpProvidersRoutes);
 app.use('/api', dhanlaxmiRoutes);
 app.use('/api', watchlistRoutes);
+app.use('/api', modeRoutes);
+app.use('/api/paper', paperRoutes);
+app.use('/api/risk', riskRoutes);
+app.use('/api/live', liveRoutes);
 
 // WebSocket connection handling
 io.on('connection', (socket) => {
@@ -195,6 +203,31 @@ setInterval(() => {
     }
   })();
 }, MCP_HEALTH_POLL_MS);
+
+// Option-chain quote poll → Delayed badge feed for subscribers (options:NIFTY, …)
+const OPTIONS_QUOTE_POLL_MS = Number(process.env.OPTIONS_QUOTE_POLL_MS || 12000);
+setInterval(() => {
+  void (async () => {
+    try {
+      const { OptionsChainService } = await import('./services/options/options-chain.service');
+      const underlyings = ['NIFTY', 'BANKNIFTY'];
+      for (const u of underlyings) {
+        const room = `options:${u}`;
+        const sockets = await io.in(room).fetchSockets();
+        if (!sockets.length) continue;
+        const chain = await OptionsChainService.getAnalytics(u, undefined);
+        io.to(room).emit('options.chain.update', {
+          underlying: u,
+          at: new Date().toISOString(),
+          quoteFreshness: 'delayed',
+          data: chain
+        });
+      }
+    } catch {
+      /* ignore when master empty / DB down */
+    }
+  })();
+}, OPTIONS_QUOTE_POLL_MS);
 
 // Make io accessible to routes
 app.set('io', io);

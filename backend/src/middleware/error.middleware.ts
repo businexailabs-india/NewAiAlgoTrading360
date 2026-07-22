@@ -5,11 +5,21 @@ import { logger } from '../utils/logger';
 export class AppError extends Error {
   statusCode: number;
   isOperational: boolean;
+  reason?: string;
+  correctiveAction?: string;
+  details?: Record<string, unknown>;
 
-  constructor(message: string, statusCode: number = 500) {
+  constructor(
+    message: string,
+    statusCode: number = 500,
+    meta?: { reason?: string; correctiveAction?: string; details?: Record<string, unknown> }
+  ) {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = true;
+    this.reason = meta?.reason;
+    this.correctiveAction = meta?.correctiveAction;
+    this.details = meta?.details;
 
     Error.captureStackTrace(this, this.constructor);
   }
@@ -75,6 +85,11 @@ export const errorHandler = (
   res.status(statusCode).json({
     success: false,
     message: message,
+    ...(err instanceof AppError && err.reason ? { reason: err.reason } : {}),
+    ...(err instanceof AppError && err.correctiveAction
+      ? { correctiveAction: err.correctiveAction }
+      : {}),
+    ...(err instanceof AppError && err.details ? { details: err.details } : {}),
     ...(process.env.NODE_ENV === 'development' && {
       error: err.message,
       stack: err.stack

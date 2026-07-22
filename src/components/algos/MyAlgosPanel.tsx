@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pause, Play, Rocket, RefreshCw } from 'lucide-react';
+import { Pause, Play, Rocket, RefreshCw, Wallet } from 'lucide-react';
 import { tradingService } from '../../services/tradingService';
 import { advisoryMarketplaceService } from '../../services/advisoryMarketplaceService';
 import { portfolioService } from '../../services/portfolioService';
 import { useTradingDashboard } from '../../hooks/useTradingDashboard';
 import { formatInr } from './algosCatalog';
+import { FundTransferModal } from './FundTransferModal';
 
 type KindFilter = 'all' | 'trading' | 'investing';
 type StatusFilter = 'active' | 'paused' | 'expired';
@@ -25,20 +26,30 @@ export function MyAlgosPanel({ onDiscover }: { onDiscover: () => void }) {
   const [strategies, setStrategies] = useState<Array<Record<string, unknown>>>([]);
   const [options, setOptions] = useState<Array<Record<string, unknown>>>([]);
   const [allocated, setAllocated] = useState<number | null>(null);
+  const [availableCash, setAvailableCash] = useState<number | null>(null);
   const [kind, setKind] = useState<KindFilter>('all');
   const [status, setStatus] = useState<StatusFilter>('active');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [fundOpen, setFundOpen] = useState(false);
+  const [fundMode, setFundMode] = useState<'add' | 'withdraw'>('add');
 
   const reloadLists = useCallback(async () => {
-    const [strats, opts, port] = await Promise.all([
+    const [strats, opts, port, funds] = await Promise.all([
       tradingService.listStrategies().catch(() => []),
       advisoryMarketplaceService.listStrategyOptions().catch(() => []),
-      portfolioService.getSummary().catch(() => null)
+      portfolioService.getSummary().catch(() => null),
+      portfolioService.getFunds().catch(() => null)
     ]);
     setStrategies(Array.isArray(strats) ? strats : []);
     setOptions(Array.isArray(opts) ? opts : []);
-    if (port) setAllocated(Number(port.totalCurrent ?? port.totalInvested ?? 0));
+    if (port) {
+      const cash = Number(port.availableCash ?? funds?.availableCash ?? 0);
+      const holdings = Number(port.totalCurrent ?? 0);
+      setAllocated(Number(port.capitalAllocated ?? cash + holdings));
+    }
+    if (funds) setAvailableCash(funds.availableCash);
+    else if (port?.availableCash != null) setAvailableCash(Number(port.availableCash));
   }, []);
 
   useEffect(() => {
@@ -193,11 +204,55 @@ export function MyAlgosPanel({ onDiscover }: { onDiscover: () => void }) {
         <button
           type="button"
           onClick={() => {
+            setFundMode('add');
+            setFundOpen(true);
+          }}
+          style={{
+            marginLeft: 'auto',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '6px 10px',
+            borderRadius: 8,
+            border: 'none',
+            background: '#059669',
+            color: '#fff',
+            cursor: 'pointer',
+            fontSize: 11,
+            fontWeight: 600
+          }}
+        >
+          <Wallet className="h-3.5 w-3.5" /> Add Fund
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setFundMode('withdraw');
+            setFundOpen(true);
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '6px 10px',
+            borderRadius: 8,
+            border: '1px solid rgba(248,113,113,0.4)',
+            background: 'rgba(127,29,29,0.25)',
+            color: '#fecaca',
+            cursor: 'pointer',
+            fontSize: 11,
+            fontWeight: 600
+          }}
+        >
+          Withdraw
+        </button>
+        <button
+          type="button"
+          onClick={() => {
             refresh();
             reloadLists();
           }}
           style={{
-            marginLeft: 'auto',
             display: 'inline-flex',
             alignItems: 'center',
             gap: 4,
@@ -214,6 +269,13 @@ export function MyAlgosPanel({ onDiscover }: { onDiscover: () => void }) {
         </button>
       </div>
 
+      <FundTransferModal
+        open={fundOpen}
+        initialMode={fundMode}
+        onClose={() => setFundOpen(false)}
+        onDone={() => void reloadLists()}
+      />
+
       <div
         style={{
           display: 'grid',
@@ -227,8 +289,8 @@ export function MyAlgosPanel({ onDiscover }: { onDiscover: () => void }) {
       >
         {[
           ['Allocated', allocated != null ? formatInr(allocated) : '—'],
+          ['Available Cash', availableCash != null ? formatInr(availableCash) : '—'],
           ["Today's P&L", summary ? `₹${Number(summary.totalPnL).toLocaleString('en-IN')}` : '—'],
-          ['Overall P&L', summary ? `₹${Number(summary.totalPnL).toLocaleString('en-IN')}` : '—'],
           ['Trading Now', String(summary?.activeAgents ?? 0)],
           ['Active On', String(rows.filter((r) => r.status === 'active').length)],
           ['Subscribed to', String(agents.length + strategies.length + options.length)]

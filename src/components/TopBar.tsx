@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
-import { LayoutDashboard, Sparkles } from 'lucide-react';
+import { Eye, LayoutDashboard, Sparkles } from 'lucide-react';
 import { ALGOS_TABS, useAlgosNav } from '../contexts/AlgosNavContext';
+import { useTradingMode } from '../contexts/TradingModeContext';
 
 /** Algos / brand top menu height. */
 export const TOP_MENU_H = 56;
@@ -12,15 +13,22 @@ interface TopBarProps {
   onSectionChange: (section: string) => void;
   onNavigateAlgos?: () => void;
   onOpenAdvisory?: () => void;
+  onRequestModeSwitch?: () => void;
   children?: ReactNode;
 }
 
 export function TopBar({
+  activeSection,
+  onSectionChange,
   onNavigateAlgos,
   onOpenAdvisory,
+  onRequestModeSwitch,
   children
 }: TopBarProps) {
   const { tab, setTab } = useAlgosNav();
+  const { mode, liveLocked } = useTradingMode();
+  const watchlistActive = activeSection === 'watchlist';
+  const isLive = mode === 'live';
 
   return (
     <header
@@ -145,6 +153,70 @@ export function TopBar({
         </nav>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => onRequestModeSwitch?.()}
+            title={isLive ? 'LIVE MODE — click to switch' : 'PAPER MODE — click to switch'}
+            aria-label={isLive ? 'Live trading mode' : 'Paper trading mode'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 34,
+              padding: '0 12px',
+              borderRadius: 999,
+              border: isLive
+                ? '1px solid rgba(251,146,60,0.75)'
+                : '1px solid rgba(56,189,248,0.65)',
+              background: isLive
+                ? 'linear-gradient(180deg, rgba(154,52,18,0.95) 0%, rgba(127,29,29,0.85) 100%)'
+                : 'linear-gradient(180deg, rgba(7,89,133,0.95) 0%, rgba(12,74,110,0.85) 100%)',
+              color: isLive ? '#ffedd5' : '#e0f2fe',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              boxShadow: isLive
+                ? '0 0 14px rgba(251,146,60,0.35)'
+                : '0 0 14px rgba(56,189,248,0.28)',
+            }}
+          >
+            {isLive ? 'LIVE MODE' : 'PAPER MODE'}
+            {isLive && liveLocked ? ' · LOCKED' : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => onSectionChange('watchlist')}
+            title="Stock Watchlist"
+            aria-label="Open Stock Watchlist"
+            aria-current={watchlistActive ? 'page' : undefined}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              height: 34,
+              minWidth: 34,
+              padding: '0 12px',
+              borderRadius: 999,
+              border: watchlistActive
+                ? '1px solid rgba(34,211,238,0.7)'
+                : '1px solid rgba(148,163,184,0.35)',
+              background: watchlistActive
+                ? 'linear-gradient(180deg, rgba(8,47,73,0.98) 0%, rgba(14,116,144,0.45) 100%)'
+                : 'rgba(15,23,42,0.75)',
+              color: watchlistActive ? '#a5f3fc' : '#cbd5e1',
+              fontSize: 12,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              boxShadow: watchlistActive ? '0 0 14px rgba(34,211,238,0.28)' : 'none'
+            }}
+          >
+            <Eye style={{ height: 15, width: 15 }} />
+            <span className="hidden sm:inline">Watchlist</span>
+          </button>
           {onOpenAdvisory && (
             <button
               type="button"

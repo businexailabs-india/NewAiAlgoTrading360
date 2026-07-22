@@ -47,15 +47,29 @@ export interface HistoricalSeries {
 
 const INDEX_YAHOO_MAP: Record<string, string> = {
   'NIFTY 50': '^NSEI',
-  'SENSEX': '^BSESN',
+  NIFTY: '^NSEI',
+  NIFTY50: '^NSEI',
+  SENSEX: '^BSESN',
   'NIFTY BANK': '^NSEBANK',
+  BANKNIFTY: '^NSEBANK',
+  FINNIFTY: 'NIFTY_FIN_SERVICE.NS',
+  MIDCPNIFTY: 'NIFTY_MID_SELECT.NS',
+  BANKEX: 'BSE-BANK.BO',
+  INDIAVIX: '^INDIAVIX',
   'NIFTY IT': '^CNXIT',
+  NIFTYIT: '^CNXIT',
   'NIFTY AUTO': '^CNXAUTO',
+  NIFTYAUTO: '^CNXAUTO',
   'NIFTY PHARMA': '^CNXPHARMA',
+  NIFTYPHARMA: '^CNXPHARMA',
   'NIFTY FMCG': '^CNXFMCG',
+  NIFTYFMCG: '^CNXFMCG',
   'NIFTY METAL': '^CNXMETAL',
+  NIFTYMETAL: '^CNXMETAL',
   'NIFTY REALTY': '^CNXREALTY',
-  'NIFTY ENERGY': '^CNXENERGY'
+  NIFTYREALTY: '^CNXREALTY',
+  'NIFTY ENERGY': '^CNXENERGY',
+  NIFTYENERGY: '^CNXENERGY'
 };
 
 const LIQUID_UNIVERSE = [
@@ -89,8 +103,14 @@ export class MarketService {
 
   static async fetchYahooQuote(symbol: string, suffix = '.NS'): Promise<Quote | null> {
     try {
-      const lookup = YAHOO_SYMBOL_ALIASES[symbol] || symbol;
-      const yahooSymbol = lookup.includes('^') ? lookup : `${lookup}${suffix}`;
+      const raw = (symbol || '').trim().toUpperCase();
+      const indexTicker = INDEX_YAHOO_MAP[raw] || INDEX_YAHOO_MAP[symbol];
+      const lookup = indexTicker || YAHOO_SYMBOL_ALIASES[raw] || YAHOO_SYMBOL_ALIASES[symbol] || symbol;
+      // Index tickers may already include .NS/.BO or ^ — do not append equity suffix
+      const yahooSymbol =
+        indexTicker || lookup.includes('^') || /\.(NS|BO)$/i.test(lookup)
+          ? lookup
+          : `${lookup}${suffix}`;
       const headers = { 'User-Agent': 'Mozilla/5.0' };
       const asOf = new Date().toISOString();
 
@@ -194,20 +214,23 @@ export class MarketService {
   }
 
   static async getQuote(symbol: string, userId?: string): Promise<Quote> {
-    const cacheKey = symbol;
+    const displaySymbol = symbol.toUpperCase();
+    const lookupSymbol = this.resolveChartSymbol(displaySymbol);
+    const cacheKey = displaySymbol;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
-      return this.assertValidQuote(cached.data, symbol);
+      return this.assertValidQuote(cached.data, displaySymbol);
     }
 
     if (userId) {
       const brokerAuth = await BrokerService.getActiveBrokerToken(userId);
       if (brokerAuth) {
-        const quotes = await BrokerService.fetchQuotes(brokerAuth.broker, brokerAuth.accessToken, [symbol]);
+        const quotes = await BrokerService.fetchQuotes(brokerAuth.broker, brokerAuth.accessToken, [displaySymbol]);
         if (quotes.length && quotes[0].price > 0) {
           const asOf = new Date().toISOString();
           const quote: Quote = {
             ...quotes[0],
+            symbol: displaySymbol,
             timestamp: asOf,
             asOf,
             stale: false,
@@ -221,10 +244,12 @@ export class MarketService {
     }
 
     if (process.env.MARKET_DATA_PROVIDER === 'dhan' && DhanService.isConfigured()) {
-      const dhanQuote = await DhanService.getEquityQuote(symbol);
+      const dhanQuote = await DhanService.getEquityQuote(lookupSymbol);
       if (dhanQuote && dhanQuote.price > 0) {
         const quote: Quote = {
           ...dhanQuote,
+          symbol: displaySymbol,
+          name: displaySymbol !== lookupSymbol ? `${displaySymbol} (via ${lookupSymbol})` : dhanQuote.name,
           asOf: dhanQuote.timestamp,
           stale: false,
           source: 'dhan',
@@ -235,11 +260,19 @@ export class MarketService {
       }
     }
 
-    const yahooQuote = await this.fetchYahooQuote(symbol);
+    const yahooQuote = await this.fetchYahooQuote(lookupSymbol);
     if (yahooQuote && yahooQuote.price > 0) {
-      this.cache.set(cacheKey, { data: yahooQuote, expires: Date.now() + this.CACHE_TTL });
+      const quote: Quote = {
+        ...yahooQuote,
+        symbol: displaySymbol,
+        name:
+          displaySymbol !== lookupSymbol
+            ? `${displaySymbol} (underlying ${lookupSymbol})`
+            : yahooQuote.name
+      };
+      this.cache.set(cacheKey, { data: quote, expires: Date.now() + this.CACHE_TTL });
       await DatabaseService.cacheMarketData([{
-        symbol,
+        symbol: lookupSymbol,
         exchange: 'NSE',
         open: yahooQuote.open || yahooQuote.price,
         high: yahooQuote.high || yahooQuote.price,
@@ -248,15 +281,15 @@ export class MarketService {
         volume: yahooQuote.volume || 0,
         timestamp: new Date()
       }]);
-      return yahooQuote;
+      return quote;
     }
 
-    const historical = await DatabaseService.getCachedMarketData(symbol, 'NSE', 1);
+    const historical = await DatabaseService.getCachedMarketData(lookupSymbol, 'NSE', 1);
     if (historical.length && Number(historical[0].close) > 0) {
       const h = historical[0];
       const asOf = h.timestamp.toISOString();
       return {
-        symbol,
+        symbol: displaySymbol,
         price: Number(h.close),
         change: 0,
         changePercent: 0,
@@ -272,7 +305,7 @@ export class MarketService {
       };
     }
 
-    throw new AppError(`Market quote unavailable for ${symbol}`, 503);
+    throw new AppError(`Market quote unavailable for ${displaySymbol}`, 503);
   }
 
   static async getQuotes(symbols: string[], userId?: string): Promise<Quote[]> {
@@ -409,84 +442,98 @@ export class MarketService {
       daysOrRange,
       intervalHint
     );
-    const lookup = YAHOO_SYMBOL_ALIASES[symbol] || symbol;
-    const yahooSymbol = lookup.includes('^') ? lookup : `${lookup}.NS`;
+    const chartSym = this.resolveChartSymbol(symbol);
+    const indexTicker = INDEX_YAHOO_MAP[chartSym];
+    const lookup = indexTicker || YAHOO_SYMBOL_ALIASES[chartSym] || chartSym;
+    const yahooSymbol =
+      indexTicker || lookup.includes('^') || /\.(NS|BO)$/i.test(lookup)
+        ? lookup
+        : `${lookup}.NS`;
     const intraday = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h'].includes(fetchInterval);
 
-    try {
-      const response = await axios.get(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`,
-        {
+    const hosts = [
+      'https://query1.finance.yahoo.com',
+      'https://query2.finance.yahoo.com'
+    ];
+
+    for (const host of hosts) {
+      try {
+        const response = await axios.get(`${host}/v8/finance/chart/${yahooSymbol}`, {
           params: { interval: fetchInterval, range },
           headers: { 'User-Agent': 'Mozilla/5.0' },
-          timeout: 12000
+          timeout: 15000
+        });
+
+        const result = response.data?.chart?.result?.[0];
+        if (!result?.timestamp?.length) continue;
+
+        const quote = result.indicators?.quote?.[0];
+        if (!quote) continue;
+
+        let bars = result.timestamp
+          .map((ts: number, i: number) => {
+            const dt = new Date(ts * 1000);
+            const date = intraday
+              ? dt.toISOString().replace('T', ' ').slice(0, 16)
+              : dt.toISOString().split('T')[0];
+            return {
+              date,
+              open: quote.open?.[i] ?? 0,
+              high: quote.high?.[i] ?? 0,
+              low: quote.low?.[i] ?? 0,
+              close: quote.close?.[i] ?? 0,
+              volume: quote.volume?.[i] ?? 0
+            };
+          })
+          .filter((d: { close: number }) => d.close > 0);
+
+        if (resampleMinutes > 0) {
+          bars = this.resampleBars(bars, resampleMinutes);
         }
-      );
 
-      const result = response.data?.chart?.result?.[0];
-      if (!result?.timestamp) {
-        return this.historicalFromCache(symbol, cacheDays);
+        if (!bars.length) continue;
+
+        return {
+          bars,
+          source: 'yahoo',
+          stale: false,
+          asOf: bars[bars.length - 1]?.date ?? null
+        };
+      } catch {
+        /* try next host / fall through to cache */
       }
-
-      const { timestamp, indicators } = result;
-      const quote = indicators.quote[0];
-
-      let bars = timestamp
-        .map((ts: number, i: number) => {
-          const dt = new Date(ts * 1000);
-          const date = intraday
-            ? dt.toISOString().replace('T', ' ').slice(0, 16)
-            : dt.toISOString().split('T')[0];
-          return {
-            date,
-            open: quote.open[i] ?? 0,
-            high: quote.high[i] ?? 0,
-            low: quote.low[i] ?? 0,
-            close: quote.close[i] ?? 0,
-            volume: quote.volume[i] ?? 0
-          };
-        })
-        .filter((d: { close: number }) => d.close > 0);
-
-      if (resampleMinutes > 0) {
-        bars = this.resampleBars(bars, resampleMinutes);
-      }
-
-      if (!bars.length) {
-        return this.historicalFromCache(symbol, cacheDays);
-      }
-
-      return {
-        bars,
-        source: 'yahoo',
-        stale: false,
-        asOf: bars[bars.length - 1]?.date ?? null
-      };
-    } catch {
-      return this.historicalFromCache(symbol, cacheDays);
     }
+
+    return this.historicalFromCache(chartSym, cacheDays);
   }
 
   private static async historicalFromCache(symbol: string, days: number): Promise<HistoricalSeries> {
-    const cached = await DatabaseService.getCachedMarketData(symbol, 'NSE', days);
-    if (!cached.length) {
+    try {
+      const cached = await DatabaseService.getCachedMarketData(symbol, 'NSE', days);
+      if (!cached.length) {
+        return { bars: [], source: 'empty', stale: true, asOf: null };
+      }
+      const bars = cached
+        .reverse()
+        .map((h) => ({
+          date: h.timestamp.toISOString().split('T')[0],
+          open: Number(h.open),
+          high: Number(h.high),
+          low: Number(h.low),
+          close: Number(h.close),
+          volume: Number(h.volume)
+        }))
+        .filter((d) => d.close > 0);
+
+      return {
+        bars,
+        source: 'cache',
+        stale: true,
+        asOf: bars.length ? bars[bars.length - 1].date : null
+      };
+    } catch {
       return { bars: [], source: 'empty', stale: true, asOf: null };
     }
-    const bars = cached.reverse().map(h => ({
-      date: h.timestamp.toISOString().split('T')[0],
-      open: Number(h.open),
-      high: Number(h.high),
-      low: Number(h.low),
-      close: Number(h.close),
-      volume: Number(h.volume)
-    })).filter(d => d.close > 0);
-
-    return {
-      bars,
-      source: 'cache',
-      stale: true,
-      asOf: bars.length ? bars[bars.length - 1].date : null
-    };
   }
 
   static async getIndices(): Promise<Array<{ name: string; value: number; change: number; changePercent: number }>> {
@@ -504,6 +551,100 @@ export class MarketService {
       })
     );
     return results.filter(Boolean) as Array<{ name: string; value: number; change: number; changePercent: number }>;
+  }
+
+  /** Index underlyings used for F&O-related script expansion in search */
+  private static readonly FO_UNDERLYINGS: Array<{
+    symbol: string;
+    aliases: string[];
+    name: string;
+    step: number;
+  }> = [
+    { symbol: 'NIFTY', aliases: ['NIFTY', 'NIFTY50', 'NIFTY 50'], name: 'Nifty 50 Index', step: 50 },
+    { symbol: 'BANKNIFTY', aliases: ['BANKNIFTY', 'BANK NIFTY', 'NIFTY BANK'], name: 'Nifty Bank Index', step: 100 },
+    { symbol: 'FINNIFTY', aliases: ['FINNIFTY', 'FIN NIFTY'], name: 'Nifty Financial Services Index', step: 50 },
+    { symbol: 'MIDCPNIFTY', aliases: ['MIDCPNIFTY', 'MIDCAP NIFTY'], name: 'Nifty Midcap Select Index', step: 25 },
+    { symbol: 'SENSEX', aliases: ['SENSEX'], name: 'BSE Sensex Index', step: 100 },
+    { symbol: 'BANKEX', aliases: ['BANKEX'], name: 'BSE Bankex Index', step: 100 }
+  ];
+
+  /** Parse queries like "NIFTY 24000", "NIFTY24000CE", "BANKNIFTY 52000 PE". */
+  private static parseIndexStrikeQuery(query: string): { underlying: string; name: string; step: number; strike?: number } | null {
+    const raw = (query || '').toUpperCase().replace(/\s+/g, ' ').trim();
+    if (!raw) return null;
+
+    for (const u of this.FO_UNDERLYINGS) {
+      const alias = [...u.aliases].sort((a, b) => b.length - a.length).find((a) => {
+        const compact = a.replace(/\s+/g, '');
+        // Exact, spaced prefix ("NIFTY 24000"), or compact strike ("NIFTY24000CE")
+        return (
+          raw === a ||
+          raw === compact ||
+          raw.startsWith(`${a} `) ||
+          new RegExp(`^${compact}(\\d{3,6})(CE|PE|FUT)?$`).test(raw)
+        );
+      });
+      if (!alias) continue;
+
+      const compactAlias = alias.replace(/\s+/g, '');
+      let rest = '';
+      if (raw === alias || raw === compactAlias) {
+        rest = '';
+      } else if (raw.startsWith(`${alias} `)) {
+        rest = raw.slice(alias.length).trim();
+      } else {
+        const embeddedFull = raw.match(new RegExp(`^${compactAlias}(\\d{3,6})(CE|PE|FUT)?$`));
+        if (embeddedFull) rest = `${embeddedFull[1]}${embeddedFull[2] || ''}`;
+      }
+      rest = rest.replace(/^(CE|PE|FUT)\b/, '').replace(/(CE|PE|FUT)$/, '').trim();
+      const strikeMatch = rest.match(/^(\d{3,6})$/);
+      const strike = strikeMatch ? Number(strikeMatch[1]) : undefined;
+      return { underlying: u.symbol, name: u.name, step: u.step, strike };
+    }
+    return null;
+  }
+
+  /** Map option/futures compact symbols (NIFTY23950CE, NIFTYFUT) to chartable underlyings. */
+  static resolveChartSymbol(symbol: string): string {
+    const raw = (symbol || '').toUpperCase().trim();
+    const fo = this.parseIndexStrikeQuery(raw);
+    if (fo?.underlying) return fo.underlying;
+    const fut = raw.match(/^([A-Z]+)FUT$/);
+    if (fut) {
+      const u = this.FO_UNDERLYINGS.find((x) => x.symbol === fut[1]);
+      if (u) return u.symbol;
+    }
+    return raw;
+  }
+
+  /** Spot index + nearby CE/PE + futures for an index/strike search. */
+  private static relatedFoScripts(
+    underlying: string,
+    name: string,
+    step: number,
+    strike?: number
+  ): Array<{ symbol: string; name: string; exchange: string }> {
+    const out: Array<{ symbol: string; name: string; exchange: string }> = [
+      { symbol: underlying, name, exchange: 'INDEX' },
+      { symbol: `${underlying}FUT`, name: `${name} Futures`, exchange: 'NFO' }
+    ];
+    if (!strike || !Number.isFinite(strike) || strike <= 0) return out;
+
+    const rounded = Math.round(strike / step) * step;
+    const strikes = [rounded - step, rounded, rounded + step].filter((s) => s > 0);
+    for (const s of strikes) {
+      out.push({
+        symbol: `${underlying}${s}CE`,
+        name: `${underlying} ${s} CE`,
+        exchange: 'NFO'
+      });
+      out.push({
+        symbol: `${underlying}${s}PE`,
+        name: `${underlying} ${s} PE`,
+        exchange: 'NFO'
+      });
+    }
+    return out;
   }
 
   static searchSymbols(query: string) {
@@ -556,20 +697,74 @@ export class MarketService {
       HINDUNILVR: 'Hindustan Unilever Ltd'
     };
 
+    const indexUniverse: Array<{ symbol: string; name: string; exchange: 'INDEX' }> = [
+      { symbol: 'NIFTY', name: 'Nifty 50 Index', exchange: 'INDEX' },
+      { symbol: 'NIFTY50', name: 'Nifty 50 Index', exchange: 'INDEX' },
+      { symbol: 'BANKNIFTY', name: 'Nifty Bank Index', exchange: 'INDEX' },
+      { symbol: 'FINNIFTY', name: 'Nifty Financial Services Index', exchange: 'INDEX' },
+      { symbol: 'MIDCPNIFTY', name: 'Nifty Midcap Select Index', exchange: 'INDEX' },
+      { symbol: 'SENSEX', name: 'BSE Sensex Index', exchange: 'INDEX' },
+      { symbol: 'BANKEX', name: 'BSE Bankex Index', exchange: 'INDEX' },
+      { symbol: 'INDIAVIX', name: 'India VIX', exchange: 'INDEX' },
+      { symbol: 'NIFTYIT', name: 'Nifty IT Index', exchange: 'INDEX' },
+      { symbol: 'NIFTYAUTO', name: 'Nifty Auto Index', exchange: 'INDEX' },
+      { symbol: 'NIFTYPHARMA', name: 'Nifty Pharma Index', exchange: 'INDEX' },
+      { symbol: 'NIFTYFMCG', name: 'Nifty FMCG Index', exchange: 'INDEX' },
+      { symbol: 'NIFTYMETAL', name: 'Nifty Metal Index', exchange: 'INDEX' },
+      { symbol: 'NIFTYENERGY', name: 'Nifty Energy Index', exchange: 'INDEX' },
+      { symbol: 'NIFTYREALTY', name: 'Nifty Realty Index', exchange: 'INDEX' }
+    ];
+
     const symbols = Array.from(new Set([...LIQUID_UNIVERSE, ...SMALLCAP_UNIVERSE, ...Object.keys(names)]));
-    const universe = symbols.map((symbol) => ({
+    const equityUniverse = symbols.map((symbol) => ({
       symbol,
       name: names[symbol] || symbol,
       exchange: 'NSE' as const
     }));
+    const universe = [...indexUniverse, ...equityUniverse];
 
-    const q = (query || '').trim().toLowerCase();
-    const matches = !q
-      ? universe
-      : universe.filter(
-          (s) => s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
-        );
-    return matches.slice(0, 40);
+    const qRaw = (query || '').trim();
+    const q = qRaw.toLowerCase();
+    const tokens = q.split(/[\s/_-]+/).filter(Boolean);
+    const compactQ = q.replace(/[\s/_-]+/g, '');
+
+    const matchesText = (s: { symbol: string; name: string; exchange: string }) => {
+      const sym = s.symbol.toLowerCase();
+      const name = s.name.toLowerCase();
+      const hay = `${sym} ${name}`;
+      if (!q) return true;
+      if (sym.includes(q) || name.includes(q) || sym.includes(compactQ)) return true;
+      if (tokens.length > 1 && tokens.every((t) => hay.includes(t) || sym.includes(t))) return true;
+      if (s.exchange === 'INDEX' && (q === 'index' || q === 'indices' || 'index'.startsWith(q))) return true;
+      return false;
+    };
+
+    const fo = this.parseIndexStrikeQuery(qRaw);
+    const related = fo
+      ? this.relatedFoScripts(fo.underlying, fo.name, fo.step, fo.strike)
+      : [];
+
+    const base = !q ? universe : universe.filter(matchesText);
+    const seen = new Set<string>();
+    const merged: Array<{ symbol: string; name: string; exchange: string }> = [];
+    for (const s of [...related, ...base]) {
+      const key = `${s.exchange}:${s.symbol.toUpperCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(s);
+    }
+
+    // Prefer INDEX / NFO related scripts first for index-style queries
+    merged.sort((a, b) => {
+      const rank = (x: { exchange: string }) =>
+        x.exchange === 'INDEX' ? 0 : x.exchange === 'NFO' ? 1 : 2;
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return a.symbol.localeCompare(b.symbol);
+    });
+
+    return merged.slice(0, 40);
   }
 
   static async getTopMovers(type: 'gainers' | 'losers', count = 10) {

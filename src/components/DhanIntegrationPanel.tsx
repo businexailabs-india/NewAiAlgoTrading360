@@ -255,23 +255,6 @@ export function DhanIntegrationPanel() {
     }
   };
 
-  const setMode = async (executionMode: 'PAPER' | 'LIVE') => {
-    if (!context) return;
-    setBusy(true);
-    try {
-      await integrationService.updateExecutionContext({
-        executionMode,
-        expectedVersion: context.context.version
-      });
-      setMsg(`Execution mode set to ${executionMode}`);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Mode update failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const toggleKillSwitch = async (on: boolean) => {
     setBusy(true);
     try {
@@ -501,19 +484,21 @@ export function DhanIntegrationPanel() {
         </section>
       </div>
 
-      {/* Execution controls */}
+      {/* Execution controls — mode is TopBar-owned; account selection + kill/approve here */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
-        <h3 className="text-white">Execution Mode & Live Gate</h3>
-        <div className="flex flex-wrap gap-2">
-          <Button variant={context?.context.executionMode === 'PAPER' ? 'default' : 'outline'} onClick={() => setMode('PAPER')}>Paper</Button>
-          <Button variant={context?.context.executionMode === 'LIVE' ? 'default' : 'outline'} onClick={() => setMode('LIVE')}>Live (gated)</Button>
+        <h3 className="text-white">Live Gate &amp; Kill Switch</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className={context?.context.executionMode === 'LIVE' ? 'bg-rose-500/25 text-rose-200' : 'bg-emerald-500/20 text-emerald-300'}>
+            Desk mode: {context?.context.executionMode || status?.executionMode || '—'} (synced from TopBar)
+          </Badge>
           <Button variant="destructive" onClick={() => toggleKillSwitch(true)}>Kill Switch ON</Button>
           <Button variant="outline" onClick={() => toggleKillSwitch(false)}>Kill Switch OFF</Button>
           <Button variant="outline" onClick={() => approveLive(true)}>Approve Live (Admin)</Button>
           <Button variant="ghost" onClick={() => approveLive(false)}>Revoke Live</Button>
         </div>
         <p className="text-xs text-gray-400">
-          Live requires: LIVE_TRADING_ENABLED=true, global approval, no kill switch, selected healthy account, and explicit isPaper=false.
+          PAPER/LIVE is switched only from the TopBar (PIN + cooldown). This panel selects the active broker/MCP account.
+          Live also requires: LIVE_TRADING_ENABLED=true, global approval, no kill switch, and healthy account.
         </p>
       </section>
 

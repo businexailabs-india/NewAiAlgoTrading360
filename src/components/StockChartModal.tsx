@@ -135,18 +135,36 @@ async function fetchHistorical(
 ): Promise<BarPoint[]> {
   const token = localStorage.getItem('authToken');
   const qs = new URLSearchParams({ range, interval });
-  const res = await fetch(
-    `${API_BASE_URL}/market/historical/${encodeURIComponent(symbol)}?${qs.toString()}`,
-    {
-      headers: {
-        Accept: 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+  const url = `${API_BASE_URL}/market/historical/${encodeURIComponent(symbol)}?${qs.toString()}`;
+  const headers: HeadersInit = {
+    Accept: 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(url, { headers });
+  } catch {
+    throw new Error('Backend unreachable — start the API on port 3001 and refresh');
+  }
+
+  // One retry for transient proxy/Yahoo blips (common on 1m intraday)
+  if (res.status >= 500) {
+    await new Promise((r) => setTimeout(r, 400));
+    try {
+      res = await fetch(url, { headers });
+    } catch {
+      throw new Error('Backend unreachable — start the API on port 3001 and refresh');
     }
-  );
+  }
+
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.message || `Failed to load chart (${res.status})`);
+    const detail = json.message || json.detail || json.error;
+    if (res.status === 502 || res.status === 503 || res.status === 504 || (res.status === 500 && !detail)) {
+      throw new Error(detail || 'Chart API unavailable — ensure backend is running on port 3001');
+    }
+    throw new Error(detail || `Failed to load chart (${res.status})`);
   }
   const payload = json.data;
   const rows = (
@@ -926,6 +944,7 @@ export function StockChartModal({
   const [bars, setBars] = useState<BarPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [panelSize, setPanelSize] = useState(() => ({
     w: Math.min(960, Math.max(560, window.innerWidth - 64)),
     h: Math.min(820, Math.max(480, window.innerHeight - 64)),
@@ -1076,7 +1095,7 @@ export function StockChartModal({
     return () => {
       cancelled = true;
     };
-  }, [stock.symbol, range, chartInterval]);
+  }, [stock.symbol, range, chartInterval, reloadKey]);
 
   const stats = useMemo(() => {
     if (!bars.length) {
@@ -1253,14 +1272,14 @@ export function StockChartModal({
           gap: 10,
           padding: '10px 12px',
           borderRadius: 12,
-          border: '1px solid #3f3f46',
-          background: '#09090b',
-          color: '#e4e4e7',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+          border: '1px solid #cbd5e1',
+          background: 'linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%)',
+          color: '#0f172a',
+          boxShadow: '0 8px 24px rgba(15,23,42,0.12)',
           minWidth: 280,
         }}
       >
-        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: '#67e8f9' }}>
+        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: '#334155' }}>
           {stock.symbol}
         </span>
         <span style={{ fontSize: 12, color: '#a1a1aa', flex: 1 }}>Chart minimized</span>
@@ -1354,11 +1373,11 @@ export function StockChartModal({
           maxWidth: 'calc(100vw - 24px)',
           maxHeight: 'calc(100vh - 24px)',
           overflow: 'hidden',
-          borderRadius: 16,
-          border: '1px solid #3f3f46',
-          background: '#09090b',
-          color: '#e4e4e7',
-          boxShadow: '0 25px 50px rgba(0,0,0,0.65)',
+          borderRadius: 14,
+          border: '1px solid #cbd5e1',
+          background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 45%, #f1f5f9 100%)',
+          color: '#0f172a',
+          boxShadow: '0 16px 40px rgba(15,23,42,0.14)',
           display: 'flex',
           flexDirection: 'column',
           resize: 'none',
@@ -1370,7 +1389,8 @@ export function StockChartModal({
             justifyContent: 'space-between',
             gap: 12,
             padding: '14px 20px',
-            borderBottom: '1px solid #27272a',
+            borderBottom: '1px solid #e2e8f0',
+            background: 'linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%)',
             flexShrink: 0,
             cursor: 'default',
           }}
@@ -1382,12 +1402,12 @@ export function StockChartModal({
                   fontFamily: 'ui-monospace, monospace',
                   fontSize: 24,
                   fontWeight: 700,
-                  color: '#67e8f9',
+                  color: '#0f172a',
                 }}
               >
                 {stock.symbol}
               </span>
-              <span style={{ fontSize: 13, color: '#a1a1aa' }}>{stock.name || stock.exchange}</span>
+              <span style={{ fontSize: 13, color: '#64748b' }}>{stock.name || stock.exchange}</span>
             </div>
             <div
               style={{
@@ -1431,11 +1451,9 @@ export function StockChartModal({
                 height: 36,
                 padding: '0 10px',
                 borderRadius: 8,
-                border: showAiHelp
-                  ? '1px solid rgba(34,211,238,0.55)'
-                  : '1px solid #3f3f46',
-                background: showAiHelp ? 'rgba(34,211,238,0.12)' : '#18181b',
-                color: showAiHelp ? '#a5f3fc' : '#a1a1aa',
+                border: '1px solid #cbd5e1',
+                background: showAiHelp ? '#334155' : '#ffffff',
+                color: showAiHelp ? '#ffffff' : '#475569',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1780,22 +1798,6 @@ export function StockChartModal({
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={() => setActiveTools(new Set())}
-            style={{
-              marginLeft: 'auto',
-              padding: '5px 10px',
-              borderRadius: 8,
-              border: '1px solid #3f3f46',
-              background: 'transparent',
-              color: '#71717a',
-              fontSize: 11,
-              cursor: 'pointer',
-            }}
-          >
-            Clear tools
-          </button>
         </div>
 
         <div style={{ padding: 16, flex: '1 1 auto', overflow: 'auto', minHeight: 0 }}>
@@ -1804,8 +1806,35 @@ export function StockChartModal({
               Loading chart…
             </div>
           ) : error ? (
-            <div style={{ height: 360, displayContent: 'center', textAlign: 'center', color: '#fca5a5' }}>
-              {error}
+            <div
+              style={{
+                height: 360,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                color: '#fca5a5',
+                textAlign: 'center',
+                padding: 16,
+              }}
+            >
+              <div>{error}</div>
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  border: '1px solid #52525b',
+                  background: '#27272a',
+                  color: '#e4e4e7',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Retry chart
+              </button>
             </div>
           ) : (
             <div>
