@@ -3,10 +3,33 @@ import { authenticate } from '../middleware/auth.middleware';
 import { asyncHandler } from '../middleware/error.middleware';
 import { Request, Response } from 'express';
 import { RiskGateService } from '../services/risk-gate.service';
+import { RiskJourneyService } from '../services/risk-journey/risk-journey.service';
 import { prisma } from '../config/database';
 
 const router = Router();
 router.use(authenticate);
+
+router.post(
+  '/kill-switch/trigger',
+  asyncHandler(async (req: Request, res: Response) => {
+    const data = await RiskJourneyService.triggerKillSwitch(
+      req.user!.id,
+      String(req.body?.reason || 'Manual kill switch')
+    );
+    res.json({ success: true, data });
+  })
+);
+
+router.post(
+  '/no-trade-mode/enable',
+  asyncHandler(async (req: Request, res: Response) => {
+    const data = await RiskJourneyService.enableNoTradeMode(
+      req.user!.id,
+      String(req.body?.reason || 'No-trade advisory')
+    );
+    res.json({ success: true, data });
+  })
+);
 
 router.get(
   '/check',

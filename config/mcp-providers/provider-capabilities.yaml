@@ -64,3 +64,15 @@ capabilities:
   - name: NEWS
     description: Market/news feed
     category: reference
+  - name: WEBHOOK_CONNECTIONS
+    description: Create/rotate TradingView webhook connections (secrets masked)
+    category: signals
+  - name: ALERT_PAYLOADS
+    description: Pine alert JSON payload templates (paper/signal only)
+    category: signals
+  - name: SYMBOL_MAPPING
+    description: Map TradingView tickers to platform symbols/exchanges
+    category: signals
+  - name: SIGNAL_PREVIEW
+    description: Validate/normalize TV alerts into paper signal intents (never live)
+    category: signals

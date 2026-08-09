@@ -46,6 +46,31 @@ model User {
   riskEvents         RiskEvent[]
   paperStrategies    PaperStrategy[]
   derivativePositions DerivativePosition[]
+  userRiskProfiles   UserRiskProfile[]
+  capitalRiskPolicies CapitalRiskPolicy[]
+  dailyRiskBudgets   DailyRiskBudget[]
+  algoSuitabilityScores AlgoSuitabilityScore[]
+  liveUnlockRequests LiveUnlockRequest[]
+  tradingViewConnections TradingViewConnection[]
+  normalizedSignals      NormalizedSignal[]
+  paperTestRequests      PaperTestRequest[]
+  alertAuditLogs         AlertAuditLog[]
+  orderPreviews          OrderPreview[]
+  basketOrders           BasketOrder[]
+  tradeComplianceAudits  TradeComplianceAudit[]
+  executionIntents       ExecutionIntent[]
+  strategyApprovals      StrategyApproval[]
+  preapprovedRules       PreApprovedExecutionRule[]
+  algoSelectionDecisions AlgoSelectionDecision[]
+  strategySuitabilityScores StrategySuitabilityScore[]
+  rmsDecisions           RmsDecisionRecord[]
+  executionAuditEvents   ExecutionAuditEvent[]
+  blockedExecutionAttempts BlockedExecutionAttempt[]
+  maStrategies             MaStrategy[]
+  maWebhookEndpoints       MaWebhookEndpoint[]
+  maBrokerAccounts         MaBrokerAccount[]
+  maAuditEvents            MaAuditEvent[]
+  maKillSwitches           MaKillSwitch[]
 
   @@map("users")
 }
@@ -63,6 +88,11 @@ model Tenant {
 
   owner       User               @relation("TenantOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   memberships TenantMembership[]
+  maStrategies      MaStrategy[]
+  maWebhookEndpoints MaWebhookEndpoint[]
+  maBrokerAccounts  MaBrokerAccount[]
+  maAuditEvents     MaAuditEvent[]
+  maKillSwitches    MaKillSwitch[]
 
   @@index([ownerId])
   @@map("tenants")
@@ -504,6 +534,8 @@ model Order {
   status             String    @default("PENDING")
   isPaper            Boolean   @default(true) @map("is_paper")
   agentId            String?   @map("agent_id")
+  source             String?   @default("MANUAL")
+  meta               Json?
   rejectionReason    String?   @map("rejection_reason")
   executedAt         DateTime? @map("executed_at")
   createdAt          DateTime  @default(now()) @map("created_at")
@@ -785,4 +817,1213 @@ model DerivativePosition {
   @@index([userId, tradingSymbol])
   @@unique([userId, tradingSymbol, isPaper, product])
   @@map("derivative_positions")
+}
+
+/// ₹1L Capital Risk Journey — onboarding profile
+model UserRiskProfile {
+  id                       String   @id @default(uuid())
+  userId                   String   @map("user_id")
+  capitalAmount            Float    @map("capital_amount")
+  experienceLevel          String   @map("experience_level") // beginner | moderate | advanced
+  riskTolerance            String   @map("risk_tolerance") // conservative | moderate | aggressive
+  tradingType              String   @map("trading_type") // intraday | swing | positional | mixed
+  preferredAlgos           Json     @default("[]") @map("preferred_algos")
+  maxAcceptableDailyLoss   Float    @map("max_acceptable_daily_loss")
+  maxAcceptableMonthlyLoss Float    @map("max_acceptable_monthly_loss")
+  language                 String   @default("en") // en | hinglish | odia
+  completed                Boolean  @default(true)
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@map("user_risk_profiles")
+}
+
+/// Capital-tier policy (defaults for ₹1,00,000)
+model CapitalRiskPolicy {
+  id                         String   @id @default(uuid())
+  userId                     String   @map("user_id")
+  capitalAmount              Float    @map("capital_amount")
+  dailyProfitTargetMin       Float    @map("daily_profit_target_min")
+  dailyProfitTargetMax       Float    @map("daily_profit_target_max")
+  maxDailyLoss               Float    @map("max_daily_loss")
+  maxRiskPerTrade            Float    @map("max_risk_per_trade")
+  maxTradesPerDay            Int      @map("max_trades_per_day")
+  stopAfterConsecutiveLosses Int      @map("stop_after_consecutive_losses")
+  allowedAlgoTypes           Json     @default("[]") @map("allowed_algo_types")
+  lockedAlgoTypes            Json     @default("[]") @map("locked_algo_types")
+  liveTradingEnabled         Boolean  @default(false) @map("live_trading_enabled")
+  paperTradingEnabled        Boolean  @default(true) @map("paper_trading_enabled")
+  optionsSellingEnabled      Boolean  @default(false) @map("options_selling_enabled")
+  nakedOptionsBlocked        Boolean  @default(true) @map("naked_options_blocked")
+  leverageLimited            Boolean  @default(true) @map("leverage_limited")
+  killSwitchEnabled          Boolean  @default(true) @map("kill_switch_enabled")
+  killSwitchActive           Boolean  @default(false) @map("kill_switch_active")
+  noTradeMode                Boolean  @default(false) @map("no_trade_mode")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@map("capital_risk_policies")
+}
+
+model DailyRiskBudget {
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  tradingDate        DateTime @map("trading_date") @db.Date
+  openingCapital     Float    @map("opening_capital")
+  dailyTarget        Float    @map("daily_target")
+  maxDailyLoss       Float    @map("max_daily_loss")
+  riskUsed           Float    @default(0) @map("risk_used")
+  tradesTaken        Int      @default(0) @map("trades_taken")
+  winningTrades      Int      @default(0) @map("winning_trades")
+  losingTrades       Int      @default(0) @map("losing_trades")
+  consecutiveLosses  Int      @default(0) @map("consecutive_losses")
+  currentPnl         Float    @default(0) @map("current_pnl")
+  status             String   @default("ACTIVE") // ACTIVE | TARGET_HIT | LOSS_LIMIT | STOPPED | NO_TRADE | KILL_SWITCH
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tradingDate])
+  @@index([userId, tradingDate])
+  @@map("daily_risk_budgets")
+}
+
+model AlgoSuitabilityScore {
+  id                   String   @id @default(uuid())
+  algoId               String   @map("algo_id")
+  userId               String   @map("user_id")
+  capitalFit           Float    @map("capital_fit")
+  riskFit              Float    @map("risk_fit")
+  marketConditionFit   Float    @map("market_condition_fit")
+  complexityScore      Float    @map("complexity_score")
+  paperTestScore       Float    @map("paper_test_score")
+  finalScore           Float    @map("final_score")
+  recommendationStatus String   @map("recommendation_status") // RECOMMENDED | CAUTION | LOCKED
+  reason               String   @db.Text
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, algoId])
+  @@index([userId])
+  @@map("algo_suitability_scores")
+}
+
+model LiveUnlockRequest {
+  id                  String    @id @default(uuid())
+  userId              String    @map("user_id")
+  status              String    @default("LOCKED") // LOCKED | PENDING | APPROVED | REJECTED
+  paperTradesCount    Int       @default(0) @map("paper_trades_count")
+  paperTradingDays    Int       @default(0) @map("paper_trading_days")
+  maxDrawdownPct      Float     @default(0) @map("max_drawdown_pct")
+  stopLossPresent     Boolean   @default(false) @map("stop_loss_present")
+  riskRulesPresent    Boolean   @default(false) @map("risk_rules_present")
+  userApproval        Boolean   @default(false) @map("user_approval")
+  adminApproval       Boolean   @default(false) @map("admin_approval")
+  blockers            Json      @default("[]")
+  reason              String?   @db.Text
+  requestedAt         DateTime? @map("requested_at")
+  decidedAt           DateTime? @map("decided_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@map("live_unlock_requests")
+}
+
+/// TradingView Connect — webhook connection
+model TradingViewConnection {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  tenantId     String?  @map("tenant_id")
+  name         String
+  secretHash   String   @map("secret_hash")
+  secretHint   String   @map("secret_hint") // last 4 chars only
+  isActive     Boolean  @default(true) @map("is_active")
+  defaultMode  String   @default("paper") @map("default_mode") // paper | live_request
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user           User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  webhookEvents  TradingViewWebhookEvent[]
+  signals        NormalizedSignal[]
+  signalMappings TradingViewSignalMapping[]
+
+  @@index([userId])
+  @@map("tradingview_connections")
+}
+
+model TradingViewWebhookEvent {
+  id              String   @id @default(uuid())
+  connectionId    String   @map("connection_id")
+  userId          String   @map("user_id")
+  idempotencyKey  String   @map("idempotency_key")
+  status          String   // RECEIVED | REJECTED | NORMALIZED | FAILED
+  rejectReason    String?  @map("reject_reason")
+  rawPayloadRedacted Json  @map("raw_payload_redacted")
+  headersRedacted Json?    @map("headers_redacted")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  connection TradingViewConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@map("tradingview_webhook_events")
+}
+
+model TradingViewAlertPayloadTemplate {
+  id          String   @id @default(uuid())
+  userId      String?  @map("user_id")
+  name        String
+  kind        String   // BUY | SELL | EXIT | STOP_LOSS | OPTIONS | MULTI_ACCOUNT | STANDARD
+  templateJson Json    @map("template_json")
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("tradingview_alert_payload_templates")
+}
+
+model TradingViewSignalMapping {
+  id           String   @id @default(uuid())
+  connectionId String   @map("connection_id")
+  signalType   String   @map("signal_type")
+  strategyId   String?  @map("strategy_id")
+  symbolMap    Json?    @map("symbol_map")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  connection TradingViewConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId])
+  @@map("tradingview_signal_mappings")
+}
+
+model NormalizedSignal {
+  id                 String   @id @default(uuid())
+  tenantId           String?  @map("tenant_id")
+  userId             String   @map("user_id")
+  connectionId       String?  @map("connection_id")
+  strategyId         String?  @map("strategy_id")
+  source             String   @default("TRADINGVIEW")
+  symbol             String
+  exchange           String   @default("NSE")
+  assetClass         String   @default("EQUITY") @map("asset_class")
+  side               String
+  signalType         String   @map("signal_type")
+  timeframe          String?
+  price              Float?
+  quantity           Float    @default(1)
+  stopLoss           Float?   @map("stop_loss")
+  target             Float?
+  confidenceScore    Float    @default(0.7) @map("confidence_score")
+  timestamp          DateTime
+  rawPayloadRedacted Json     @map("raw_payload_redacted")
+  idempotencyKey     String   @map("idempotency_key")
+  status             String   @default("NEW") // NEW | VALIDATED | REJECTED | PAPER_TESTED | CONVERTED | LIVE_PENDING | IGNORED
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection   TradingViewConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  validations  SignalValidationResult[]
+  conversions  SignalToStrategyConversion[]
+  paperTests   PaperTestRequest[]
+  parentSignal ParentSignal?
+  auditLogs    AlertAuditLog[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, status, createdAt])
+  @@map("normalized_signals")
+}
+
+model SignalValidationResult {
+  id         String   @id @default(uuid())
+  signalId   String   @map("signal_id")
+  passed     Boolean
+  checks     Json
+  blockers   Json     @default("[]")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  signal NormalizedSignal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+
+  @@index([signalId])
+  @@map("signal_validation_results")
+}
+
+model SignalToStrategyConversion {
+  id         String   @id @default(uuid())
+  signalId   String   @map("signal_id")
+  strategyId String   @map("strategy_id")
+  riskRules  Json     @map("risk_rules")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  signal NormalizedSignal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+
+  @@index([signalId])
+  @@map("signal_to_strategy_conversions")
+}
+
+model PaperTestRequest {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  signalId   String   @map("signal_id")
+  status     String   @default("PENDING") // PENDING | RUNNING | PASSED | FAILED
+  orderId    String?  @map("order_id")
+  resultJson Json?    @map("result_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  signal NormalizedSignal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("paper_test_requests")
+}
+
+model ParentSignal {
+  id        String   @id @default(uuid())
+  signalId  String   @unique @map("signal_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  signal       NormalizedSignal  @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  childIntents ChildOrderIntent[]
+
+  @@map("parent_signals")
+}
+
+model ChildOrderIntent {
+  id              String   @id @default(uuid())
+  parentSignalId  String   @map("parent_signal_id")
+  accountLabel    String   @map("account_label")
+  brokerConnectionId String? @map("broker_connection_id")
+  quantity        Float
+  allocationPct   Float    @map("allocation_pct")
+  status          String   @default("PENDING") // PENDING | PAPER_PLACED | BLOCKED | APPROVED
+  orderId         String?  @map("order_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  parent ParentSignal @relation(fields: [parentSignalId], references: [id], onDelete: Cascade)
+
+  @@index([parentSignalId])
+  @@map("child_order_intents")
+}
+
+model AlertAuditLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  signalId  String?  @map("signal_id")
+  action    String
+  detail    String   @db.Text
+  meta      Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  signal NormalizedSignal? @relation(fields: [signalId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("alert_audit_logs")
+}
+
+/// Catalog instrument for Trading Terminal (stocks, indices, F&O wrappers)
+model TradeInstrument {
+  id                    String   @id @default(uuid())
+  symbol                String
+  displayName           String   @map("display_name")
+  exchange              String   @default("NSE")
+  segment               String   @default("EQ") // EQ | IDX | NFO
+  assetClass            String   @default("EQUITY") @map("asset_class")
+  instrumentType        String   @map("instrument_type") // STOCK | INDEX | INDEX_FUTURE | INDEX_OPTION | STOCK_FUTURE | STOCK_OPTION | ETF
+  tradable              Boolean  @default(true)
+  directTradingAllowed  Boolean  @default(true) @map("direct_trading_allowed")
+  lotSize               Int      @default(1) @map("lot_size")
+  tickSize              Float    @default(0.05) @map("tick_size")
+  expiry                String?
+  strike                Float?
+  optionType            String?  @map("option_type") // CE | PE
+  underlyingSymbol      String?  @map("underlying_symbol")
+  brokerSymbol          String?  @map("broker_symbol")
+  providerId            String?  @map("provider_id")
+  tradingStatus         String   @default("OPEN") @map("trading_status")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  orderPreviews OrderPreview[]
+  basketLegs    BasketOrderLeg[]
+
+  @@unique([symbol, exchange, instrumentType, expiry, strike, optionType])
+  @@index([symbol])
+  @@index([instrumentType])
+  @@map("trade_instruments")
+}
+
+model OrderPreview {
+  id                     String    @id @default(uuid())
+  userId                 String    @map("user_id")
+  tenantId               String?   @map("tenant_id")
+  accountId              String?   @map("account_id")
+  instrumentId           String?   @map("instrument_id")
+  symbol                 String
+  exchange               String    @default("NSE")
+  side                   String
+  quantity               Int
+  orderType              String    @default("MARKET") @map("order_type")
+  productType            String    @default("CNC") @map("product_type")
+  price                  Float?
+  triggerPrice           Float?    @map("trigger_price")
+  stopLoss               Float?    @map("stop_loss")
+  target                 Float?
+  mode                   String    @default("PAPER") // PAPER | LIVE
+  source                 String    @default("ORDER_TICKET") // CHART | ORDER_TICKET | BASKET
+  status                 String    @default("PREVIEWED") // PREVIEWED | APPROVED | REJECTED | SUBMITTED | EXPIRED
+  allowed                Boolean   @default(false)
+  requiredApproval       Boolean   @default(true) @map("required_approval")
+  warnings               Json      @default("[]")
+  riskSummary            Json?     @map("risk_summary")
+  estimatedPrice         Float?    @map("estimated_price")
+  estimatedMargin        Float?    @map("estimated_margin")
+  estimatedCharges       Float?    @map("estimated_charges")
+  estimatedMaxLoss       Float?    @map("estimated_max_loss")
+  brokerCapabilityStatus String?   @map("broker_capability_status")
+  nextAction             String?   @map("next_action")
+  idempotencyKey         String    @unique @map("idempotency_key")
+  orderId                String?   @map("order_id")
+  basketId               String?   @map("basket_id")
+  meta                   Json?
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  expiresAt              DateTime? @map("expires_at")
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instrument TradeInstrument? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+  basket     BasketOrder?     @relation(fields: [basketId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("order_previews")
+}
+
+model BasketOrder {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  tenantId          String?  @map("tenant_id")
+  accountId         String?  @map("account_id")
+  brokerProviderId  String?  @map("broker_provider_id")
+  basketName        String   @map("basket_name")
+  mode              String   @default("PAPER") // PAPER | LIVE
+  status            String   @default("DRAFT")
+  partialAllowed    Boolean  @default(false) @map("partial_allowed")
+  allOrNone         Boolean  @default(true) @map("all_or_none")
+  totalMargin       Float?   @map("total_margin")
+  totalRisk         Float?   @map("total_risk")
+  totalCharges      Float?   @map("total_charges")
+  worstCaseLoss     Float?   @map("worst_case_loss")
+  riskSummary       Json?    @map("risk_summary")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  legs     BasketOrderLeg[]
+  previews OrderPreview[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("basket_orders")
+}
+
+model BasketOrderLeg {
+  id               String   @id @default(uuid())
+  basketId         String   @map("basket_id")
+  instrumentId     String?  @map("instrument_id")
+  symbol           String
+  exchange         String   @default("NSE")
+  instrumentType   String   @default("STOCK") @map("instrument_type")
+  side             String
+  quantity         Int
+  lotSize          Int      @default(1) @map("lot_size")
+  orderType        String   @default("MARKET") @map("order_type")
+  productType      String   @default("CNC") @map("product_type")
+  price            Float?
+  triggerPrice     Float?   @map("trigger_price")
+  stopLoss         Float?   @map("stop_loss")
+  target           Float?
+  weightPercent    Float?   @map("weight_percent")
+  estimatedMargin  Float?   @map("estimated_margin")
+  estimatedRisk    Float?   @map("estimated_risk")
+  legStatus        String   @default("DRAFT") @map("leg_status")
+  idempotencyKey   String   @unique @map("idempotency_key")
+  orderId          String?  @map("order_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  basket     BasketOrder      @relation(fields: [basketId], references: [id], onDelete: Cascade)
+  instrument TradeInstrument? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+
+  @@index([basketId])
+  @@map("basket_order_legs")
+}
+
+model TradeComplianceAudit {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  eventType  String   @map("event_type")
+  entityType String   @map("entity_type") // ORDER | PREVIEW | BASKET | CHART | INSTRUMENT
+  entityId   String?  @map("entity_id")
+  detail     String   @db.Text
+  meta       Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([eventType])
+  @@map("trade_compliance_audits")
+}
+
+/// ExecutionGovernance360 — normalized intent (AI/TV/DhanLaxmi never execute)
+model ExecutionIntent {
+  id                    String   @id @default(uuid())
+  tenantId              String?  @map("tenant_id")
+  userId                String   @map("user_id")
+  source                String // AI_ADVISORY | TRADINGVIEW_ALERT | DHANLAXMI_PROMPT | USER_MANUAL | ...
+  mode                  String   @default("PAPER") // PAPER | LIVE | BACKTEST | SIMULATION
+  authority             String   @default("APPROVAL_REQUIRED")
+  status                String   @default("RECEIVED")
+  strategyId            String?  @map("strategy_id")
+  signalId              String?  @map("signal_id")
+  advisoryId            String?  @map("advisory_id")
+  dhanlaxmiConversationId String? @map("dhanlaxmi_conversation_id")
+  accountId             String?  @map("account_id")
+  brokerProviderId      String?  @map("broker_provider_id")
+  instrumentId          String?  @map("instrument_id")
+  symbol                String
+  exchange              String   @default("NSE")
+  assetClass            String?  @map("asset_class")
+  instrumentType        String   @default("STOCK") @map("instrument_type")
+  side                  String
+  quantity              Int
+  orderType             String   @default("MARKET") @map("order_type")
+  productType           String   @default("CNC") @map("product_type")
+  price                 Float?
+  triggerPrice          Float?   @map("trigger_price")
+  stopLoss              Float?   @map("stop_loss")
+  target                Float?
+  sourcePayloadRedacted Json?    @map("source_payload_redacted")
+  idempotencyKey        String   @unique @map("idempotency_key")
+  selectedAlgoId        String?  @map("selected_algo_id")
+  approvalId            String?  @map("approval_id")
+  preapprovalRuleId     String?  @map("preapproval_rule_id")
+  rmsDecisionId         String?  @map("rms_decision_id")
+  omsOrderId            String?  @map("oms_order_id")
+  blockReason           String?  @map("block_reason") @db.Text
+  nextAction            String?  @map("next_action")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  algoDecisions   AlgoSelectionDecision[]
+  suitability     StrategySuitabilityScore[]
+  rmsDecisions    RmsDecisionRecord[]
+  timelines       ExecutionTimelineEvent[]
+  auditEvents     ExecutionAuditEvent[]
+  gatekeeperChecks OmsGatekeeperCheck[]
+  brokerChecks    BrokerGuardrailCheck[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([source])
+  @@map("execution_intents")
+}
+
+model AlgoSelectionDecision {
+  id                   String   @id @default(uuid())
+  intentId             String   @map("intent_id")
+  userId               String   @map("user_id")
+  strategyId           String?  @map("strategy_id")
+  selectedAlgoId       String?  @map("selected_algo_id")
+  recommendedAlgos     Json     @default("[]") @map("recommended_algos")
+  rejectedAlgos        Json     @default("[]") @map("rejected_algos")
+  marketCondition      String?  @map("market_condition")
+  userRiskProfile      String?  @map("user_risk_profile")
+  capitalFit           Float?   @map("capital_fit")
+  marketFit            Float?   @map("market_fit")
+  riskFit              Float?   @map("risk_fit")
+  brokerFit            Float?   @map("broker_fit")
+  paperTestFit         Float?   @map("paper_test_fit")
+  liquidityFit         Float?   @map("liquidity_fit")
+  complexityRisk       Float?   @map("complexity_risk")
+  drawdownRisk         Float?   @map("drawdown_risk")
+  volatilityRisk       Float?   @map("volatility_risk")
+  finalScore           Float    @map("final_score")
+  recommendationReason String   @map("recommendation_reason") @db.Text
+  decisionStatus       String   @default("RECOMMENDED") @map("decision_status")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  intent ExecutionIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([intentId])
+  @@map("algo_selection_decisions")
+}
+
+model StrategySuitabilityScore {
+  id                   String   @id @default(uuid())
+  intentId             String?  @map("intent_id")
+  userId               String   @map("user_id")
+  strategyId           String?  @map("strategy_id")
+  algoId               String   @map("algo_id")
+  totalScore           Float    @map("total_score")
+  userRiskFit          Float    @map("user_risk_fit")
+  capitalFit           Float    @map("capital_fit")
+  marketConditionFit   Float    @map("market_condition_fit")
+  assetFit             Float    @map("asset_fit")
+  brokerCapabilityFit  Float    @map("broker_capability_fit")
+  paperTestScore       Float    @map("paper_test_score")
+  liquidityFit         Float    @map("liquidity_fit")
+  volatilityPenalty    Float    @map("volatility_penalty")
+  drawdownPenalty      Float    @map("drawdown_penalty")
+  complexityPenalty    Float    @map("complexity_penalty")
+  allowedMode          String   @map("allowed_mode") // PAPER_ONLY | PAPER_OR_APPROVED_LIVE
+  recommendationStatus String   @map("recommendation_status") // RECOMMENDED | WATCHLIST | LOCKED | BLOCKED
+  explanation          String   @db.Text
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  intent ExecutionIntent? @relation(fields: [intentId], references: [id], onDelete: SetNull)
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, algoId])
+  @@map("strategy_suitability_scores")
+}
+
+model StrategyApproval {
+  id                 String    @id @default(uuid())
+  userId             String    @map("user_id")
+  strategyId         String?   @map("strategy_id")
+  accountId          String?   @map("account_id")
+  mode               String    @default("PAPER")
+  approvalType       String    @map("approval_type") // MANUAL_SINGLE_TRADE | SESSION_APPROVAL | DAY_APPROVAL | PREAPPROVED_RULE
+  status             String    @default("PENDING") // PENDING | APPROVED | REJECTED | REVOKED | EXPIRED
+  approvedSymbols    Json      @default("[]") @map("approved_symbols")
+  approvedInstruments Json     @default("[]") @map("approved_instruments")
+  maxQuantity        Int?      @map("max_quantity")
+  maxOrderValue      Float?    @map("max_order_value")
+  maxRiskPerTrade    Float?    @map("max_risk_per_trade")
+  maxDailyLoss       Float?    @map("max_daily_loss")
+  maxTradesPerDay    Int?      @map("max_trades_per_day")
+  validFrom          DateTime? @map("valid_from")
+  validUntil         DateTime? @map("valid_until")
+  requiresStopLoss   Boolean   @default(true) @map("requires_stop_loss")
+  intentId           String?   @map("intent_id")
+  approvedAt         DateTime? @map("approved_at")
+  revokedAt          DateTime? @map("revoked_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("strategy_approvals")
+}
+
+model PreApprovedExecutionRule {
+  id                    String    @id @default(uuid())
+  tenantId              String?   @map("tenant_id")
+  userId                String    @map("user_id")
+  accountId             String?   @map("account_id")
+  strategyId            String?   @map("strategy_id")
+  algoId                String?   @map("algo_id")
+  brokerProviderId      String?   @map("broker_provider_id")
+  allowedSymbols        Json      @default("[]") @map("allowed_symbols")
+  allowedExchanges      Json      @default("[\"NSE\"]") @map("allowed_exchanges")
+  allowedInstrumentTypes Json     @default("[\"STOCK\"]") @map("allowed_instrument_types")
+  allowedSides          Json      @default("[\"BUY\",\"SELL\"]") @map("allowed_sides")
+  maxQuantityPerOrder   Int       @default(1) @map("max_quantity_per_order")
+  maxPositionValue      Float?    @map("max_position_value")
+  maxOrderValue         Float?    @map("max_order_value")
+  maxRiskPerTrade       Float?    @map("max_risk_per_trade")
+  maxDailyLoss          Float?    @map("max_daily_loss")
+  maxTradesPerDay       Int?      @map("max_trades_per_day")
+  allowedTimeWindowStart String?  @map("allowed_time_window_start") // HH:mm
+  allowedTimeWindowEnd   String?  @map("allowed_time_window_end")
+  validFrom             DateTime  @default(now()) @map("valid_from")
+  validUntil            DateTime  @map("valid_until")
+  mode                  String    @default("PAPER") // PAPER | LIVE — LIVE rare
+  enabled               Boolean   @default(true)
+  requiresStopLoss      Boolean   @default(true) @map("requires_stop_loss")
+  allowAddQuantity      Boolean   @default(true) @map("allow_add_quantity")
+  allowReduceQuantity   Boolean   @default(true) @map("allow_reduce_quantity")
+  allowExit             Boolean   @default(true) @map("allow_exit")
+  allowBasketOrders     Boolean   @default(false) @map("allow_basket_orders")
+  allowMultiAccount     Boolean   @default(false) @map("allow_multi_account")
+  createdBy             String?   @map("created_by")
+  approvedBy            String?   @map("approved_by")
+  revokedBy             String?   @map("revoked_by")
+  revokedAt             DateTime? @map("revoked_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, enabled])
+  @@map("preapproved_execution_rules")
+}
+
+model RmsDecisionRecord {
+  id                     String   @id @default(uuid())
+  intentId               String   @map("intent_id")
+  userId                 String   @map("user_id")
+  strategyId             String?  @map("strategy_id")
+  accountId              String?  @map("account_id")
+  status                 String // APPROVED | REJECTED | WARNING | PAPER_ONLY
+  rejectionReasons       Json     @default("[]") @map("rejection_reasons")
+  warnings               Json     @default("[]")
+  riskUsed               Float?   @map("risk_used")
+  dailyLossRemaining     Float?   @map("daily_loss_remaining")
+  estimatedMaxLoss       Float?   @map("estimated_max_loss")
+  marginRequired         Float?   @map("margin_required")
+  brokerCapabilityStatus String?  @map("broker_capability_status")
+  marketDataStatus       String?  @map("market_data_status")
+  killSwitchStatus       String?  @map("kill_switch_status")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  intent ExecutionIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([intentId])
+  @@index([userId])
+  @@map("rms_decisions")
+}
+
+model ExecutionTimelineEvent {
+  id        String   @id @default(uuid())
+  intentId  String   @map("intent_id")
+  status    String
+  detail    String   @db.Text
+  meta      Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  intent ExecutionIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
+
+  @@index([intentId, createdAt])
+  @@map("execution_timelines")
+}
+
+model ExecutionAuditEvent {
+  id             String   @id @default(uuid())
+  tenantId       String?  @map("tenant_id")
+  userId         String   @map("user_id")
+  intentId       String?  @map("intent_id")
+  source         String?
+  eventType      String   @map("event_type")
+  eventStatus    String?  @map("event_status")
+  actorType      String   @map("actor_type") // USER | SYSTEM | AI | TRADINGVIEW | DHANLAXMI | OMS | RMS
+  actorId        String?  @map("actor_id")
+  detailsRedacted String  @map("details_redacted") @db.Text
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  intent ExecutionIntent? @relation(fields: [intentId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([intentId])
+  @@index([eventType])
+  @@map("execution_audit_events")
+}
+
+model BlockedExecutionAttempt {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  source    String
+  reason    String   @db.Text
+  payload   Json?
+  intentId  String?  @map("intent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("blocked_execution_attempts")
+}
+
+model SourceAuthorityRule {
+  id          String  @id @default(uuid())
+  source      String  @unique
+  authority   String
+  canExecute  Boolean @default(false) @map("can_execute")
+  description String  @db.Text
+
+  @@map("source_authority_rules")
+}
+
+model OmsGatekeeperCheck {
+  id        String   @id @default(uuid())
+  intentId  String   @map("intent_id")
+  passed    Boolean
+  checks    Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  intent ExecutionIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
+
+  @@index([intentId])
+  @@map("oms_gatekeeper_checks")
+}
+
+model BrokerGuardrailCheck {
+  id            String   @id @default(uuid())
+  intentId      String?  @map("intent_id")
+  callerService String   @map("caller_service")
+  passed        Boolean
+  reason        String?  @db.Text
+  checks        Json
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  intent ExecutionIntent? @relation(fields: [intentId], references: [id], onDelete: SetNull)
+
+  @@index([callerService])
+  @@map("broker_guardrail_checks")
+}
+
+// ─── BxAi Trade Market Analytics (paper-only product surface) ───
+
+enum MaDataSource {
+  DEMO
+  SIMULATED
+  BROKER_PAPER
+  TV_BACKTEST
+}
+
+enum MaTradingMode {
+  signal
+  simulated
+  broker_paper
+}
+
+model MaBrokerAccount {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  userId            String   @map("user_id")
+  connectionName    String   @map("connection_name")
+  brokerType        String   @map("broker_type") // SIMULATED | IBKR_PAPER
+  paperAccountId    String   @map("paper_account_id")
+  baseCurrency      String   @default("USD") @map("base_currency")
+  status            String   @default("disconnected")
+  lastSyncAt        DateTime? @map("last_sync_at")
+  dataEntitlement   String   @default("unknown") @map("data_entitlement")
+  connectionHealth  String   @default("unknown") @map("connection_health")
+  buyingPower       Decimal  @default(0) @map("buying_power") @db.Decimal(20, 8)
+  netLiquidation     Decimal  @default(0) @map("net_liquidation") @db.Decimal(20, 8)
+  cashBalance       Decimal  @default(0) @map("cash_balance") @db.Decimal(20, 8)
+  realizedPnl       Decimal  @default(0) @map("realized_pnl") @db.Decimal(20, 8)
+  unrealizedPnl     Decimal  @default(0) @map("unrealized_pnl") @db.Decimal(20, 8)
+  reconcileOk       Boolean  @default(false) @map("reconcile_ok")
+  encryptedCreds    String?  @map("encrypted_creds") @db.Text
+  isDemo            Boolean  @default(false) @map("is_demo")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positions  MaPosition[]
+  orders     MaOrder[]
+  executions MaExecution[]
+  assignments MaStrategyAssignment[]
+
+  @@unique([tenantId, brokerType, paperAccountId])
+  @@index([userId])
+  @@map("ma_broker_accounts")
+}
+
+model MaContract {
+  id               String   @id @default(uuid())
+  symbol           String
+  exchange         String
+  currency         String   @default("USD")
+  securityType     String   @default("STK") @map("security_type")
+  conId            String?  @map("con_id")
+  minTick          Decimal  @default(0.01) @map("min_tick") @db.Decimal(20, 10)
+  lotSize          Decimal  @default(1) @map("lot_size") @db.Decimal(20, 8)
+  multiplier       Decimal  @default(1) @db.Decimal(20, 8)
+  primaryExchange  String?  @map("primary_exchange")
+  timeZoneId       String   @default("America/New_York") @map("time_zone_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([symbol, exchange, currency, securityType])
+  @@map("ma_contracts")
+}
+
+model MaMarketDataSnapshot {
+  id          String   @id @default(uuid())
+  symbol      String
+  bid         Decimal? @db.Decimal(20, 8)
+  ask         Decimal? @db.Decimal(20, 8)
+  last        Decimal? @db.Decimal(20, 8)
+  volume      Decimal? @db.Decimal(20, 4)
+  isDelayed   Boolean  @default(false) @map("is_delayed")
+  isStale     Boolean  @default(false) @map("is_stale")
+  ageSeconds  Int      @default(0) @map("age_seconds")
+  source      MaDataSource @default(SIMULATED)
+  observedAt  DateTime @default(now()) @map("observed_at")
+
+  @@index([symbol, observedAt])
+  @@map("ma_market_data_snapshots")
+}
+
+model MaStrategy {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  userId        String   @map("user_id")
+  strategyKey   String   @map("strategy_key") // orb-v1
+  name          String
+  enabled       Boolean  @default(true)
+  pineVersion   String   @default("6") @map("pine_version")
+  parameters    Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions   MaStrategyVersion[]
+  assignments MaStrategyAssignment[]
+  signals    MaNormalizedSignal[]
+  webhookEndpoints MaWebhookEndpoint[]
+
+  @@unique([tenantId, strategyKey])
+  @@map("ma_strategies")
+}
+
+model MaStrategyVersion {
+  id          String   @id @default(uuid())
+  strategyId  String   @map("strategy_id")
+  version     String
+  parameters  Json
+  changeNote  String?  @map("change_note") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  strategy MaStrategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+
+  @@index([strategyId])
+  @@map("ma_strategy_versions")
+}
+
+model MaStrategyAssignment {
+  id              String   @id @default(uuid())
+  strategyId      String   @map("strategy_id")
+  brokerAccountId String   @map("broker_account_id")
+  symbol          String
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  strategy      MaStrategy      @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  brokerAccount MaBrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([strategyId, brokerAccountId, symbol])
+  @@map("ma_strategy_assignments")
+}
+
+model MaWebhookEndpoint {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  userId          String   @map("user_id")
+  strategyId      String?  @map("strategy_id")
+  endpointToken   String   @unique @map("endpoint_token")
+  secretHash      String   @map("secret_hash")
+  secretHint      String?  @map("secret_hint")
+  lastReceivedAt  DateTime? @map("last_received_at")
+  lastAcceptedAt  DateTime? @map("last_accepted_at")
+  lastRejectedAt  DateTime? @map("last_rejected_at")
+  errorCount      Int      @default(0) @map("error_count")
+  duplicateCount  Int      @default(0) @map("duplicate_count")
+  expiredCount    Int      @default(0) @map("expired_count")
+  rotatedAt       DateTime? @map("rotated_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy MaStrategy? @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  alerts   MaTradingViewAlert[]
+
+  @@index([tenantId])
+  @@map("ma_webhook_endpoints")
+}
+
+model MaTradingViewAlert {
+  id             String   @id @default(uuid())
+  endpointId     String   @map("endpoint_id")
+  signalId       String   @map("signal_id")
+  event          String
+  symbol         String
+  payloadRedacted Json    @map("payload_redacted")
+  status         String   // accepted | rejected | duplicate | expired
+  rejectReason   String?  @map("reject_reason") @db.Text
+  receivedAt     DateTime @default(now()) @map("received_at")
+
+  endpoint MaWebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  signal   MaNormalizedSignal?
+
+  @@unique([endpointId, signalId])
+  @@index([receivedAt])
+  @@map("ma_tradingview_alerts")
+}
+
+model MaNormalizedSignal {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  strategyId      String?  @map("strategy_id")
+  alertId         String?  @unique @map("alert_id")
+  signalId        String   @map("signal_id")
+  symbol          String
+  side            String
+  referencePrice  Decimal  @map("reference_price") @db.Decimal(20, 8)
+  entryPrice      Decimal? @map("entry_price") @db.Decimal(20, 8)
+  stopPrice       Decimal? @map("stop_price") @db.Decimal(20, 8)
+  targetPrice     Decimal? @map("target_price") @db.Decimal(20, 8)
+  quantity        Int      @default(0)
+  expectedRisk    Decimal  @default(0) @map("expected_risk") @db.Decimal(20, 8)
+  status          String
+  rejectReason    String?  @map("reject_reason") @db.Text
+  indicators      Json?
+  barTime         DateTime? @map("bar_time")
+  dataAgeSeconds  Int?     @map("data_age_seconds")
+  brokerAccountId String?  @map("broker_account_id")
+  orderId         String?  @map("order_id")
+  source          MaDataSource @default(SIMULATED)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  strategy MaStrategy?        @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  alert    MaTradingViewAlert? @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  riskEvals MaRiskEvaluation[]
+  orders   MaOrder[]
+
+  @@index([tenantId, createdAt])
+  @@index([signalId])
+  @@map("ma_normalized_signals")
+}
+
+model MaRiskEvaluation {
+  id        String   @id @default(uuid())
+  signalId  String   @map("signal_id")
+  gateName  String   @map("gate_name")
+  passed    Boolean
+  detail    String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  signal MaNormalizedSignal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+
+  @@index([signalId])
+  @@map("ma_risk_evaluations")
+}
+
+model MaPortfolioSnapshot {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  equity         Decimal  @db.Decimal(20, 8)
+  equityPeak     Decimal  @map("equity_peak") @db.Decimal(20, 8)
+  dailyPnl       Decimal  @map("daily_pnl") @db.Decimal(20, 8)
+  weeklyPnl      Decimal  @map("weekly_pnl") @db.Decimal(20, 8)
+  drawdownPct    Decimal  @map("drawdown_pct") @db.Decimal(10, 6)
+  capitalDeployed Decimal @map("capital_deployed") @db.Decimal(20, 8)
+  capitalAtRisk  Decimal  @map("capital_at_risk") @db.Decimal(20, 8)
+  source         MaDataSource @default(SIMULATED)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt])
+  @@map("ma_portfolio_snapshots")
+}
+
+model MaPosition {
+  id              String   @id @default(uuid())
+  brokerAccountId String   @map("broker_account_id")
+  symbol          String
+  quantity        Decimal  @db.Decimal(20, 8)
+  avgPrice        Decimal  @map("avg_price") @db.Decimal(20, 8)
+  currentPrice    Decimal? @map("current_price") @db.Decimal(20, 8)
+  marketValue     Decimal? @map("market_value") @db.Decimal(20, 8)
+  unrealizedPnl   Decimal  @default(0) @map("unrealized_pnl") @db.Decimal(20, 8)
+  realizedPnl     Decimal  @default(0) @map("realized_pnl") @db.Decimal(20, 8)
+  stopPrice       Decimal? @map("stop_price") @db.Decimal(20, 8)
+  targetPrice     Decimal? @map("target_price") @db.Decimal(20, 8)
+  strategyId      String?  @map("strategy_id")
+  source          MaDataSource @default(SIMULATED)
+  openedAt        DateTime @default(now()) @map("opened_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  brokerAccount MaBrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([brokerAccountId, symbol])
+  @@map("ma_positions")
+}
+
+model MaOrder {
+  id              String   @id @default(uuid())
+  brokerAccountId String   @map("broker_account_id")
+  signalId        String?  @map("signal_id")
+  appOrderId      String   @unique @map("app_order_id")
+  idempotencyKey  String   @unique @map("idempotency_key")
+  brokerOrderId   String?  @map("broker_order_id")
+  strategyId      String?  @map("strategy_id")
+  symbol          String
+  side            String
+  orderType       String   @map("order_type")
+  quantity        Decimal  @db.Decimal(20, 8)
+  filledQty       Decimal  @default(0) @map("filled_qty") @db.Decimal(20, 8)
+  limitPrice      Decimal? @map("limit_price") @db.Decimal(20, 8)
+  stopPrice       Decimal? @map("stop_price") @db.Decimal(20, 8)
+  targetPrice     Decimal? @map("target_price") @db.Decimal(20, 8)
+  status          String
+  parentOrderId   String?  @map("parent_order_id")
+  role            String   @default("entry") // entry | stop | target
+  source          MaDataSource @default(SIMULATED)
+  submittedAt     DateTime @default(now()) @map("submitted_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  brokerAccount MaBrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+  signal        MaNormalizedSignal? @relation(fields: [signalId], references: [id], onDelete: SetNull)
+  events        MaOrderEvent[]
+  executions    MaExecution[]
+
+  @@index([brokerAccountId, status])
+  @@map("ma_orders")
+}
+
+model MaOrderEvent {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  status    String
+  detail    String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order MaOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("ma_order_events")
+}
+
+model MaExecution {
+  id              String   @id @default(uuid())
+  brokerAccountId String   @map("broker_account_id")
+  orderId         String?  @map("order_id")
+  execId          String   @map("exec_id")
+  symbol          String
+  qty             Decimal  @db.Decimal(20, 8)
+  price           Decimal  @db.Decimal(20, 8)
+  commission      Decimal  @default(0) @db.Decimal(20, 8)
+  executedAt      DateTime @default(now()) @map("executed_at")
+  source          MaDataSource @default(SIMULATED)
+
+  brokerAccount MaBrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+  order         MaOrder?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([brokerAccountId, execId])
+  @@map("ma_executions")
+}
+
+model MaTrade {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  symbol      String
+  side        String
+  qty         Decimal  @db.Decimal(20, 8)
+  entryPrice  Decimal  @map("entry_price") @db.Decimal(20, 8)
+  exitPrice   Decimal? @map("exit_price") @db.Decimal(20, 8)
+  grossPnl    Decimal  @default(0) @map("gross_pnl") @db.Decimal(20, 8)
+  netPnl      Decimal  @default(0) @map("net_pnl") @db.Decimal(20, 8)
+  fees        Decimal  @default(0) @db.Decimal(20, 8)
+  source      MaDataSource @default(SIMULATED)
+  openedAt    DateTime @default(now()) @map("opened_at")
+  closedAt    DateTime? @map("closed_at")
+
+  @@index([tenantId, openedAt])
+  @@map("ma_trades")
+}
+
+model MaDailyPerformance {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  day         DateTime @db.Date
+  grossPnl    Decimal  @map("gross_pnl") @db.Decimal(20, 8)
+  netPnl      Decimal  @map("net_pnl") @db.Decimal(20, 8)
+  fees        Decimal  @db.Decimal(20, 8)
+  trades      Int      @default(0)
+  source      MaDataSource @default(SIMULATED)
+
+  @@unique([tenantId, day, source])
+  @@map("ma_daily_performance")
+}
+
+model MaEquitySnapshot {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  equity    Decimal  @db.Decimal(20, 8)
+  source    MaDataSource @default(SIMULATED)
+  at        DateTime @default(now())
+
+  @@index([tenantId, at])
+  @@map("ma_equity_snapshots")
+}
+
+model MaReconciliationRun {
+  id              String   @id @default(uuid())
+  brokerAccountId String   @map("broker_account_id")
+  status          String
+  detail          Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([brokerAccountId, createdAt])
+  @@map("ma_reconciliation_runs")
+}
+
+model MaSystemHealthEvent {
+  id        String   @id @default(uuid())
+  tenantId  String?  @map("tenant_id")
+  kind      String
+  severity  String   @default("info")
+  detail    String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt])
+  @@map("ma_system_health_events")
+}
+
+model MaAuditEvent {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String?  @map("user_id")
+  action    String
+  entity    String?
+  entityId  String?  @map("entity_id")
+  detail    Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@map("ma_audit_events")
+}
+
+model MaKillSwitch {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  active    Boolean  @default(false)
+  reason    String?  @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId])
+  @@map("ma_kill_switches")
 }

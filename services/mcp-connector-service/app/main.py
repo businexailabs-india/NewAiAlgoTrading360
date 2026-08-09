@@ -596,6 +596,90 @@ async def dhan_credential_schema(identity=Depends(require_service)):
 
 
 # ---------------------------------------------------------------------------
+# TradingView Connect — signal/webhook MCP (paper only, never live click-trade)
+# ---------------------------------------------------------------------------
+
+
+def _tradingview_provider():
+    return svc.registry.get_provider("tradingview", fresh=False)
+
+
+class TVConnectBody(BaseModel):
+    credentials: dict[str, str] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class TVPreviewBody(BaseModel):
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class TVRotateBody(BaseModel):
+    connection_id: str | None = None
+
+
+@app.post("/mcp/providers/tradingview/connect")
+async def tradingview_connect(body: TVConnectBody, identity=Depends(require_service)):
+    provider = _tradingview_provider()
+    result = await provider.connect(body.credentials or {}, body.config or {})
+    # Return secret once; redact helper may strip it — keep intentional one-time delivery
+    return {"success": True, "data": result}
+
+
+@app.get("/mcp/providers/tradingview/health")
+async def tradingview_health(identity=Depends(require_service)):
+    provider = _tradingview_provider()
+    return {"success": True, "data": await provider.health_check()}
+
+
+@app.get("/mcp/providers/tradingview/connections")
+async def tradingview_connections(identity=Depends(require_service)):
+    provider = _tradingview_provider()
+    return {"success": True, "data": await provider.list_webhook_connections()}
+
+
+@app.post("/mcp/providers/tradingview/rotate-secret")
+async def tradingview_rotate_secret(body: TVRotateBody, identity=Depends(require_service)):
+    provider = _tradingview_provider()
+    return {"success": True, "data": await provider.rotate_webhook_secret(body.connection_id)}
+
+
+@app.get("/mcp/providers/tradingview/payload-templates")
+async def tradingview_payload_templates(identity=Depends(require_service)):
+    provider = _tradingview_provider()
+    return {"success": True, "data": await provider.get_payload_templates()}
+
+
+@app.get("/mcp/providers/tradingview/payload-templates/{kind}")
+async def tradingview_payload_template(kind: str, identity=Depends(require_service)):
+    provider = _tradingview_provider()
+    return {"success": True, "data": await provider.get_payload_template(kind)}
+
+
+@app.get("/mcp/providers/tradingview/map-symbol")
+async def tradingview_map_symbol(
+    symbol: str = Query(...),
+    exchange: str | None = Query(default=None),
+    identity=Depends(require_service),
+):
+    provider = _tradingview_provider()
+    return {"success": True, "data": await provider.map_tv_symbol(symbol, exchange)}
+
+
+@app.post("/mcp/providers/tradingview/preview-alert")
+async def tradingview_preview_alert(body: TVPreviewBody, identity=Depends(require_service)):
+    provider = _tradingview_provider()
+    data = await provider.preview_alert(body.payload or {})
+    return {"success": True, "data": redact_secrets(data)}
+
+
+@app.post("/mcp/providers/tradingview/orders/preview")
+async def tradingview_order_preview(body: TVPreviewBody, identity=Depends(require_service)):
+    provider = _tradingview_provider()
+    data = await provider.preview_order(body.payload or {})
+    return {"success": True, "data": redact_secrets(data)}
+
+
+# ---------------------------------------------------------------------------
 # Interactive Brokers (IBKR) — paper-first global broker
 # ---------------------------------------------------------------------------
 

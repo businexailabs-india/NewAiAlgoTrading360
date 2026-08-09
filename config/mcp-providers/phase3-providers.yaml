@@ -47,3 +47,7 @@ providers:
     display_name: Mock Trading
     priority: 11
     role: mock
+  - provider_id: tradingview
+    display_name: TradingView Connect
+    priority: 20
+    role: signal_integration

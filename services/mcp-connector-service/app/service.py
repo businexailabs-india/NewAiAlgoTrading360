@@ -58,6 +58,9 @@ class MCPConnectorService:
         os.environ.setdefault(
             "MCP_ENABLE_MOCK_MARKET_DATA", str(self.settings.mcp_enable_mock_market_data).lower()
         )
+        os.environ.setdefault(
+            "MCP_ENABLE_TRADINGVIEW", str(self.settings.mcp_enable_tradingview).lower()
+        )
         os.environ.setdefault("PAPER_TRADING_ENABLED", str(self.settings.paper_trading_enabled).lower())
 
         self.registry: MCPProviderRegistry = get_registry(reload=True)

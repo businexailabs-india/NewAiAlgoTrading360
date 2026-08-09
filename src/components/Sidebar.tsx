@@ -22,6 +22,8 @@ import {
   Link2,
   Lock,
   Store,
+  Sparkles,
+  Activity,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { TOP_CHROME_H } from './TopBar';
@@ -72,81 +74,78 @@ export function Sidebar({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    markets: true,
     trade: true,
-    strategies: false,
-    analytics: false,
+    advanced: false,
   });
 
   const menuItems: NavEntry[] = useMemo(
     () => [
-      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
+      { id: 'dhanlaxmi', label: 'DhanLaxmi', icon: Sparkles },
       {
-        id: 'markets',
-        label: 'Markets',
-        icon: Store,
-        children: [
-          { id: 'markets-equity', label: 'Equity', icon: LineChart },
-          { id: 'markets-futures', label: 'Futures', icon: CandlestickChart },
-          { id: 'markets-options', label: 'Options Chain', icon: Layers, badge: { text: 'F&O', color: 'cyan' } },
-          { id: 'markets-fno-scanner', label: 'F&O Scanner', icon: ScanSearch },
-        ],
+        id: 'tradingview-connect',
+        label: 'TradingView',
+        icon: Zap,
+        badge: { text: 'SAFE', color: 'cyan' },
+      },
+      { id: 'algo-library', label: 'Algo Library', icon: Layers },
+      {
+        id: 'papertrade-lab',
+        label: 'PaperTrade Lab',
+        icon: Shield,
+        badge: { text: 'SAFE', color: 'blue' },
+      },
+      {
+        id: 'market-analytics',
+        label: 'Market Analytics',
+        icon: LineChart,
+        badge: { text: 'PAPER', color: 'cyan' },
+      },
+      {
+        id: 'live-approval',
+        label: 'Live Approval',
+        icon: FileText,
+        badge: { text: 'LOCK', color: 'amber' },
       },
       {
         id: 'trade',
         label: 'Trade',
-        icon: Zap,
+        icon: CandlestickChart,
         children: [
-          {
-            id: 'trade-paper',
-            label: 'Paper Trading',
-            icon: Shield,
-            badge: { text: 'SIMULATION', color: 'blue' },
-          },
+          { id: 'trading-terminal', label: 'Trading Terminal', icon: CandlestickChart },
+          { id: 'basket-orders', label: 'Basket Orders', icon: Briefcase },
+          { id: 'trade-orders', label: 'Orders', icon: FileText },
+          { id: 'trade-positions', label: 'Positions', icon: Briefcase },
           {
             id: 'trade-live',
             label: 'Live Trading',
             icon: Zap,
-            badge: { text: 'REAL MONEY', color: 'amber' },
+            badge: { text: 'LOCKED', color: 'amber' },
             locked: liveLocked,
-            onLockedClick: () => onSectionChange('broker-connections'),
+            onLockedClick: () => onSectionChange('live-approval'),
           },
-          { id: 'trade-orders', label: 'Orders', icon: FileText },
-          { id: 'trade-positions', label: 'Positions', icon: Briefcase },
-          { id: 'trade-holdings', label: 'Holdings', icon: Briefcase },
         ],
       },
+      { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
+      { id: 'riskguard', label: 'RiskGuard', icon: Shield, badge: { text: 'HEALTH', color: 'amber' } },
+      { id: 'watchlist', label: 'Activity', icon: Eye },
+      { id: 'settings', label: 'Settings', icon: Settings },
       {
-        id: 'strategies',
-        label: 'Strategies',
-        icon: Layers,
-        children: [
-          { id: 'strategies-builder', label: 'Strategy Builder', icon: Layers },
-          { id: 'strategies-mine', label: 'My Strategies', icon: Layers },
-          { id: 'strategies-backtest', label: 'Backtesting', icon: BarChart3 },
-          { id: 'strategies-deploy', label: 'Deploy Strategy', icon: Zap },
-        ],
-      },
-      {
-        id: 'analytics',
-        label: 'Analytics',
+        id: 'advanced',
+        label: 'Advanced',
         icon: BarChart3,
         children: [
-          { id: 'analytics-options', label: 'Option Analytics', icon: BarChart3 },
-          { id: 'analytics-greeks', label: 'Greeks & IV', icon: LineChart },
-          { id: 'analytics-pnl', label: 'P&L Analytics', icon: BarChart3 },
-          { id: 'analytics-journal', label: 'Trade Journal', icon: FileText },
+          { id: 'execution-timeline', label: 'Execution Timeline', icon: Activity },
+          { id: 'execution-governance', label: 'Control Room', icon: Shield },
+          { id: 'broker-connections', label: 'BrokerConnect', icon: Link2 },
+          { id: 'admin', label: 'Admin', icon: User },
+          { id: 'quant-lab', label: 'Quant Lab', icon: BarChart3, badge: { text: 'OPTIONAL', color: 'purple' } },
+          { id: 'algo-suitability', label: 'Algo Suitability', icon: Layers },
+          { id: 'risk-center', label: 'Risk Center (legacy)', icon: Shield },
         ],
       },
-      { id: 'alerts', label: 'Alerts & Automation', icon: Bell },
-      { id: 'broker-connections', label: 'Broker Connections', icon: Link2 },
-      { id: 'risk-center', label: 'Risk Center', icon: Shield, badge: { text: 'Risk', color: 'amber' } },
-      { id: 'reports', label: 'Reports', icon: FileText },
-      { id: 'watchlist', label: 'Watchlist', icon: Eye },
-      { id: 'algos', label: 'Algos', icon: Zap },
-      { id: 'smart-trading', label: 'Smart Trading', icon: CandlestickChart },
     ],
-    [liveLocked]
+    [liveLocked, onSectionChange]
   );
 
   const bottomItems = [

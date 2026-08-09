@@ -26,6 +26,7 @@ class MCPConnectorSettings(BaseSettings):
     mcp_enable_finvasia_shoonya: bool = False
     mcp_enable_mock: bool = True
     mcp_enable_mock_market_data: bool = True
+    mcp_enable_tradingview: bool = True
 
     secret_manager_provider: str = "local_encrypted"
     local_secret_key: str = "change-this-in-production"

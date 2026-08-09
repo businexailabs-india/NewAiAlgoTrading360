@@ -31,10 +31,17 @@ export interface PlaceOrderParams {
   brokerConnectionId?: string;
   agentId?: string;
   idempotencyKey?: string;
-  source?: 'MANUAL' | 'AGENT' | 'STRATEGY' | 'MCP' | 'SCHEDULER';
+  source?: 'MANUAL' | 'AGENT' | 'STRATEGY' | 'MCP' | 'SCHEDULER' | 'TRADINGVIEW' | 'CHART' | 'BASKET';
   /** F&O security id from instrument master */
   instrumentToken?: string;
   exchangeSegment?: string;
+  meta?: Record<string, unknown>;
+  /** ExecutionGovernance360 — only OMS should call broker for live */
+  callerService?: 'OMS' | 'FRONTEND' | 'AI' | 'TRADINGVIEW' | 'DHANLAXMI' | 'STRATEGY' | 'MANUAL';
+  governanceIntentId?: string;
+  rmsDecisionId?: string;
+  approvalId?: string;
+  preapprovalRuleId?: string;
 }
 
 export class OrderExecutionService {
@@ -44,7 +51,9 @@ export class OrderExecutionService {
       orderType = 'MARKET', product = 'CNC', price, triggerPrice,
       instrumentType = 'EQUITY', optionDetails,
       agentId, source = 'MANUAL',
-      instrumentToken, exchangeSegment
+      instrumentToken, exchangeSegment, meta,
+      callerService = 'MANUAL',
+      governanceIntentId, rmsDecisionId, approvalId, preapprovalRuleId
     } = params;
 
     // Default paper-first; live only when explicitly false
@@ -52,6 +61,26 @@ export class OrderExecutionService {
     const idempotencyKey = params.idempotencyKey || `ord-${randomUUID()}`;
 
     if (quantity <= 0) throw new AppError('Quantity must be positive', 400);
+
+    // Broker / OMS guardrail: live orders must come from OMS with RMS + approval
+    if (!isPaper) {
+      const { ExecutionGovernanceService } = await import('./execution-governance/execution-governance.service');
+      await ExecutionGovernanceService.assertBrokerCaller({
+        userId,
+        callerService: callerService === 'OMS' ? 'OMS' : callerService || 'FRONTEND',
+        mode: 'LIVE',
+        rmsDecisionId,
+        approvalId,
+        preapprovalRuleId,
+        idempotencyKey,
+        intentId: governanceIntentId
+      });
+    }
+
+    // Non-OMS sources cannot claim broker execution for live
+    if (!isPaper && callerService !== 'OMS') {
+      throw new AppError('Only OMS may submit live orders to broker adapters', 403);
+    }
 
     // Hard guard: live options path cannot run when feature flag off or user mode is PAPER
     if (!isPaper && instrumentType === 'OPTION') {
@@ -155,7 +184,9 @@ export class OrderExecutionService {
         product,
         status: 'PENDING',
         isPaper,
-        agentId
+        agentId,
+        source,
+        meta: { source, ...(meta || {}) }
       }
     });
 

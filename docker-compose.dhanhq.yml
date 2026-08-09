@@ -1,0 +1,14 @@
+# DhanHQ Python sidecar (official dhanhq SDK)
+# Port 8099 — optional companion to Node DhanDirectAdapter
+
+services:
+  dhanhq-sidecar:
+    build: ./services/dhanhq-sidecar
+    ports:
+      - "8099:8099"
+    environment:
+      DHAN_CLIENT_ID: ${DHAN_CLIENT_ID:-}
+      DHAN_ACCESS_TOKEN: ${DHAN_ACCESS_TOKEN:-}
+      DHANHQ_ALLOW_LIVE_ORDERS: ${DHANHQ_ALLOW_LIVE_ORDERS:-false}
+      DHANHQ_SIDECAR_PORT: "8099"
+    restart: unless-stopped

@@ -216,7 +216,7 @@ export function SmartTradingDashboard() {
             Anomaly Detection
           </TabsTrigger>
           <TabsTrigger value="quantconnect" className="data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-300">
-            QuantConnect
+            Quant Lab (optional)
           </TabsTrigger>
         </TabsList>
 

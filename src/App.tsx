@@ -48,6 +48,21 @@ import { PaperOptionsTerminal } from './components/options/PaperOptionsTerminal'
 import { LiveOptionsTerminal } from './components/options/LiveOptionsTerminal';
 import { StrategyBuilder } from './components/options/StrategyBuilder';
 import { RiskCenterPanel } from './components/options/RiskCenterPanel';
+import { RiskControlRoomPanel } from './components/risk/RiskControlRoomPanel';
+import { QuantLabPlaceholder } from './components/tradingview/QuantLabPlaceholder';
+import { QuantConnectDashboard } from './components/QuantConnectDashboard';
+import { TradingTerminalPanel } from './modules/trading-terminal/TradingTerminalPanel';
+import { ExecutionControlRoomPanel } from './modules/execution-governance/ExecutionControlRoomPanel';
+import { TradeosHome } from './modules/tradeos-home/TradeosHome';
+import { DhanLaxmiPremium } from './modules/dhanlaxmi-assistant/DhanLaxmiPremium';
+import { TradingViewConnectPremium } from './modules/tradingview-connect/TradingViewConnectPremium';
+import { AlgoLibraryPremium } from './modules/algo-library/AlgoLibraryPremium';
+import { AlgoSuitabilityPremium } from './modules/algo-suitability/AlgoSuitabilityPremium';
+import { PaperTradeLabPremium } from './modules/papertrade-lab/PaperTradeLabPremium';
+import { MarketAnalyticsShell } from './modules/market-analytics/MarketAnalyticsShell';
+import { LiveApprovalPremium } from './modules/live-approval/LiveApprovalPremium';
+import { RiskGuardPremium } from './modules/riskguard/RiskGuardPremium';
+import { ExecutionTimelinePremium } from './modules/execution-timeline/ExecutionTimelinePremium';
 import { OptionsAnalyticsPanel } from './components/options/OptionsAnalyticsPanel';
 import { TradeJournalPanel } from './components/options/TradeJournalPanel';
 import { ModuleWindow } from './components/ui/ModuleWindow';
@@ -58,19 +73,15 @@ import { useTradingMode, type TradingMode } from './contexts/TradingModeContext'
 
 /** Window ids owned by each left-menu section — restored on menu click. */
 const SECTION_WINDOWS: Record<string, string[]> = {
-  dashboard: [
-    'algos-workspace-home',
-    'portfolio-summary',
-    'smart-trading-home',
-    'portfolio-header-home',
-    'performance-home',
-    'allocation-home',
-    'rebalancing',
-    'tax-home',
-    'trading-tabs-home',
-    'strategy-explorer',
-    'ai-insights-home'
-  ],
+  dashboard: ['tradeos-home'],
+  dhanlaxmi: ['dhanlaxmi-premium'],
+  'algo-library': ['algo-library'],
+  'algo-suitability': ['algo-suitability'],
+  'papertrade-lab': ['papertrade-lab'],
+  'market-analytics': ['market-analytics'],
+  'live-approval': ['live-approval'],
+  riskguard: ['riskguard'],
+  'execution-timeline': ['execution-timeline'],
   'smart-trading': ['smart-trading'],
   algos: ['algos-workspace'],
   portfolio: ['portfolio-header', 'performance-cards', 'asset-allocation'],
@@ -81,6 +92,8 @@ const SECTION_WINDOWS: Record<string, string[]> = {
   'strategies-mine': ['strategies-hub'],
   'strategies-backtest': ['trading-tabs'],
   'strategies-deploy': ['strategies-hub'],
+  'tradingview-connect': ['tradingview-connect'],
+  'quant-lab': ['quant-lab'],
   'knowledge-llm': ['knowledge-llm'],
   analytics: ['ai-insights'],
   'analytics-options': ['options-analytics'],
@@ -91,6 +104,9 @@ const SECTION_WINDOWS: Record<string, string[]> = {
   'markets-futures': ['markets-futures'],
   'markets-options': ['options-workspace'],
   'markets-fno-scanner': ['fno-scanner'],
+  'execution-governance': ['execution-governance'],
+  'trading-terminal': ['trading-terminal'],
+  'basket-orders': ['basket-orders'],
   'trade-paper': ['paper-options-terminal'],
   'trade-live': ['live-options-terminal'],
   'trade-orders': ['trading-tabs'],
@@ -202,7 +218,77 @@ export default function App() {
   };
 
   const renderContent = () => {
+    const go = (section: string) => handleSectionChange(section);
+
     switch (activeSection) {
+      case 'dashboard':
+        return (
+          <Win id="tradeos-home" title="TradeOS Home" subtitle="Protected · Paper first · Approval required" cascadeIndex={1}>
+            <TradeosHome onNavigate={go} />
+          </Win>
+        );
+
+      case 'dhanlaxmi':
+        return (
+          <Win id="dhanlaxmi-premium" title="DhanLaxmi" subtitle="Explain · draft · approve — never execute" cascadeIndex={1}>
+            <DhanLaxmiPremium />
+          </Win>
+        );
+
+      case 'algo-library':
+        return (
+          <Win id="algo-library" title="Algo Library" subtitle="Calm strategies · paper first" cascadeIndex={1}>
+            <AlgoLibraryPremium onNavigate={go} />
+          </Win>
+        );
+
+      case 'algo-suitability':
+        return (
+          <Win id="algo-suitability" title="Algo Suitability" subtitle="Fit score · not a profit promise" cascadeIndex={1}>
+            <AlgoSuitabilityPremium onNavigate={go} />
+          </Win>
+        );
+
+      case 'papertrade-lab':
+        return (
+          <Win id="papertrade-lab" title="PaperTrade Lab" subtitle="No real money" cascadeIndex={1}>
+            <PaperTradeLabPremium onNavigate={go} />
+          </Win>
+        );
+
+      case 'market-analytics':
+        return (
+          <Win
+            id="market-analytics"
+            title="Market Analytics"
+            subtitle="Paper-only · TradingView → risk → broker paper"
+            cascadeIndex={1}
+          >
+            <MarketAnalyticsShell />
+          </Win>
+        );
+
+      case 'live-approval':
+        return (
+          <Win id="live-approval" title="Live Approval" subtitle="Your clear yes required" cascadeIndex={1}>
+            <LiveApprovalPremium />
+          </Win>
+        );
+
+      case 'riskguard':
+        return (
+          <Win id="riskguard" title="RiskGuard" subtitle="Battery health for trading" cascadeIndex={1}>
+            <RiskGuardPremium />
+          </Win>
+        );
+
+      case 'execution-timeline':
+        return (
+          <Win id="execution-timeline" title="Execution Timeline" subtitle="Human-readable safety path" cascadeIndex={1}>
+            <ExecutionTimelinePremium />
+          </Win>
+        );
+
       case 'smart-trading':
         return (
           <Win
@@ -448,6 +534,42 @@ export default function App() {
           </Win>
         );
 
+      case 'execution-governance':
+        return (
+          <Win
+            id="execution-governance"
+            title="ExecutionGovernance360"
+            subtitle="Recommend → approve → RMS → OMS only"
+            cascadeIndex={1}
+          >
+            <ExecutionControlRoomPanel />
+          </Win>
+        );
+
+      case 'trading-terminal':
+        return (
+          <Win
+            id="trading-terminal"
+            title="Trading Terminal"
+            subtitle="Buy/Sell · Index derivatives · Chart qty · Paper default"
+            cascadeIndex={1}
+          >
+            <TradingTerminalPanel />
+          </Win>
+        );
+
+      case 'basket-orders':
+        return (
+          <Win
+            id="basket-orders"
+            title="Basket Orders"
+            subtitle="Multi-leg paper baskets · RMS preview · OMS submit"
+            cascadeIndex={1}
+          >
+            <TradingTerminalPanel initialTab="basket" />
+          </Win>
+        );
+
       case 'trade-paper':
         return (
           <Win
@@ -511,6 +633,28 @@ export default function App() {
           </Win>
         );
 
+      case 'tradingview-connect':
+        return (
+          <Win
+            id="tradingview-connect"
+            title="TradingView Connect"
+            subtitle="Alerts become safe signals first"
+            cascadeIndex={1}
+          >
+            <TradingViewConnectPremium />
+          </Win>
+        );
+
+      case 'quant-lab':
+        return (
+          <Win id="quant-lab" title="Quant Lab" subtitle="Optional QuantConnect / LEAN" cascadeIndex={1}>
+            <div className="space-y-4">
+              <QuantLabPlaceholder />
+              <QuantConnectDashboard />
+            </div>
+          </Win>
+        );
+
       case 'analytics-options':
         return (
           <Win id="options-analytics" title="Option Analytics" cascadeIndex={1}>
@@ -549,8 +693,11 @@ export default function App() {
 
       case 'risk-center':
         return (
-          <Win id="risk-center" title="Risk Center" subtitle="F&O preflight · limits · events" cascadeIndex={1}>
-            <RiskCenterPanel />
+          <Win id="risk-center" title="Risk Center" subtitle="F&O preflight · 1L Control Room · events" cascadeIndex={1}>
+            <div className="space-y-4">
+              <RiskControlRoomPanel />
+              <RiskCenterPanel />
+            </div>
           </Win>
         );
 
@@ -563,104 +710,9 @@ export default function App() {
 
       default:
         return (
-          <>
-            <Win
-              id="algos-workspace-home"
-              title="Algos Live"
-              subtitle="Marketplace · My Algos · Positions · Orders"
-              icon={<Rocket className="h-4 w-4 text-emerald-300" />}
-              cascadeIndex={1}
-            >
-              <AlgosWorkspace embedded />
-            </Win>
-            <Win
-              id="portfolio-summary"
-              title="Portfolio Summary"
-              icon={<Briefcase className="h-4 w-4 text-cyan-300" />}
-              cascadeIndex={2}
-            >
-              <PortfolioSummaryCards />
-            </Win>
-            <Win
-              id="smart-trading-home"
-              title="Smart Trading"
-              subtitle="Algos Live desk · P&L · agents · AI"
-              icon={<Zap className="h-4 w-4 text-emerald-300" />}
-              cascadeIndex={3}
-            >
-              <SmartTradingDashboard />
-            </Win>
-            <Win
-              id="portfolio-header-home"
-              title="Portfolio Overview"
-              icon={<TrendingUp className="h-4 w-4 text-cyan-300" />}
-              cascadeIndex={4}
-            >
-              <PortfolioHeader />
-            </Win>
-            <Win
-              id="performance-home"
-              title="Performance"
-              icon={<BarChart3 className="h-4 w-4 text-amber-300" />}
-              cascadeIndex={5}
-            >
-              <PerformanceCards />
-            </Win>
-            <Win
-              id="allocation-home"
-              title="Asset Allocation"
-              icon={<PieChart className="h-4 w-4 text-cyan-300" />}
-              cascadeIndex={6}
-            >
-              <AssetAllocationCharts />
-            </Win>
-            <Win
-              id="rebalancing"
-              title="Rebalancing Console"
-              icon={<RefreshCw className="h-4 w-4 text-emerald-300" />}
-              cascadeIndex={7}
-            >
-              <RebalancingConsole
-                autoExecute={autoExecute}
-                setAutoExecute={setAutoExecute}
-                selectedBroker={selectedBroker}
-                setSelectedBroker={setSelectedBroker}
-              />
-            </Win>
-            <Win
-              id="tax-home"
-              title="Tax Analytics"
-              icon={<Receipt className="h-4 w-4 text-amber-300" />}
-              cascadeIndex={8}
-            >
-              <TaxAnalytics />
-            </Win>
-            <Win
-              id="trading-tabs-home"
-              title="Trading Desk"
-              subtitle="Algos Live desk · backtest · paper · live"
-              icon={<Activity className="h-4 w-4 text-cyan-300" />}
-              cascadeIndex={9}
-            >
-              <TradingTabs />
-            </Win>
-            <Win
-              id="strategy-explorer"
-              title="Strategy Explorer"
-              icon={<Layers className="h-4 w-4 text-emerald-300" />}
-              cascadeIndex={10}
-            >
-              <StrategyExplorer />
-            </Win>
-            <Win
-              id="ai-insights-home"
-              title="AI Insights"
-              icon={<Sparkles className="h-4 w-4 text-cyan-300" />}
-              cascadeIndex={11}
-            >
-              <AIInsightsPanel />
-            </Win>
-          </>
+          <Win id="tradeos-home" title="TradeOS Home" subtitle="Protected · Paper first · Approval required" cascadeIndex={1}>
+            <TradeosHome onNavigate={go} />
+          </Win>
         );
     }
   };

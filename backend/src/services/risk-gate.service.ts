@@ -3,6 +3,7 @@ import { AppError } from '../middleware/error.middleware';
 import { isMarketOpen } from '../utils/helpers';
 import { ResolvedExecutionTarget } from './execution-target.resolver';
 import { blackScholesGreeks, daysToExpiry } from './options/greeks.service';
+import { RiskJourneyService } from './risk-journey/risk-journey.service';
 
 export interface PreTradeCheckInput {
   userId: string;
@@ -14,6 +15,12 @@ export interface PreTradeCheckInput {
   source: string;
   idempotencyKey?: string;
   target: ResolvedExecutionTarget;
+  instrumentType?: string;
+  optionsSelling?: boolean;
+  nakedOption?: boolean;
+  stopLossMissing?: boolean;
+  marketDataStale?: boolean;
+  algoName?: string;
 }
 
 export interface PreTradeCheckResult {
@@ -78,6 +85,12 @@ export class RiskGateService {
     });
   }
 
+  /** Snapshot of env ∧ TradingControl gates (used by TradingView live-approval, etc.). */
+  static async getLiveControlsSnapshot(userId: string, brokerConnectionId?: string | null) {
+    await this.ensureGlobalControl();
+    return getEffectiveControls(userId, brokerConnectionId);
+  }
+
   static async preflight(input: PreTradeCheckInput): Promise<PreTradeCheckResult> {
     await this.ensureGlobalControl();
     const controls = await getEffectiveControls(input.userId, input.target.brokerConnectionId);
@@ -93,6 +106,47 @@ export class RiskGateService {
 
     if (input.quantity <= 0) throw new AppError('Quantity must be positive', 400);
     if (!input.symbol?.trim()) throw new AppError('Symbol is required', 400);
+
+    // ₹1L RiskGuard360 journey — applies after onboarding profile exists
+    const journeyProfile = await prisma.userRiskProfile.findUnique({ where: { userId: input.userId } });
+    if (journeyProfile) {
+      const brokerOk = input.isPaper
+        ? true
+        : !!(input.target.brokerConnectionId || input.target.direct || input.target.mcp);
+      const journey = await RiskJourneyService.assertTradeAllowed({
+        userId: input.userId,
+        isPaper: input.isPaper,
+        estimatedValue,
+        tradeType: input.tradeType,
+        instrumentType: input.instrumentType,
+        optionsSelling: input.optionsSelling,
+        nakedOption: input.nakedOption,
+        stopLossMissing: input.stopLossMissing,
+        brokerConnected: brokerOk,
+        marketDataStale: input.marketDataStale,
+        algoName: input.algoName
+      });
+      if (!journey.allowed) {
+        await this.logRiskEvent(
+          input.userId,
+          'TRADE_BLOCKED',
+          journey.blockers.join('; '),
+          'Review Daily Control Room / risk onboarding',
+          'WARN',
+          { blockers: journey.blockers, symbol: input.symbol }
+        );
+        throw new AppError(`RiskGuard360 blocked: ${journey.blockers.join('; ')}`, 403, {
+          reason: 'RISK_JOURNEY_BLOCK',
+          correctiveAction: 'Open Daily Control Room and review risk limits',
+          details: { blockers: journey.blockers }
+        });
+      }
+    } else if (!input.isPaper) {
+      throw new AppError('RiskGuard360: complete Rs 1L risk onboarding before live trading', 403, {
+        reason: 'RISK_PROFILE_MISSING',
+        correctiveAction: 'POST /api/risk-onboarding/profile'
+      });
+    }
 
     if (!input.isPaper) {
       if (controls.killSwitch) throw new AppError('Live trading kill switch is active', 403);

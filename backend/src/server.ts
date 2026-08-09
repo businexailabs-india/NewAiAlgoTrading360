@@ -56,9 +56,15 @@ import watchlistRoutes from './routes/watchlist.routes';
 import modeRoutes from './routes/mode.routes';
 import paperRoutes from './routes/paper.routes';
 import riskRoutes from './routes/risk.routes';
+import riskJourneyRoutes from './routes/risk-journey.routes';
+import tradingviewRoutes from './routes/tradingview.routes';
+import tradingTerminalRoutes from './routes/trading-terminal.routes';
+import executionGovernanceRoutes from './routes/execution-governance.routes';
 import liveRoutes from './routes/live.routes';
+import marketAnalyticsV1Routes from './market-analytics/routes/v1.routes';
 import { RiskGateService } from './services/risk-gate.service';
 import { OutboxService } from './events/outbox.service';
+import { getMaEngine } from './market-analytics/engine';
 
 // Initialize Express app
 const app: Application = express();
@@ -114,16 +120,22 @@ app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 app.use(morgan('combined', { stream: { write: (message) => logger.info(message.trim()) } })); // Logging
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '2000'),
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { trustProxy: false }
-});
-app.use('/api/', limiter);
+// Rate limiting — disabled in development (dashboard/watchlist poll heavily and hit 429 otherwise)
+const isDev = (process.env.NODE_ENV || 'development') !== 'production';
+if (!isDev || process.env.RATE_LIMIT_DISABLE_IN_DEV === 'false') {
+  const limiter = rateLimit({
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '2000'),
+    message: 'Too many requests from this IP, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    validate: { trustProxy: false },
+  });
+  app.use('/api/', limiter);
+  logger.info('API rate limiter enabled (max=%s)', process.env.RATE_LIMIT_MAX_REQUESTS || '2000');
+} else {
+  logger.info('API rate limiter DISABLED (development)');
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -161,7 +173,19 @@ app.use('/api', watchlistRoutes);
 app.use('/api', modeRoutes);
 app.use('/api/paper', paperRoutes);
 app.use('/api/risk', riskRoutes);
+app.use('/api', riskJourneyRoutes);
+app.use('/api', tradingviewRoutes);
+app.use('/api', tradingTerminalRoutes);
+app.use('/api', executionGovernanceRoutes);
 app.use('/api/live', liveRoutes);
+// BxAi Trade Market Analytics — paper-only (/api/v1/*)
+app.use('/api/v1', marketAnalyticsV1Routes);
+try {
+  getMaEngine();
+  logger.info('Market Analytics engine ready (paper-only; TRADING_MODE=%s)', process.env.TRADING_MODE || 'signal');
+} catch (e) {
+  logger.warn('Market Analytics engine init deferred: %s', e instanceof Error ? e.message : e);
+}
 
 // WebSocket connection handling
 io.on('connection', (socket) => {

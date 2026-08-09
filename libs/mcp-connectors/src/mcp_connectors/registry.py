@@ -109,6 +109,7 @@ class MCPProviderRegistry:
             self.config_dir / "india-brokers.yaml",
             self.config_dir / "india-market-data.yaml",
             self.config_dir / "global-brokers.yaml",
+            self.config_dir / "tradingview.yaml",
         ]
         loaded: list[ProviderConfig] = []
         for f in files:
@@ -173,6 +174,9 @@ class MCPProviderRegistry:
             "interactivebrokers": "ibkr",
             "ib": "ibkr",
             "tws": "ibkr",
+            "tv": "tradingview",
+            "trading_view": "tradingview",
+            "tradingview_connect": "tradingview",
         }
         key = aliases.get(key, key)
         if not self._configs:

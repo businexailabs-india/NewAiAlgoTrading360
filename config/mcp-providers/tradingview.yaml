@@ -1,0 +1,26 @@
+# BusineXAi TradeOS360 — TradingView Connect MCP (signal / webhook, paper only)
+version: "1.0"
+providers:
+  - provider_id: tradingview
+    provider_name: TradingView Connect
+    provider_type: signal_integration
+    country: GLOBAL
+    enabled: true
+    supported_exchanges: [NSE, BSE, NYSE, NASDAQ, MCX]
+    supported_segments: [equity, equity_derivatives]
+    supported_asset_classes: [stocks, futures, options]
+    capabilities:
+      - webhook_connections
+      - alert_payloads
+      - symbol_mapping
+      - signal_preview
+      - order_preview
+    auth_type: [webhook_secret]
+    credentials_required: [webhook_secret]
+    live_trading_default: false
+    paper_trading_default: true
+    status: active
+    documentation_url: ""
+    adapter_class: mcp_connectors.tradingview.TradingViewMCPProvider
+    env_enable_flag: MCP_ENABLE_TRADINGVIEW
+    priority: 20

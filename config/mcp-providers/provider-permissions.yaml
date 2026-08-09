@@ -70,3 +70,4 @@ dhanlaxmi_forbidden_fields:
   - raw_account_number
   - client_secret
   - feed_token
+  - webhook_secret

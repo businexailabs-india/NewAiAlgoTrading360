@@ -1,0 +1,80 @@
+//@version=6
+// BxAi Trade Market Analytics — Regime-filtered Opening Range Breakout (STRATEGY)
+// For TradingView Strategy Tester ONLY. Broker paper fills will differ.
+// Does not promise profitability. Paper results do not predict live results.
+strategy("BxAi ORB Regime Long (Strategy)", shorttitle="BxAi ORB Strat", overlay=true, pyramiding=0, process_orders_on_close=true, calc_on_every_tick=false, commission_type=strategy.commission.per_share, commission_value=0.005, slippage=2)
+
+openingRangeMinutes = input.int(30, "Opening range minutes")
+emaPeriod = input.int(50, "EMA period")
+atrPeriod = input.int(14, "ATR period")
+volLookback = input.int(20, "Volume lookback")
+volMult = input.float(1.20, "Volume multiplier")
+rr = input.float(1.50, "Reward / risk")
+atrStopMult = input.float(1.0, "ATR stop multiplier")
+useStructural = input.bool(true, "Use structural stop")
+minStopPct = input.float(0.001, "Min stop distance %")
+sessionStart = input.string("0930-1600", "RTH session")
+maxSignalsDay = input.int(2, "Max signals per day")
+qty = input.int(1, "Strategy tester qty (server sizes independently)")
+
+tz = syminfo.timezone
+t = time("", sessionStart, tz)
+inSession = not na(t)
+barConfirmed = barstate.isconfirmed
+sessionDate = time("D", timezone=tz)
+newDay = ta.change(sessionDate) != 0
+
+var float orHigh = na
+var float orLow = na
+var bool orComplete = false
+var int orBars = 0
+var int signalsToday = 0
+var float lastBreakoutLevel = na
+
+if newDay
+    orHigh := na
+    orLow := na
+    orComplete := false
+    orBars := 0
+    signalsToday := 0
+    lastBreakoutLevel := na
+
+if inSession and not orComplete and barConfirmed
+    orBars += 1
+    orHigh := na(orHigh) ? high : math.max(orHigh, high)
+    orLow := na(orLow) ? low : math.min(orLow, low)
+    if orBars >= math.max(1, int(openingRangeMinutes / 15))
+        orComplete := true
+
+ema50 = ta.ema(close, emaPeriod)
+emaSlope = ema50 - ema50[3]
+sessionVwap = ta.vwap
+atr = ta.atr(atrPeriod)
+avgVol = ta.sma(volume, volLookback)
+
+longCond = barConfirmed and orComplete and close > orHigh and close > sessionVwap and close > ema50 and emaSlope > 0 and volume >= volMult * avgVol and signalsToday < maxSignalsDay and strategy.position_size == 0 and (na(lastBreakoutLevel) or orHigh != lastBreakoutLevel)
+
+entryPx = close
+atrStop = close - atrStopMult * atr
+structStop = useStructural ? low : atrStop
+stopPx = math.max(atrStop, structStop)
+minDist = close * minStopPct
+if close - stopPx < minDist
+    stopPx := close - minDist
+stopDist = entryPx - stopPx
+targetPx = entryPx + rr * stopDist
+
+if longCond
+    signalsToday += 1
+    lastBreakoutLevel := orHigh
+    strategy.entry("ORB_L", strategy.long, qty=qty)
+    strategy.exit("ORB_X", from_entry="ORB_L", stop=stopPx, limit=targetPx)
+
+plot(orHigh, "OR High", color=color.orange)
+plot(orLow, "OR Low", color=color.orange)
+plot(ema50, "EMA50", color=color.aqua)
+plot(sessionVwap, "VWAP", color=color.yellow)
+bgcolor(inSession and not orComplete ? color.new(color.orange, 90) : na)
+
+if longCond
+    alert('{"schema_version":"1.0","secret":"REPLACE_SECRET","strategy_id":"orb-v1","signal_id":"' + syminfo.ticker + '-' + timeframe.period + '-' + str.tostring(time) + '-long","event":"entry_signal","symbol":"' + syminfo.ticker + '","exchange":"' + syminfo.prefix + '","timeframe":"' + timeframe.period + '","bar_time":"' + str.format_time(time, "yyyy-MM-dd\'T\'HH:mm:ssXXX", tz) + '","side":"buy","reference_price":' + str.tostring(close, "#.####") + ',"opening_range_high":' + str.tostring(orHigh, "#.####") + ',"opening_range_low":' + str.tostring(orLow, "#.####") + ',"vwap":' + str.tostring(sessionVwap, "#.####") + ',"ema":' + str.tostring(ema50, "#.####") + ',"atr":' + str.tostring(atr, "#.####") + ',"stop_price":' + str.tostring(stopPx, "#.####") + ',"target_price":' + str.tostring(targetPx, "#.####") + ',"timestamp":' + str.tostring(timenow) + '}', alert.freq_once_per_bar_close)

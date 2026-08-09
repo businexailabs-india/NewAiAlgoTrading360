@@ -114,6 +114,169 @@ export class DhanLaxmiGatewayService {
   }
 
   static async chat(userId: string, role: string, body: Record<string, unknown>) {
+    const message = String(body.message || body.text || '');
+
+    // ExecutionGovernance360 — never executes
+    if (
+      /why was this trade blocked|which algo is suitable|can i run this in paper|create approval request|stop all bots|show my active preapproved|execution governance|double after loss|martingale/i.test(
+        message
+      )
+    ) {
+      const { ExecutionGovernanceService } = await import(
+        './execution-governance/execution-governance.service'
+      );
+      const lang = String(body.language_hint || body.language || 'en');
+      return {
+        conversation_id: null,
+        language: lang,
+        intent: 'execution_governance',
+        response_text: ExecutionGovernanceService.dhanlaxmiExplain(message, lang),
+        paper_first: true,
+        never_auto_executes: true,
+        status: 'governance'
+      };
+    }
+
+    // TradingView Connect — signal assistant
+    if (
+      /tradingview|tv signal|tv alert|explain this (tradingview )?signal|safe to paper|convert this .*alert|run paper test|why was this signal rejected|tradingview alerts today/i.test(
+        message
+      )
+    ) {
+      const { TradingViewConnectService } = await import('./tradingview/tradingview-connect.service');
+      const { prisma } = await import('../config/database');
+      const lang = String(body.language_hint || body.language || 'hinglish');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const signals = await prisma.normalizedSignal.findMany({
+        where: { userId, createdAt: { gte: today } },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      });
+
+      if (/alerts today|show my tradingview/i.test(message)) {
+        const lines = signals.length
+          ? signals.map((s) => `${s.side} ${s.symbol} (${s.signalType}) · ${s.status}`).join('; ')
+          : 'No TradingView signals today.';
+        return {
+          conversation_id: null,
+          language: lang,
+          intent: 'tv_alerts_today',
+          response_text: lines,
+          paper_first: true,
+          never_auto_executes: true,
+          status: 'tradingview'
+        };
+      }
+
+      const signal =
+        (body.signal_id
+          ? await prisma.normalizedSignal.findFirst({
+              where: { id: String(body.signal_id), userId }
+            })
+          : null) || signals[0];
+
+      if (!signal) {
+        return {
+          conversation_id: null,
+          language: lang,
+          intent: 'tv_no_signal',
+          response_text:
+            'No TradingView signal found. Create a webhook in TradingView Connect and send a test alert first.',
+          paper_first: true,
+          never_auto_executes: true,
+          status: 'tradingview'
+        };
+      }
+
+      if (/rejected|why was/i.test(message)) {
+        const v = await prisma.signalValidationResult.findFirst({
+          where: { signalId: signal.id },
+          orderBy: { createdAt: 'desc' }
+        });
+        const blockers = (v?.blockers as string[]) || [];
+        return {
+          conversation_id: null,
+          language: lang,
+          intent: 'tv_rejection',
+          response_text: blockers.length
+            ? `Signal rejected: ${blockers.join('; ')}`
+            : `Signal status is ${signal.status}. No rejection blockers stored.`,
+          paper_first: true,
+          never_auto_executes: true,
+          status: 'tradingview'
+        };
+      }
+
+      if (/safe to paper/i.test(message)) {
+        return {
+          conversation_id: null,
+          language: lang,
+          intent: 'tv_paper_safe',
+          response_text: `Yes — paper test is the default safe path for ${signal.side} ${signal.symbol}. Live trading stays locked until approval + RMS.`,
+          paper_first: true,
+          never_auto_executes: true,
+          status: 'tradingview'
+        };
+      }
+
+      if (/convert .*algo|convert this/i.test(message)) {
+        return {
+          conversation_id: null,
+          language: lang,
+          intent: 'tv_convert_hint',
+          response_text: `Use Signal Inbox → Convert to strategy for ${signal.symbol}. Default paper risk rules will be attached.`,
+          paper_first: true,
+          never_auto_executes: true,
+          status: 'tradingview'
+        };
+      }
+
+      if (/run paper test/i.test(message)) {
+        return {
+          conversation_id: null,
+          language: lang,
+          intent: 'tv_paper_hint',
+          response_text: `Open Signal Inbox and click Paper Test for ${signal.side} ${signal.symbol}. No live order will be sent.`,
+          paper_first: true,
+          never_auto_executes: true,
+          status: 'tradingview'
+        };
+      }
+
+      return {
+        conversation_id: null,
+        language: lang,
+        intent: 'tv_explain',
+        response_text: TradingViewConnectService.explainSignal(signal, lang),
+        paper_first: true,
+        never_auto_executes: true,
+        status: 'tradingview'
+      };
+    }
+
+    // ₹1L Risk Journey — intercept profit / martingale / live unlock prompts
+    if (
+      /kitna profit|profit expect|how much profit|double quantity|double after loss|loss recover|martingale|start live|live trading|enable live/i.test(
+        message
+      )
+    ) {
+      const { RiskJourneyService } = await import('./risk-journey/risk-journey.service');
+      const lang = String(body.language_hint || body.language || 'hinglish');
+      const risk = RiskJourneyService.dhanLaxmiRiskReply(message, lang);
+      return {
+        conversation_id: null,
+        language: risk.language,
+        intent: risk.blocked ? 'risk_block' : 'risk_advisory',
+        response_text: risk.reply,
+        disclaimer: 'Not financial advice. No guaranteed returns.',
+        blocked: risk.blocked,
+        paper_first: true,
+        never_auto_executes: true,
+        status: 'risk_journey'
+      };
+    }
+
     const payload = await this.withContext(userId, body);
     try {
       return await proxyJson(DHANLAXMI_URL, '/dhanlaxmi/chat', userId, role, {

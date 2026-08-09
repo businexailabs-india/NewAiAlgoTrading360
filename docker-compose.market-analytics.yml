@@ -1,0 +1,40 @@
+# Local Docker deps for BxAi Trade Market Analytics / TradeOS
+# Uses alternate ports to avoid clashing with other local Postgres/Redis.
+#
+#   docker compose -f docker-compose.market-analytics.yml up -d
+#   docker compose -f docker-compose.market-analytics.yml down
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: bxai-ma-postgres
+    environment:
+      POSTGRES_USER: smarttrade
+      POSTGRES_PASSWORD: smarttrade_password
+      POSTGRES_DB: smarttrade
+    ports:
+      - "5433:5432"
+    volumes:
+      - bxai_ma_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smarttrade"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: bxai-ma-redis
+    ports:
+      - "6381:6379"
+    volumes:
+      - bxai_ma_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  bxai_ma_postgres_data:
+  bxai_ma_redis_data:

@@ -26,6 +26,10 @@ class Capability(StrEnum):
     FUNDAMENTALS = "FUNDAMENTALS"
     CORPORATE_ACTIONS = "CORPORATE_ACTIONS"
     NEWS = "NEWS"
+    WEBHOOK_CONNECTIONS = "WEBHOOK_CONNECTIONS"
+    ALERT_PAYLOADS = "ALERT_PAYLOADS"
+    SYMBOL_MAPPING = "SYMBOL_MAPPING"
+    SIGNAL_PREVIEW = "SIGNAL_PREVIEW"
 
 
 YAML_CAPABILITY_ALIASES = {
@@ -75,6 +79,10 @@ YAML_CAPABILITY_ALIASES = {
     "symbol_master": Capability.FUNDAMENTALS,
     "reference_data": Capability.FUNDAMENTALS,
     "reference_data_placeholder": Capability.FUNDAMENTALS,
+    "webhook_connections": Capability.WEBHOOK_CONNECTIONS,
+    "alert_payloads": Capability.ALERT_PAYLOADS,
+    "symbol_mapping": Capability.SYMBOL_MAPPING,
+    "signal_preview": Capability.SIGNAL_PREVIEW,
 }
 
 

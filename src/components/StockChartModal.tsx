@@ -22,6 +22,7 @@ import { API_BASE_URL } from '@/lib/api';
 import { tradingService } from '@/services/tradingService';
 import { advisorService } from '@/services/advisorService';
 import type { WatchlistItem } from '@/api/watchlist';
+import { ChartTradePanel } from '@/components/trading/ChartTradePanel';
 
 type BarPoint = {
   date: string;
@@ -944,8 +945,8 @@ export function StockChartModal({
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [panelSize, setPanelSize] = useState(() => ({
-    w: Math.min(960, Math.max(560, window.innerWidth - 64)),
-    h: Math.min(820, Math.max(480, window.innerHeight - 64)),
+    w: Math.min(1180, Math.max(780, window.innerWidth - 40)),
+    h: Math.min(900, Math.max(580, window.innerHeight - 40)),
   }));
   const panelRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<{
@@ -972,11 +973,11 @@ export function StockChartModal({
   const aiReqRef = useRef(0);
   const savedSizeRef = useRef(panelSize);
 
-  const chartWidth = Math.max(280, panelSize.w - 48);
-  const chartHeight = Math.max(
-    160,
-    Math.min(winState === 'max' ? 520 : 420, Math.round(panelSize.h * (showAiHelp ? 0.32 : 0.4)))
-  );
+  /** Right-side paper ticket width — chart gets the rest */
+  const TRADE_RAIL_W = 248;
+  const CHART_CHROME_H = showAiHelp ? 210 : 118; // header + toolbars (+ AI dock reserve)
+  const chartWidth = Math.max(320, panelSize.w - TRADE_RAIL_W - 28);
+  const chartHeight = Math.max(220, Math.round(panelSize.h - CHART_CHROME_H));
 
   function toggleTool(id: ToolId) {
     setActiveTools((prev) => {
@@ -1383,67 +1384,63 @@ export function StockChartModal({
           resize: 'none',
         }}
       >
+        {/* Compact quote strip */}
         <div
           style={{
             display: 'flex',
+            alignItems: 'center',
             justifyContent: 'space-between',
-            gap: 12,
-            padding: '12px 16px',
-            borderBottom: '1px solid rgba(34,211,238,0.25)',
+            gap: 10,
+            padding: '8px 12px',
+            borderBottom: '1px solid rgba(34,211,238,0.22)',
             background:
-              'linear-gradient(90deg, rgba(8,47,73,0.96) 0%, rgba(15,23,42,0.98) 45%, rgba(6,78,59,0.55) 100%)',
-            boxShadow: 'inset 0 -1px 0 rgba(34,211,238,0.18), 0 8px 18px rgba(0,0,0,0.25)',
+              'linear-gradient(90deg, rgba(8,47,73,0.96) 0%, rgba(15,23,42,0.98) 55%, rgba(6,78,59,0.45) 100%)',
             flexShrink: 0,
-            cursor: 'default',
           }}
         >
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-              <span
-                style={{
-                  fontFamily: 'ui-monospace, monospace',
-                  fontSize: 20,
-                  fontWeight: 700,
-                  color: '#f8fafc',
-                }}
-              >
-                {stock.symbol}
-              </span>
-              <span style={{ fontSize: 12, color: '#94a3b8' }}>{stock.name || stock.exchange}</span>
-            </div>
-            <div
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              minWidth: 0,
+              flexWrap: 'wrap',
+              fontSize: 13,
+            }}
+          >
+            <span
               style={{
-                marginTop: 8,
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, auto))',
-                gap: '8px 16px',
-                alignItems: 'center',
-                fontSize: 13,
+                fontFamily: 'ui-monospace, monospace',
+                fontSize: 16,
+                fontWeight: 700,
+                color: '#f8fafc',
               }}
             >
-              <span style={{ fontSize: 20, fontWeight: 700, color: '#f8fafc' }}>{fmt(stats.last)}</span>
-              <span
-                style={{
-                  color: up ? '#34d399' : '#f87171',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  fontWeight: 600,
-                }}
-              >
-                {up ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                {stats.change != null ? `${up ? '+' : ''}${stats.change.toFixed(2)}` : '—'}
-                {stats.changePercent != null
-                  ? ` (${up ? '+' : ''}${stats.changePercent.toFixed(2)}%)`
-                  : ''}
-              </span>
-              <span style={{ color: '#94a3b8' }}>
-                High <b style={{ color: '#6ee7b7', fontWeight: 600 }}>{fmt(stats.high)}</b>
-              </span>
-              <span style={{ color: '#94a3b8' }}>
-                Low <b style={{ color: '#fca5a5', fontWeight: 600 }}>{fmt(stats.low)}</b>
-              </span>
-            </div>
+              {stock.symbol}
+            </span>
+            <span style={{ fontSize: 11, color: '#64748b' }}>{stock.exchange || stock.name}</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#f8fafc' }}>{fmt(stats.last)}</span>
+            <span
+              style={{
+                color: up ? '#34d399' : '#f87171',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                fontWeight: 600,
+                fontSize: 12,
+              }}
+            >
+              {up ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              {stats.change != null ? `${up ? '+' : ''}${stats.change.toFixed(2)}` : '—'}
+              {stats.changePercent != null
+                ? ` (${up ? '+' : ''}${stats.changePercent.toFixed(2)}%)`
+                : ''}
+            </span>
+            <span style={{ color: '#64748b', fontSize: 11 }}>
+              H <b style={{ color: '#6ee7b7', fontWeight: 600 }}>{fmt(stats.high)}</b>
+              {' · '}
+              L <b style={{ color: '#fca5a5', fontWeight: 600 }}>{fmt(stats.low)}</b>
+            </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <button
@@ -1451,9 +1448,9 @@ export function StockChartModal({
               onClick={openAiHelp}
               title="Need AI help?"
               style={{
-                height: 32,
-                padding: '0 10px',
-                borderRadius: 8,
+                height: 28,
+                padding: '0 8px',
+                borderRadius: 7,
                 border: showAiHelp
                   ? '1px solid rgba(34,211,238,0.55)'
                   : '1px solid rgba(148,163,184,0.35)',
@@ -1462,13 +1459,13 @@ export function StockChartModal({
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 5,
-                fontSize: 12,
+                gap: 4,
+                fontSize: 11,
                 fontWeight: 600,
               }}
             >
-              <Sparkles size={14} />
-              AI help
+              <Sparkles size={13} />
+              AI
             </button>
             <button
               type="button"
@@ -1500,307 +1497,158 @@ export function StockChartModal({
           </div>
         </div>
 
-        {/* Buy / Sell ticket — paper only (top) */}
+        {/* Chart workspace + trade rail */}
         <div
           style={{
             display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'flex-end',
-            gap: 10,
-            padding: '12px 16px',
-            borderBottom: '1px solid rgba(34,211,238,0.18)',
-            background: 'rgba(15,23,42,0.85)',
-            flexShrink: 0,
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflow: 'hidden',
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 72 }}>
-            <span style={{ fontSize: 11, color: '#a1a1aa' }}>Qty</span>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              disabled={!!placingSide}
+          <div
+            style={{
+              flex: '1 1 auto',
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+            }}
+          >
+            {/* Single compact toolbar: style · interval · period · tools */}
+            <div
               style={{
-                width: 80,
-                height: 36,
-                borderRadius: 8,
-                border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#e4e4e7',
-                padding: '0 10px',
-                fontSize: 13,
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 100 }}>
-            <span style={{ fontSize: 11, color: '#a1a1aa' }}>Order type</span>
-            <select
-              value={orderType}
-              onChange={(e) => setOrderType(e.target.value as 'MARKET' | 'LIMIT')}
-              disabled={!!placingSide}
-              style={{
-                height: 36,
-                borderRadius: 8,
-                border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#e4e4e7',
-                padding: '0 10px',
-                fontSize: 13,
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 10px',
+                borderBottom: '1px solid rgba(34,211,238,0.12)',
+                background: 'rgba(2,8,23,0.75)',
+                flexShrink: 0,
               }}
             >
-              <option value="MARKET">Market</option>
-              <option value="LIMIT">Limit</option>
-            </select>
-          </div>
-
-          {orderType === 'LIMIT' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 110 }}>
-              <span style={{ fontSize: 11, color: '#a1a1aa' }}>Limit price</span>
-              <input
-                type="number"
-                min={0.05}
-                step={0.05}
-                value={limitPrice}
-                onChange={(e) => setLimitPrice(e.target.value)}
-                disabled={!!placingSide}
+              {typeButtons.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setChartType(t.id)}
+                  title={t.label}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    border:
+                      chartType === t.id ? '1px solid rgba(52,211,153,0.55)' : '1px solid #3f3f46',
+                    background: chartType === t.id ? 'rgba(52,211,153,0.14)' : '#18181b',
+                    color: chartType === t.id ? '#a7f3d0' : '#a1a1aa',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+              <span style={{ width: 1, height: 18, background: '#334155', margin: '0 2px' }} />
+              <select
+                value={chartInterval}
+                onChange={(e) => onIntervalChange(e.target.value)}
+                aria-label="Interval"
                 style={{
-                  width: 120,
-                  height: 36,
-                  borderRadius: 8,
+                  height: 28,
+                  borderRadius: 6,
                   border: '1px solid #3f3f46',
                   background: '#18181b',
                   color: '#e4e4e7',
-                  padding: '0 10px',
-                  fontSize: 13,
-                }}
-              />
-            </div>
-          )}
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
-            <span
-              style={{
-                fontSize: 11,
-                color: '#a5f3fc',
-                border: '1px solid rgba(34,211,238,0.35)',
-                background: 'rgba(34,211,238,0.08)',
-                borderRadius: 999,
-                padding: '4px 10px',
-              }}
-            >
-              Paper
-            </span>
-            <button
-              type="button"
-              onClick={() => void placeTrade('BUY')}
-              disabled={!!placingSide}
-              style={{
-                minWidth: 96,
-                height: 36,
-                borderRadius: 8,
-                border: '1px solid rgba(52,211,153,0.55)',
-                background: placingSide === 'BUY' ? 'rgba(52,211,153,0.35)' : 'rgba(52,211,153,0.18)',
-                color: '#a7f3d0',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: placingSide ? 'wait' : 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-              }}
-            >
-              {placingSide === 'BUY' ? <Loader2 size={14} className="animate-spin" /> : null}
-              Buy
-            </button>
-            <button
-              type="button"
-              onClick={() => void placeTrade('SELL')}
-              disabled={!!placingSide}
-              style={{
-                minWidth: 96,
-                height: 36,
-                borderRadius: 8,
-                border: '1px solid rgba(248,113,113,0.55)',
-                background: placingSide === 'SELL' ? 'rgba(248,113,113,0.35)' : 'rgba(248,113,113,0.16)',
-                color: '#fecaca',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: placingSide ? 'wait' : 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-              }}
-            >
-              {placingSide === 'SELL' ? <Loader2 size={14} className="animate-spin" /> : null}
-              Sell
-            </button>
-          </div>
-        </div>
-
-        {/* Chart type + timeframe dropdowns */}
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'flex-end',
-            gap: 12,
-            padding: '12px 16px',
-            borderBottom: '1px solid rgba(34,211,238,0.15)',
-            background: 'rgba(2,8,23,0.55)',
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flex: '1 1 auto' }}>
-            {typeButtons.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setChartType(t.id)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: 8,
-                  border:
-                    chartType === t.id ? '1px solid rgba(52,211,153,0.55)' : '1px solid #3f3f46',
-                  background: chartType === t.id ? 'rgba(52,211,153,0.14)' : '#18181b',
-                  color: chartType === t.id ? '#a7f3d0' : '#a1a1aa',
-                  fontSize: 12,
-                  cursor: 'pointer',
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: '#a1a1aa' }}>
-            Interval
-            <select
-              value={chartInterval}
-              onChange={(e) => onIntervalChange(e.target.value)}
-              style={{
-                minWidth: 140,
-                height: 34,
-                borderRadius: 8,
-                border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#e4e4e7',
-                padding: '0 10px',
-                fontSize: 13,
-              }}
-            >
-              <optgroup label="Intraday">
-                {INTERVALS.filter((i) =>
-                  ['1m', '2m', '5m', '15m', '30m', '1h', '2h', '4h'].includes(i.id)
-                ).map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Daily / longer">
-                {INTERVALS.filter((i) => ['1d', '1wk', '1mo'].includes(i.id)).map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.label}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </label>
-
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: '#a1a1aa' }}>
-            Period
-            <select
-              value={range}
-              onChange={(e) => setRange(e.target.value)}
-              style={{
-                minWidth: 140,
-                height: 34,
-                borderRadius: 8,
-                border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#e4e4e7',
-                padding: '0 10px',
-                fontSize: 13,
-              }}
-            >
-              {RANGES.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-
-        {/* Analysis tools */}
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 8,
-            padding: '10px 16px',
-            borderBottom: '1px solid rgba(34,211,238,0.15)',
-            background: 'rgba(2,8,23,0.45)',
-            flexShrink: 0,
-          }}
-        >
-          <span style={{ fontSize: 11, color: '#64748b', marginRight: 4, letterSpacing: 0.3 }}>
-            TOOLS
-          </span>
-          {ANALYSIS_TOOLS.map((tool) => {
-            const on = activeTools.has(tool.id);
-            return (
-              <button
-                key={tool.id}
-                type="button"
-                title={tool.group}
-                onClick={() => toggleTool(tool.id)}
-                style={{
-                  padding: '5px 10px',
-                  borderRadius: 999,
-                  border: on
-                    ? `1px solid ${TOOL_COLORS[tool.id] || 'rgba(34,211,238,0.55)'}`
-                    : '1px solid #3f3f46',
-                  background: on
-                    ? `${TOOL_COLORS[tool.id] || 'rgba(34,211,238,1)'}22`
-                    : '#18181b',
-                  color: on ? TOOL_COLORS[tool.id] || '#a5f3fc' : '#a1a1aa',
+                  padding: '0 6px',
                   fontSize: 11,
-                  fontWeight: on ? 600 : 400,
-                  cursor: 'pointer',
                 }}
               >
-                {tool.label}
-              </button>
-            );
-          })}
-        </div>
+                <optgroup label="Intraday">
+                  {INTERVALS.filter((i) =>
+                    ['1m', '2m', '5m', '15m', '30m', '1h', '2h', '4h'].includes(i.id)
+                  ).map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Daily / longer">
+                  {INTERVALS.filter((i) => ['1d', '1wk', '1mo'].includes(i.id)).map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <select
+                value={range}
+                onChange={(e) => setRange(e.target.value)}
+                aria-label="Period"
+                style={{
+                  height: 28,
+                  borderRadius: 6,
+                  border: '1px solid #3f3f46',
+                  background: '#18181b',
+                  color: '#e4e4e7',
+                  padding: '0 6px',
+                  fontSize: 11,
+                }}
+              >
+                {RANGES.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+              <span style={{ width: 1, height: 18, background: '#334155', margin: '0 2px' }} />
+              <span style={{ fontSize: 10, color: '#64748b', letterSpacing: 0.4 }}>TOOLS</span>
+              {ANALYSIS_TOOLS.map((tool) => {
+                const on = activeTools.has(tool.id);
+                return (
+                  <button
+                    key={tool.id}
+                    type="button"
+                    title={tool.group}
+                    onClick={() => toggleTool(tool.id)}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 999,
+                      border: on
+                        ? `1px solid ${TOOL_COLORS[tool.id] || 'rgba(34,211,238,0.55)'}`
+                        : '1px solid #3f3f46',
+                      background: on
+                        ? `${TOOL_COLORS[tool.id] || 'rgba(34,211,238,1)'}22`
+                        : '#18181b',
+                      color: on ? TOOL_COLORS[tool.id] || '#a5f3fc' : '#a1a1aa',
+                      fontSize: 10,
+                      fontWeight: on ? 600 : 400,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {tool.label}
+                  </button>
+                );
+              })}
+            </div>
 
-        <div
-          style={{
-            padding: 16,
-            flex: '1 1 auto',
-            overflow: 'auto',
-            minHeight: 0,
-            background:
-              'radial-gradient(ellipse at top, rgba(8,47,73,0.35) 0%, rgba(2,8,23,0.92) 55%, rgba(2,6,23,1) 100%)',
-          }}
-        >
+            <div
+              style={{
+                padding: '8px 10px 10px',
+                flex: '1 1 auto',
+                overflow: 'auto',
+                minHeight: 0,
+                background:
+                  'radial-gradient(ellipse at top, rgba(8,47,73,0.35) 0%, rgba(2,8,23,0.92) 55%, rgba(2,6,23,1) 100%)',
+              }}
+            >
           {loading ? (
-            <div style={{ height: 360, displayContent: 'center', textAlign: 'center', color: '#a1a1aa' }}>
+            <div style={{ height: chartHeight, displayContent: 'center', textAlign: 'center', color: '#a1a1aa' }}>
               Loading chart…
             </div>
           ) : error ? (
             <div
               style={{
-                height: 360,
+                height: chartHeight,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -2017,17 +1865,17 @@ export function StockChartModal({
 
               {/* Always show volume strip under candle/ohlc/line */}
               {chartType !== 'bar' && (
-                <div style={{ marginTop: 10 }}>
-                  <VolumeSvg data={chartData} width={chartWidth} height={88} />
+                <div style={{ marginTop: 6 }}>
+                  <VolumeSvg data={chartData} width={chartWidth} height={56} />
                 </div>
               )}
 
               {activeTools.has('rsi') && (
-                <div style={{ marginTop: 10, borderTop: '1px solid #27272a', paddingTop: 8 }}>
+                <div style={{ marginTop: 8, borderTop: '1px solid #27272a', paddingTop: 6 }}>
                   <OscillatorSvg
                     title="RSI (14)"
                     width={chartWidth}
-                    height={110}
+                    height={88}
                     series={[
                       {
                         key: 'rsi',
@@ -2045,11 +1893,11 @@ export function StockChartModal({
               )}
 
               {activeTools.has('macd') && (
-                <div style={{ marginTop: 10, borderTop: '1px solid #27272a', paddingTop: 8 }}>
+                <div style={{ marginTop: 8, borderTop: '1px solid #27272a', paddingTop: 6 }}>
                   <OscillatorSvg
                     title="MACD (12,26,9)"
                     width={chartWidth}
-                    height={120}
+                    height={96}
                     series={[
                       {
                         key: 'macd',
@@ -2069,17 +1917,30 @@ export function StockChartModal({
               )}
             </div>
           )}
-        </div>
+            </div>
+          </div>
 
+          <div style={{ width: TRADE_RAIL_W, flexShrink: 0, minHeight: 0, overflow: 'auto' }}>
+            <ChartTradePanel
+              variant="rail"
+              symbol={stock.symbol}
+              price={stats.last || Number(limitPrice) || undefined}
+              qty={Math.max(1, Number(qty) || 1)}
+              onQtyChange={(n) => setQty(String(n))}
+            />
+          </div>
+        </div>
 
         {/* AI suggestion — opt-in, docked at bottom */}
         {showAiHelp ? (
         <div
           style={{
-            padding: '10px 16px 12px',
+            padding: '8px 12px 10px',
             borderTop: '1px solid rgba(34,211,238,0.22)',
             background: 'linear-gradient(90deg, rgba(8,47,73,0.55), rgba(15,23,42,0.9), rgba(6,78,59,0.25))',
             flexShrink: 0,
+            maxHeight: 140,
+            overflow: 'auto',
           }}
         >
           <div
