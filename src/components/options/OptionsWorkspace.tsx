@@ -54,6 +54,10 @@ export function OptionsWorkspace({
   const [underlyings, setUnderlyings] = useState<Underlying[]>([]);
   const [underlying, setUnderlying] = useState('NIFTY');
   const [expiries, setExpiries] = useState<string[]>([]);
+  const [expiryCalendar, setExpiryCalendar] = useState<
+    Array<{ date: string; kind: 'WEEKLY' | 'MONTHLY'; label: string }>
+  >([]);
+  const [expiryKind, setExpiryKind] = useState<'ALL' | 'WEEKLY' | 'MONTHLY'>('ALL');
   const [expiry, setExpiry] = useState('');
   const [chain, setChain] = useState<{
     spotPrice?: number;
@@ -90,16 +94,42 @@ export function OptionsWorkspace({
     );
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.message || 'Failed to load expiries');
-    const list = (json.data?.expiries || []) as string[];
+    const calendar = (json.data?.calendar || []) as Array<{
+      date: string;
+      kind: 'WEEKLY' | 'MONTHLY';
+      label: string;
+    }>;
+    const list = (json.data?.expiries || calendar.map((c) => c.date) || []) as string[];
+    setExpiryCalendar(calendar);
     setExpiries(list);
     setExpiry((prev) => (list.includes(prev) ? prev : list[0] || ''));
   }, []);
+
+  const filteredExpiries = useMemo(() => {
+    if (expiryKind === 'ALL') {
+      return expiryCalendar.length
+        ? expiryCalendar
+        : expiries.map((d) => ({ date: d, kind: 'WEEKLY' as const, label: d }));
+    }
+    const fromCal = expiryCalendar.filter((e) => e.kind === expiryKind);
+    return fromCal.length
+      ? fromCal
+      : expiries.map((d) => ({ date: d, kind: expiryKind, label: d }));
+  }, [expiryCalendar, expiries, expiryKind]);
+
+  useEffect(() => {
+    if (!filteredExpiries.length) return;
+    if (!filteredExpiries.some((e) => e.date === expiry)) {
+      setExpiry(filteredExpiries[0].date);
+    }
+  }, [filteredExpiries, expiry]);
 
   const loadChain = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
     try {
       const qs = new URLSearchParams({ underlying, greeks: analytics ? '1' : '0' });
       if (expiry) qs.set('expiry', expiry);
+      if (expiryKind !== 'ALL') qs.set('kind', expiryKind);
       const res = await fetch(`${API_BASE_URL}/options/chain?${qs}`, { headers: authHeaders() });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.message || 'Failed to load chain');
@@ -109,7 +139,7 @@ export function OptionsWorkspace({
     } finally {
       if (!opts?.silent) setLoading(false);
     }
-  }, [underlying, expiry, analytics]);
+  }, [underlying, expiry, expiryKind, analytics]);
 
   useEffect(() => {
     void loadUnderlyings().catch((e) => toast.error(e.message));
@@ -128,6 +158,10 @@ export function OptionsWorkspace({
     }, 12_000);
     return () => window.clearInterval(id);
   }, [underlying, expiry, loadChain]);
+  // reload when kind changes via expiry reset in filteredExpiries effect
+  useEffect(() => {
+    void loadChain();
+  }, [expiryKind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function syncMaster() {
     setSyncing(true);
@@ -241,12 +275,32 @@ export function OptionsWorkspace({
           </select>
         </label>
         <label style={labelStyle}>
+          Expiry type
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            {(['ALL', 'WEEKLY', 'MONTHLY'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setExpiryKind(k)}
+                style={{
+                  ...btnSecondary,
+                  padding: '6px 10px',
+                  opacity: expiryKind === k ? 1 : 0.7,
+                  borderColor: expiryKind === k ? '#22d3ee' : undefined,
+                }}
+              >
+                {k === 'ALL' ? 'All' : k === 'WEEKLY' ? 'Weekly' : 'Monthly'}
+              </button>
+            ))}
+          </div>
+        </label>
+        <label style={labelStyle}>
           Expiry
           <select value={expiry} onChange={(e) => setExpiry(e.target.value)} style={selectStyle}>
-            {expiries.length === 0 ? <option value="">—</option> : null}
-            {expiries.map((ex) => (
-              <option key={ex} value={ex}>
-                {ex}
+            {filteredExpiries.length === 0 ? <option value="">—</option> : null}
+            {filteredExpiries.map((ex) => (
+              <option key={ex.date} value={ex.date}>
+                {ex.label || ex.date}
               </option>
             ))}
           </select>

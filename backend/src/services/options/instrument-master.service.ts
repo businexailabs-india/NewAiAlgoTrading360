@@ -184,7 +184,7 @@ export class InstrumentMasterService {
         ...(segment ? { segment } : {})
       }
     });
-    if (!u) return [];
+    if (!u) return [] as string[];
 
     const rows = await prisma.derivativeInstrument.findMany({
       where: { underlyingId: u.id, tradable: true, expiry: { gte: new Date(Date.now() - 86400000) } },
@@ -193,6 +193,27 @@ export class InstrumentMasterService {
       orderBy: { expiry: 'asc' }
     });
     return rows.map((r) => r.expiry.toISOString().slice(0, 10));
+  }
+
+  /** Master expiries when present; otherwise paper weekly+monthly calendar. */
+  static async listExpiryCalendar(underlying: string, segment?: string) {
+    const { generateFoExpiryCalendar, classifyExpiryDates, filterExpiriesByKind } = await import(
+      '../../libs/trading/fo-expiry-calendar'
+    );
+    const sym = underlying.toUpperCase();
+    const masterDates = await this.listExpiries(sym, segment);
+    const calendar =
+      masterDates.length > 0
+        ? classifyExpiryDates(sym, masterDates)
+        : generateFoExpiryCalendar(sym, { weeks: 26, months: 8 });
+    return {
+      underlying: sym,
+      expiries: calendar.map((e) => e.date),
+      calendar,
+      weekly: filterExpiriesByKind(calendar, 'WEEKLY'),
+      monthly: filterExpiriesByKind(calendar, 'MONTHLY'),
+      source: masterDates.length > 0 ? ('instrument_master' as const) : ('paper_calendar' as const)
+    };
   }
 
   static async getContracts(underlying: string, expiry: string, segment?: string) {

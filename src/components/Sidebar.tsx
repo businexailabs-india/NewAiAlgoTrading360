@@ -113,9 +113,27 @@ export function Sidebar({
         icon: CandlestickChart,
         children: [
           { id: 'trading-terminal', label: 'Trading Terminal', icon: CandlestickChart },
+          {
+            id: 'trade-us-stocks',
+            label: 'US Stocks (IBKR)',
+            icon: CandlestickChart,
+            badge: { text: 'IBKR', color: 'cyan' },
+          },
           { id: 'basket-orders', label: 'Basket Orders', icon: Briefcase },
           { id: 'trade-orders', label: 'Orders', icon: FileText },
           { id: 'trade-positions', label: 'Positions', icon: Briefcase },
+          {
+            id: 'trade-paper-holdings',
+            label: 'Paper Holdings',
+            icon: Briefcase,
+            badge: { text: 'PAPER', color: 'blue' },
+          },
+          {
+            id: 'trade-paper-positions',
+            label: 'Paper Positions',
+            icon: Layers,
+            badge: { text: 'PAPER', color: 'blue' },
+          },
           {
             id: 'trade-live',
             label: 'Live Trading',
@@ -126,7 +144,7 @@ export function Sidebar({
           },
         ],
       },
-      { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
+      { id: 'portfolio', label: 'Portfolio', icon: Briefcase, badge: { text: 'MULTI', color: 'cyan' } },
       { id: 'riskguard', label: 'RiskGuard', icon: Shield, badge: { text: 'HEALTH', color: 'amber' } },
       { id: 'watchlist', label: 'Activity', icon: Eye },
       { id: 'settings', label: 'Settings', icon: Settings },

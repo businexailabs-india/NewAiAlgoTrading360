@@ -40,6 +40,8 @@ export function PaperOptionsTerminal() {
   const [underlying, setUnderlying] = useState('NIFTY');
   const [underlyings, setUnderlyings] = useState<string[]>(['NIFTY']);
   const [expiries, setExpiries] = useState<string[]>([]);
+  const [expiryLabels, setExpiryLabels] = useState<Record<string, string>>({});
+  const [expiryKind, setExpiryKind] = useState<'ALL' | 'WEEKLY' | 'MONTHLY'>('ALL');
   const [expiry, setExpiry] = useState('');
   const [chainRows, setChainRows] = useState<ChainRow[]>([]);
   const [spotPrice, setSpotPrice] = useState<number | null>(null);
@@ -76,15 +78,27 @@ export function PaperOptionsTerminal() {
         { headers: authHeaders() }
       );
       const json = await res.json().catch(() => ({}));
-      const list = json.data?.expiries || [];
-      setExpiries(list);
-      setExpiry(list[0] || '');
-      if (!list.length) {
+      const calendar = (json.data?.calendar || []) as Array<{
+        date: string;
+        kind: 'WEEKLY' | 'MONTHLY';
+        label: string;
+      }>;
+      const filtered =
+        expiryKind === 'ALL' ? calendar : calendar.filter((c) => c.kind === expiryKind);
+      const list = (filtered.length ? filtered : calendar).map((c) => c.date);
+      const labels: Record<string, string> = {};
+      for (const c of calendar) labels[c.date] = c.label;
+      const fallback = (json.data?.expiries || []) as string[];
+      const finalList = list.length ? list : fallback;
+      setExpiries(finalList);
+      setExpiryLabels(labels);
+      setExpiry(finalList[0] || '');
+      if (!finalList.length) {
         setChainRows([]);
         setChainMsg('No expiries — sync instrument master from Options workspace.');
       }
     })();
-  }, [underlying]);
+  }, [underlying, expiryKind]);
 
   useEffect(() => {
     if (!expiry) return;
@@ -343,10 +357,15 @@ export function PaperOptionsTerminal() {
             </option>
           ))}
         </select>
+        <select value={expiryKind} onChange={(e) => setExpiryKind(e.target.value as typeof expiryKind)} style={select}>
+          <option value="ALL">All expiries</option>
+          <option value="WEEKLY">Weekly</option>
+          <option value="MONTHLY">Monthly</option>
+        </select>
         <select value={expiry} onChange={(e) => setExpiry(e.target.value)} style={select}>
           {expiries.map((ex) => (
             <option key={ex} value={ex}>
-              {ex}
+              {expiryLabels[ex] || ex}
             </option>
           ))}
         </select>

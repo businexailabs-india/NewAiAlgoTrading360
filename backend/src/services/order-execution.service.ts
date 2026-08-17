@@ -232,8 +232,11 @@ export class OrderExecutionService {
     let fillPrice =
       order.price && Number(order.price) > 0 ? Number(order.price) : 0;
 
-    // Equity paper fills can refresh from market; F&O / explicit premium skip quote
-    if (!(fillPrice > 0) || (order.instrumentType !== 'OPTION' && order.orderType === 'MARKET')) {
+    const looksLikeOption =
+      order.instrumentType === 'OPTION' || /CE$|PE$/i.test(order.symbol);
+
+    // Equity MARKET may refresh from quote; options keep explicit premium (never underlying spot)
+    if (!looksLikeOption && (!(fillPrice > 0) || order.orderType === 'MARKET')) {
       try {
         const quote = await MarketService.getQuote(order.symbol, userId);
         if (quote.price > 0) {
@@ -265,7 +268,7 @@ export class OrderExecutionService {
 
     await this.recordPaperTrade(updated, userId, fillPrice);
 
-    if (order.instrumentType === 'OPTION') {
+    if (order.instrumentType === 'OPTION' || /CE$|PE$/i.test(order.symbol)) {
       const details = (order.optionDetails || {}) as {
         instrumentToken?: string;
         strike?: number;

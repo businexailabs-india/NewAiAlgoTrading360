@@ -1,6 +1,6 @@
 import { MarketService } from '../market.service';
 import { InstrumentMasterService } from './instrument-master.service';
-import { blackScholesGreeks, daysToExpiry } from './greeks.service';
+import { blackScholesGreeks, blackScholesPrice, daysToExpiry, estimateIndexOptionIv, yearsToExpiry } from './greeks.service';
 import { OptionsService } from '../options.service';
 import { OptionQuoteService } from './option-quote.service';
 
@@ -43,11 +43,25 @@ export type ContractQuote = {
   };
 };
 
-function estimatePremium(spot: number, strike: number, optionType: 'CE' | 'PE', ivPct: number): number {
-  const intrinsic =
-    optionType === 'CE' ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
-  const timeValue = Math.max(spot * (ivPct / 100) * 0.08, spot * 0.002);
-  return Number((intrinsic + timeValue).toFixed(2));
+function estimatePremium(
+  spot: number,
+  strike: number,
+  optionType: 'CE' | 'PE',
+  expiry: string | Date
+): { ltp: number; iv: number } {
+  const expDate = typeof expiry === 'string' ? new Date(`${expiry}T15:30:00+05:30`) : expiry;
+  const dte = daysToExpiry(expDate);
+  const iv = estimateIndexOptionIv(spot, strike, dte, optionType);
+  const expYmd =
+    typeof expiry === 'string' ? expiry.slice(0, 10) : expiry.toISOString().slice(0, 10);
+  const ltp = blackScholesPrice({
+    spot,
+    strike,
+    timeYears: yearsToExpiry(expYmd),
+    ivPct: iv,
+    optionType
+  });
+  return { ltp, iv };
 }
 
 function oiSignal(oi: number, previousOi: number, changePercent: number): ContractQuote['oiSignal'] {
@@ -73,8 +87,7 @@ export class OptionsChainService {
   }
 
   static async getExpiries(underlying: string) {
-    const expiries = await InstrumentMasterService.listExpiries(underlying);
-    return { underlying: underlying.toUpperCase(), expiries, source: 'instrument_master' as const };
+    return InstrumentMasterService.listExpiryCalendar(underlying);
   }
 
   static async getChain(params: {
@@ -82,12 +95,17 @@ export class OptionsChainService {
     expiry?: string;
     userId?: string;
     includeGreeks?: boolean;
+    kind?: 'WEEKLY' | 'MONTHLY' | 'ALL';
   }) {
     const underlying = params.underlying.toUpperCase();
+    const calendar = await InstrumentMasterService.listExpiryCalendar(underlying);
     let expiry = params.expiry;
     if (!expiry) {
-      const expiries = await InstrumentMasterService.listExpiries(underlying);
-      expiry = expiries[0];
+      const filtered =
+        params.kind && params.kind !== 'ALL'
+          ? calendar.calendar.filter((e) => e.kind === params.kind)
+          : calendar.calendar;
+      expiry = filtered[0]?.date || calendar.expiries[0];
     }
 
     if (!expiry) {
@@ -96,20 +114,74 @@ export class OptionsChainService {
         ...heuristic,
         providerStatus: 'heuristic' as const,
         quoteFreshness: 'delayed' as const,
+        expiry_calendar: calendar,
         message:
           heuristic.message ||
           'No instrument master contracts found — heuristic strikes for dev only. Run POST /api/options/sync.'
       };
     }
 
+    const expiryMeta = calendar.calendar.find((e) => e.date === expiry);
     const { underlying: u, contracts } = await InstrumentMasterService.getContracts(underlying, expiry);
     if (!u || !contracts.length) {
-      const heuristic = await OptionsService.getOptionsChain(underlying, params.userId);
+      const heuristic = await OptionsService.getOptionsChain(underlying, params.userId, {
+        expiry,
+        strikeCount: 41
+      });
+      // Normalize heuristic contracts into chain rows for UI
+      const byStrike = new Map<number, ChainRow>();
+      for (const c of heuristic.contracts || []) {
+        const row = byStrike.get(c.strike) || { strike: c.strike };
+        const q: ContractQuote = {
+          id: `${c.symbol}-${c.expiry}`,
+          tradingSymbol: c.symbol,
+          instrumentToken: c.symbol,
+          optionType: c.optionType,
+          strike: c.strike,
+          expiry: c.expiry,
+          lotSize: underlying === 'SENSEX' || underlying === 'BANKEX' ? 20 : underlying === 'BANKNIFTY' ? 15 : 65,
+          freezeQty: null,
+          ltp: c.ltp,
+          oi: c.oi,
+          iv: c.iv,
+          change: c.change,
+          changePercent: c.changePercent,
+          oiSignal: 'NEUTRAL',
+          quoteSource: 'model'
+        };
+        if (c.optionType === 'CE') row.ce = q;
+        else row.pe = q;
+        byStrike.set(c.strike, row);
+      }
+      const rows = Array.from(byStrike.values()).sort((a, b) => a.strike - b.strike);
+      const spot = heuristic.spotPrice || 0;
+      const atm = rows.length
+        ? rows.reduce(
+            (best, r) => (Math.abs(r.strike - spot) < Math.abs(best - spot) ? r.strike : best),
+            rows[0].strike
+          )
+        : 0;
       return {
-        ...heuristic,
+        underlying,
+        expiry,
+        expiry_kind: expiryMeta?.kind || null,
+        expiry_label: expiryMeta?.label || null,
+        expiry_calendar: calendar,
+        spotPrice: spot,
+        spotAvailable: heuristic.spotAvailable,
+        atm,
+        pcr: null,
+        maxPain: null,
+        rows,
         providerStatus: 'heuristic' as const,
         quoteFreshness: 'delayed' as const,
-        message: 'Master empty for expiry — heuristic fallback (dev only).'
+        quoteSource: 'model',
+        brokerQuoteCount: 0,
+        analyzedAt: heuristic.analyzedAt,
+        message:
+          calendar.source === 'paper_calendar'
+            ? `Paper ${expiryMeta?.kind || 'WEEKLY'} expiry ${expiry} — model premiums. Sync instrument master for live chain.`
+            : 'Master empty for expiry — heuristic fallback (dev only).'
       };
     }
 
@@ -135,7 +207,6 @@ export class OptionsChainService {
       }
     }
 
-    const ivBase = Math.min(45, Math.max(12, 14 + Math.abs(changePercent) * 2.5));
     const byStrike = new Map<number, ChainRow>();
     let brokerQuoteCount = 0;
 
@@ -147,15 +218,19 @@ export class OptionsChainService {
         overlay.bySecurityId.get(String(c.instrumentToken)) ||
         overlay.byStrikeType.get(`${strike}|${optionType}`);
 
-      const modelIv = ivBase + (Math.abs(strike - (spot || strike)) / Math.max(spot || 1, 1)) * 8;
-      const modelLtp = spot > 0 ? estimatePremium(spot, strike, optionType, modelIv) : 0;
+      const model =
+        spot > 0
+          ? estimatePremium(spot, strike, optionType, c.expiry || expiry)
+          : { ltp: 0, iv: 14 };
+      const modelLtp = model.ltp;
+      const modelIv = model.iv;
 
       const fromBroker = !!(depth && (depth.ltp > 0 || depth.oi > 0));
       if (fromBroker) brokerQuoteCount++;
 
       const ltp = fromBroker && depth!.ltp > 0 ? depth!.ltp : modelLtp;
       const oi = fromBroker ? depth!.oi : 0;
-      const iv = fromBroker && depth!.iv > 0 ? depth!.iv : Number(modelIv.toFixed(1));
+      const iv = fromBroker && depth!.iv > 0 ? depth!.iv : modelIv;
       const chg = fromBroker ? depth!.change : Number((ltp * (changePercent / 100)).toFixed(2));
       const chgPct = fromBroker ? depth!.changePercent : Number(changePercent.toFixed(2));
 
@@ -269,6 +344,9 @@ export class OptionsChainService {
       spotPrice: spot,
       spotAvailable,
       expiry,
+      expiry_kind: expiryMeta?.kind || null,
+      expiry_label: expiryMeta?.label || null,
+      expiry_calendar: calendar,
       atm,
       pcr: metrics.pcr,
       maxPain: metrics.maxPain,

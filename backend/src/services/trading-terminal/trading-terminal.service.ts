@@ -8,6 +8,8 @@ import {
   mapDbInstrument,
   productForInstrument,
   validateLotSize,
+  parseFoContractSymbol,
+  estimateOptionPremium,
   type CatalogInstrument,
   type InstrumentType
 } from '../../libs/trading/instrument-catalog';
@@ -19,7 +21,7 @@ import {
   type ChartOrderActionRequest,
   type OrderPreviewRequest
 } from '../../libs/trading/order-ticket';
-import { hasPermission, roleFromUserRole, type TradePermission } from '../../libs/trading/permissions';
+import { hasPermission, roleFromUserRole, permissionForInstrumentType, type TradePermission } from '../../libs/trading/permissions';
 
 async function audit(
   userId: string,
@@ -69,6 +71,7 @@ export class TradingTerminalService {
 
   static async searchInstruments(query: string, limit = 20): Promise<CatalogInstrument[]> {
     await this.ensureCatalogSeeded();
+    await this.syncMarketSearchHits(query);
     const q = (query || '').trim();
     const rows = await prisma.tradeInstrument.findMany({
       where: q
@@ -76,21 +79,343 @@ export class TradingTerminalService {
             OR: [
               { symbol: { contains: q, mode: 'insensitive' } },
               { displayName: { contains: q, mode: 'insensitive' } },
-              { underlyingSymbol: { contains: q, mode: 'insensitive' } }
+              { underlyingSymbol: { contains: q, mode: 'insensitive' } },
+              { brokerSymbol: { contains: q, mode: 'insensitive' } }
             ]
           }
         : undefined,
-      take: Math.min(50, limit),
+      take: Math.min(50, Math.max(limit, 20)),
       orderBy: [{ instrumentType: 'asc' }, { symbol: 'asc' }]
     });
-    return rows.map(mapDbInstrument);
+    const repaired = await Promise.all(rows.map((r) => this.repairFoInstrument(r)));
+    return repaired.map(mapDbInstrument);
+  }
+
+  /** Pull market-search hits into trade_instruments so terminal search is not limited to the tiny seed. */
+  private static async syncMarketSearchHits(query: string) {
+    const q = (query || '').trim();
+    if (q.length < 1) return;
+    const { MarketService } = await import('../market.service');
+    const hits = MarketService.searchSymbols(q).slice(0, 25);
+    for (const hit of hits) {
+      const symbol = String(hit.symbol || '')
+        .trim()
+        .toUpperCase();
+      if (!symbol) continue;
+      const exchangeRaw = String(hit.exchange || 'NSE').toUpperCase();
+      const isIndex = exchangeRaw === 'INDEX';
+      const isNfo = exchangeRaw === 'NFO';
+      const exchange = isIndex || isNfo ? 'NSE' : exchangeRaw;
+      const segment = isIndex ? 'IDX' : isNfo ? 'NFO' : 'EQ';
+      const fo = parseFoContractSymbol(symbol);
+      let instrumentType: InstrumentType = 'STOCK';
+      let direct = true;
+      let assetClass = 'EQUITY';
+      if (isIndex && !(fo?.strike || fo?.optionType || fo?.isFuture)) {
+        instrumentType = 'INDEX';
+        direct = false;
+        assetClass = 'INDEX';
+      } else if (isNfo || fo?.optionType || fo?.isFuture || /[-_]?(CE|PE)$/i.test(symbol)) {
+        instrumentType = fo?.isFuture || /FUT/i.test(symbol) ? 'INDEX_FUTURE' : 'INDEX_OPTION';
+        assetClass = 'DERIVATIVE';
+      } else if (/FUT/i.test(symbol)) {
+        instrumentType = 'INDEX_FUTURE';
+        assetClass = 'DERIVATIVE';
+      }
+
+      const optionType = fo?.optionType || (/CE$/i.test(symbol) ? 'CE' : /PE$/i.test(symbol) ? 'PE' : null);
+      const strike = fo?.strike ?? null;
+      const underlyingSymbol =
+        fo?.underlying ||
+        (isIndex || isNfo ? symbol.replace(/(\d{3,6})?(CE|PE|FUT)$/i, '') || symbol : null);
+      const lotSize = fo?.lotSize || (instrumentType.includes('OPTION') || instrumentType.includes('FUTURE') ? 25 : 1);
+      const displayName =
+        strike && optionType
+          ? `${underlyingSymbol} ${strike} ${optionType}`
+          : String(hit.name || symbol);
+
+      const existing = await prisma.tradeInstrument.findFirst({
+        where: {
+          symbol,
+          exchange,
+          instrumentType,
+          optionType: optionType ?? undefined
+        }
+      });
+      if (existing) {
+        const needsRepair =
+          (strike != null && existing.strike == null) ||
+          (underlyingSymbol && existing.underlyingSymbol !== underlyingSymbol) ||
+          (optionType && existing.optionType !== optionType) ||
+          (lotSize > 1 && existing.lotSize !== lotSize) ||
+          existing.displayName !== displayName;
+        if (needsRepair) {
+          await prisma.tradeInstrument.update({
+            where: { id: existing.id },
+            data: {
+              displayName,
+              strike: strike ?? existing.strike,
+              optionType: optionType ?? existing.optionType,
+              underlyingSymbol: underlyingSymbol || existing.underlyingSymbol,
+              lotSize: lotSize > 1 ? lotSize : existing.lotSize
+            }
+          });
+        }
+        continue;
+      }
+      await prisma.tradeInstrument.create({
+        data: {
+          symbol,
+          displayName,
+          exchange,
+          segment,
+          assetClass,
+          instrumentType,
+          tradable: true,
+          directTradingAllowed: direct,
+          lotSize,
+          tickSize: 0.05,
+          strike,
+          optionType,
+          underlyingSymbol,
+          tradingStatus: 'OPEN'
+        }
+      });
+    }
   }
 
   static async getInstrument(instrumentId: string): Promise<CatalogInstrument> {
     await this.ensureCatalogSeeded();
-    const row = await prisma.tradeInstrument.findUnique({ where: { id: instrumentId } });
+    let row = await prisma.tradeInstrument.findUnique({ where: { id: instrumentId } });
     if (!row) throw new AppError('Instrument not found', 404);
+    row = await this.repairFoInstrument(row);
     return mapDbInstrument(row);
+  }
+
+  /** Backfill strike / underlying / lot when compact F&O symbols were synced incorrectly. */
+  private static async repairFoInstrument<
+    T extends {
+      id: string;
+      symbol: string;
+      displayName: string;
+      strike: number | null;
+      optionType: string | null;
+      underlyingSymbol: string | null;
+      lotSize: number;
+      instrumentType: string;
+    }
+  >(row: T): Promise<T> {
+    const fo = parseFoContractSymbol(row.symbol);
+    if (!fo) return row;
+    const needs =
+      (fo.strike != null && row.strike == null) ||
+      row.underlyingSymbol !== fo.underlying ||
+      (fo.optionType && row.optionType !== fo.optionType) ||
+      (fo.lotSize > 1 && row.lotSize !== fo.lotSize);
+    if (!needs) return row;
+    const displayName =
+      fo.strike && fo.optionType
+        ? `${fo.underlying} ${fo.strike} ${fo.optionType}`
+        : row.displayName;
+    const updated = await prisma.tradeInstrument.update({
+      where: { id: row.id },
+      data: {
+        displayName,
+        strike: fo.strike ?? row.strike,
+        optionType: fo.optionType ?? row.optionType,
+        underlyingSymbol: fo.underlying,
+        lotSize: fo.lotSize > 1 ? fo.lotSize : row.lotSize
+      }
+    });
+    return updated as unknown as T;
+  }
+
+  /** Option/future contract card: strike, spot, estimated premium (paper). */
+  static async getContractQuote(
+    userId: string,
+    instrumentId: string,
+    opts?: { expiry?: string; kind?: 'WEEKLY' | 'MONTHLY' | 'ALL' }
+  ) {
+    const inst = await this.getInstrument(instrumentId);
+    const fo = parseFoContractSymbol(inst.symbol);
+    const underlying = (inst.underlying_symbol || fo?.underlying || '').toUpperCase();
+    const strike = Number(inst.strike ?? fo?.strike ?? 0) || null;
+    const optionType = (inst.option_type || fo?.optionType || null) as 'CE' | 'PE' | null;
+    const isOption = Boolean(optionType && strike);
+
+    let expiryCalendar: Awaited<
+      ReturnType<(typeof import('../options/instrument-master.service'))['InstrumentMasterService']['listExpiryCalendar']>
+    > | null = null;
+    // Prefer explicit UI expiry; ignore stale instrument.expiry when caller passes one
+    let expiry = opts?.expiry || null;
+    if (!expiry) expiry = inst.expiry || null;
+    let expiryKind: 'WEEKLY' | 'MONTHLY' | null = null;
+    let expiryLabel: string | null = null;
+
+    if (underlying) {
+      try {
+        const { InstrumentMasterService } = await import('../options/instrument-master.service');
+        expiryCalendar = await InstrumentMasterService.listExpiryCalendar(underlying);
+        if (!expiry) {
+          const filtered =
+            opts?.kind && opts.kind !== 'ALL'
+              ? expiryCalendar.calendar.filter((e) => e.kind === opts.kind)
+              : expiryCalendar.calendar;
+          expiry = filtered[0]?.date || expiryCalendar.expiries[0] || null;
+        }
+        const meta = expiryCalendar.calendar.find((e) => e.date === expiry);
+        expiryKind = meta?.kind || null;
+        expiryLabel = meta?.label || null;
+      } catch {
+        expiryCalendar = null;
+      }
+    }
+
+    let spot: number | null = null;
+    let spotChange = 0;
+    let spotChangePercent = 0;
+    let spotSource: string | undefined;
+    if (underlying) {
+      try {
+        const { MarketService } = await import('../market.service');
+        const q = await MarketService.getQuote(underlying, userId);
+        spot = q.price;
+        spotChange = q.change;
+        spotChangePercent = q.changePercent;
+        spotSource = q.source;
+      } catch {
+        spot = null;
+      }
+    }
+
+    let premium: number | null = null;
+    let intrinsic: number | null = null;
+    let timeValue: number | null = null;
+    let premiumSource: string | null = null;
+
+    if (isOption && spot && spot > 0 && strike && optionType) {
+      const selectedExpiry = expiry;
+
+      // 1) Prefer live Dhan option-chain LTP when credentials work
+      if (selectedExpiry) {
+        try {
+          const { OptionQuoteService } = await import('../options/option-quote.service');
+          const overlay = await OptionQuoteService.fetchOverlay({
+            underlying,
+            expiry: selectedExpiry,
+            userId
+          });
+          const live = overlay.byStrikeType.get(`${strike}|${optionType}`);
+          if (live && live.ltp > 0) {
+            premium = live.ltp;
+            premiumSource = 'broker';
+            if (overlay.spot > 0) {
+              spot = overlay.spot;
+              spotSource = 'dhan';
+            }
+          }
+        } catch {
+          /* continue */
+        }
+      }
+
+      // 2) Chain / BS model for this expiry + strike
+      if (premium == null) {
+        try {
+          const { OptionsChainService } = await import('../options/options-chain.service');
+          const chain = await OptionsChainService.getChain({
+            underlying,
+            expiry: selectedExpiry || undefined,
+            kind: opts?.kind,
+            userId,
+            includeGreeks: false
+          });
+          if ('rows' in chain && Array.isArray(chain.rows)) {
+            const row = chain.rows.find((r: { strike: number }) => r.strike === strike);
+            const leg = optionType === 'CE' ? row?.ce : row?.pe;
+            if (leg && Number(leg.ltp) > 0) {
+              premium = Number(leg.ltp);
+              premiumSource = leg.quoteSource === 'broker' ? 'broker' : 'bs-model';
+            }
+            if (!opts?.expiry && 'expiry' in chain && chain.expiry) {
+              expiry = String(chain.expiry);
+            }
+            if ('expiry_kind' in chain) expiryKind = (chain.expiry_kind as typeof expiryKind) || expiryKind;
+            if ('expiry_label' in chain) expiryLabel = (chain.expiry_label as string) || expiryLabel;
+          } else if ('contracts' in chain && Array.isArray((chain as { contracts?: unknown[] }).contracts)) {
+            const hit = (
+              chain as {
+                contracts: Array<{ strike: number; optionType: string; ltp: number; expiry?: string }>;
+              }
+            ).contracts.find((c) => c.strike === strike && c.optionType === optionType);
+            if (hit && hit.ltp > 0) {
+              premium = hit.ltp;
+              premiumSource = 'bs-model';
+              if (!opts?.expiry && hit.expiry) expiry = hit.expiry;
+            }
+          }
+        } catch {
+          /* fall through to model */
+        }
+      }
+
+      // 3) Direct BS fallback with correct DTE
+      if (premium == null) {
+        const { estimateIndexOptionIv, daysToExpiry } = await import('../options/greeks.service');
+        const dte = selectedExpiry
+          ? daysToExpiry(new Date(`${selectedExpiry}T15:30:00+05:30`))
+          : 7;
+        const iv = estimateIndexOptionIv(spot, strike, dte, optionType);
+        const est = estimateOptionPremium(spot, strike, optionType, iv, {
+          expiry: selectedExpiry,
+          daysToExpiry: dte
+        });
+        premium = est.premium;
+        intrinsic = est.intrinsic;
+        timeValue = est.timeValue;
+        premiumSource = 'bs-model';
+      } else {
+        const est = estimateOptionPremium(spot, strike, optionType, 14, {
+          expiry: selectedExpiry || expiry
+        });
+        intrinsic = est.intrinsic;
+        timeValue = Number(Math.max(0, premium - est.intrinsic).toFixed(2));
+      }
+    }
+
+    // Persist selected expiry on instrument for ticket display
+    if (expiry && isOption && inst.expiry !== expiry) {
+      await prisma.tradeInstrument.update({
+        where: { id: instrumentId },
+        data: { expiry }
+      });
+    }
+
+    return {
+      instrument: { ...inst, expiry },
+      underlying: underlying || null,
+      strike,
+      option_type: optionType,
+      expiry,
+      expiry_kind: expiryKind,
+      expiry_label: expiryLabel,
+      expiry_calendar: expiryCalendar,
+      lot_size: inst.lot_size,
+      spot,
+      spot_change: spotChange,
+      spot_change_percent: spotChangePercent,
+      spot_source: spotSource || null,
+      premium,
+      intrinsic,
+      time_value: timeValue,
+      premium_source: premiumSource,
+      order_price: isOption ? premium : spot,
+      message: isOption
+        ? premiumSource === 'broker'
+          ? `Live option LTP · ${expiryLabel || expiry || ''}`
+          : `BS option premium for ${expiryLabel || expiry || 'nearest expiry'} (not broker tape — connect Dhan for live LTP).`
+        : null
+    };
   }
 
   static async getTradability(userId: string, instrumentId: string) {
@@ -112,7 +437,8 @@ export class TradingTerminalService {
     const buySellEnabled =
       inst.tradable &&
       inst.direct_trading_allowed &&
-      hasPermission(role, inst.instrument_type.includes('OPTION') ? 'trade_options' : 'trade_stock');
+      hasPermission(role, 'paper_trade') &&
+      hasPermission(role, permissionForInstrumentType(inst.instrument_type));
 
     return {
       instrument: inst,
@@ -366,15 +692,65 @@ export class TradingTerminalService {
       throw new AppError('Live OMS submit locked by default — use paper', 403);
     }
 
+    let instrumentType: 'EQUITY' | 'OPTION' = 'EQUITY';
+    let exchange = preview.exchange || 'NSE';
+    let optionDetails:
+      | { strike: number; expiry: string; optionType: 'CE' | 'PE' }
+      | undefined;
+    let fillPrice = preview.price != null ? Number(preview.price) : undefined;
+
+    if (preview.instrumentId) {
+      try {
+        const inst = await this.getInstrument(preview.instrumentId);
+        if (inst.instrument_type.includes('OPTION')) {
+          instrumentType = 'OPTION';
+          exchange = inst.segment === 'NFO' || inst.exchange === 'NSE' ? 'NFO' : inst.exchange;
+          optionDetails = {
+            strike: Number(inst.strike || 0),
+            expiry: String(inst.expiry || ''),
+            optionType: (inst.option_type as 'CE' | 'PE') || (/PE$/i.test(inst.symbol) ? 'PE' : 'CE')
+          };
+        }
+      } catch {
+        /* catalog optional */
+      }
+    }
+    if (instrumentType === 'EQUITY' && /CE$|PE$/i.test(preview.symbol)) {
+      instrumentType = 'OPTION';
+      exchange = 'NFO';
+      const fo = parseFoContractSymbol(preview.symbol);
+      optionDetails = {
+        strike: Number(fo?.strike || 0),
+        expiry: '',
+        optionType: (fo?.optionType as 'CE' | 'PE') || (/PE$/i.test(preview.symbol) ? 'PE' : 'CE')
+      };
+    }
+
+    // Prefer explicit premium for options — never let equity LTP overwrite
+    if (instrumentType === 'OPTION' && !(fillPrice && fillPrice > 0)) {
+      try {
+        const cq = await this.getContractQuote(userId, preview.instrumentId || '', {
+          expiry: optionDetails?.expiry || undefined
+        });
+        if (cq.premium && cq.premium > 0) fillPrice = cq.premium;
+        if (cq.expiry && optionDetails) optionDetails.expiry = cq.expiry;
+      } catch {
+        /* keep preview price */
+      }
+    }
+
     const order = await OrderExecutionService.placeOrder({
       userId,
       symbol: preview.symbol,
+      exchange,
       tradeType: preview.side as 'BUY' | 'SELL',
       quantity: preview.quantity,
       orderType: preview.orderType as 'MARKET' | 'LIMIT' | 'SL' | 'SL-M',
       product: preview.productType as 'CNC' | 'MIS' | 'NRML',
-      price: preview.price ?? undefined,
+      price: fillPrice,
       triggerPrice: preview.triggerPrice ?? undefined,
+      instrumentType,
+      optionDetails,
       isPaper: true,
       source: preview.source === 'CHART' ? 'CHART' : preview.source === 'BASKET' ? 'BASKET' : 'MANUAL',
       idempotencyKey: `submit-${preview.idempotencyKey}`,
@@ -415,16 +791,31 @@ export class TradingTerminalService {
       }
     });
     await audit(userId, 'basket_created', 'BASKET', basket.basketName, basket.id);
-    return basket;
+    return {
+      ...basket,
+      id: basket.id,
+      basket_name: basket.basketName,
+      basketName: basket.basketName,
+      legs_count: 0
+    };
   }
 
   static async listBaskets(userId: string) {
-    return prisma.basketOrder.findMany({
+    const rows = await prisma.basketOrder.findMany({
       where: { userId },
       include: { legs: true },
       orderBy: { createdAt: 'desc' },
       take: 50
     });
+    // Normalize for FE (camel + snake) so basket chips always render
+    return rows.map((b) => ({
+      ...b,
+      id: b.id,
+      basket_name: b.basketName,
+      basketName: b.basketName,
+      created_at: b.createdAt,
+      legs_count: b.legs?.length || 0
+    }));
   }
 
   static async getBasket(userId: string, basketId: string) {
@@ -433,7 +824,12 @@ export class TradingTerminalService {
       include: { legs: true }
     });
     if (!b) throw new AppError('Basket not found', 404);
-    return b;
+    return {
+      ...b,
+      basket_name: b.basketName,
+      basketName: b.basketName,
+      legs: b.legs
+    };
   }
 
   static async updateBasket(

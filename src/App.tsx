@@ -3,8 +3,8 @@ import {
   Activity,
   BarChart3,
   Briefcase,
+  CandlestickChart,
   Layers,
-  PieChart,
   Receipt,
   RefreshCw,
   Rocket,
@@ -19,9 +19,6 @@ import { MarketTickerBar, MARKET_TICKER_H } from './components/algos/MarketTicke
 import { PortfolioSummaryCards } from './components/PortfolioSummaryCards';
 import { AIPortfolioAdvisor } from './components/AIPortfolioAdvisor';
 import { PortfolioHeader } from './components/PortfolioHeader';
-import { PerformanceCards } from './components/PerformanceCards';
-import { AssetAllocationCharts } from './components/AssetAllocationCharts';
-import { RebalancingConsole } from './components/RebalancingConsole';
 import { TaxAnalytics } from './components/TaxAnalytics';
 import { TradingTabs } from './components/TradingTabs';
 import { AIInsightsPanel } from './components/AIInsightsPanel';
@@ -45,6 +42,9 @@ import { WatchlistPanel } from './components/WatchlistPanel';
 import { ModeSwitchModal } from './components/ModeSwitchModal';
 import { OptionsWorkspace } from './components/options/OptionsWorkspace';
 import { PaperOptionsTerminal } from './components/options/PaperOptionsTerminal';
+import { PaperBookPanel } from './components/trading/PaperBookPanel';
+import { SensexMultiAccountPortfolioPage } from './components/portfolio';
+import { UsStocksManualTradingPage } from './components/trading/us-stocks';
 import { LiveOptionsTerminal } from './components/options/LiveOptionsTerminal';
 import { StrategyBuilder } from './components/options/StrategyBuilder';
 import { RiskCenterPanel } from './components/options/RiskCenterPanel';
@@ -84,7 +84,7 @@ const SECTION_WINDOWS: Record<string, string[]> = {
   'execution-timeline': ['execution-timeline'],
   'smart-trading': ['smart-trading'],
   algos: ['algos-workspace'],
-  portfolio: ['portfolio-header', 'performance-cards', 'asset-allocation'],
+  portfolio: ['sensex-multi-account-portfolio'],
   watchlist: ['watchlist'],
   'ai-advisor': ['ai-algo-advisory', 'advisory-marketplace'],
   strategies: ['trading-tabs', 'strategies-hub'],
@@ -106,11 +106,14 @@ const SECTION_WINDOWS: Record<string, string[]> = {
   'markets-fno-scanner': ['fno-scanner'],
   'execution-governance': ['execution-governance'],
   'trading-terminal': ['trading-terminal'],
+  'trade-us-stocks': ['us-stocks-manual-trading'],
   'basket-orders': ['basket-orders'],
   'trade-paper': ['paper-options-terminal'],
   'trade-live': ['live-options-terminal'],
   'trade-orders': ['trading-tabs'],
   'trade-positions': ['trading-tabs'],
+  'trade-paper-holdings': ['paper-book'],
+  'trade-paper-positions': ['paper-book'],
   'trade-holdings': ['portfolio-header'],
   alerts: ['alerts-automation'],
   'broker-connections': ['broker-connections'],
@@ -317,32 +320,15 @@ export default function App() {
 
       case 'portfolio':
         return (
-          <>
-            <Win
-              id="portfolio-header"
-              title="Portfolio Overview"
-              icon={<Briefcase className="h-4 w-4 text-cyan-300" />}
-              cascadeIndex={1}
-            >
-              <PortfolioHeader />
-            </Win>
-            <Win
-              id="performance-cards"
-              title="Performance"
-              icon={<TrendingUp className="h-4 w-4 text-emerald-300" />}
-              cascadeIndex={2}
-            >
-              <PerformanceCards />
-            </Win>
-            <Win
-              id="asset-allocation"
-              title="Asset Allocation"
-              icon={<PieChart className="h-4 w-4 text-amber-300" />}
-              cascadeIndex={3}
-            >
-              <AssetAllocationCharts />
-            </Win>
-          </>
+          <Win
+            id="sensex-multi-account-portfolio"
+            title="SENSEX & Multi-Account Portfolio"
+            subtitle="Consolidated positions, capital, orders and risk across brokers"
+            icon={<Briefcase className="h-4 w-4 text-sky-300" />}
+            cascadeIndex={1}
+          >
+            <SensexMultiAccountPortfolioPage />
+          </Win>
         );
 
       case 'watchlist':
@@ -558,6 +544,19 @@ export default function App() {
           </Win>
         );
 
+      case 'trade-us-stocks':
+        return (
+          <Win
+            id="us-stocks-manual-trading"
+            title="US Stocks Manual Trading"
+            subtitle="IBKR paper/live · ConID · preview · broker reply · audit"
+            icon={<CandlestickChart className="h-4 w-4 text-sky-300" />}
+            cascadeIndex={1}
+          >
+            <UsStocksManualTradingPage />
+          </Win>
+        );
+
       case 'basket-orders':
         return (
           <Win
@@ -601,6 +600,32 @@ export default function App() {
         return (
           <Win id="trading-tabs" title="Orders & Positions" cascadeIndex={1}>
             <TradingTabs />
+          </Win>
+        );
+
+      case 'trade-paper-holdings':
+        return (
+          <Win
+            id="paper-book"
+            title="Paper Holdings"
+            subtitle="Simulated book · cash · fills · no live risk"
+            icon={<Briefcase className="h-4 w-4 text-sky-300" />}
+            cascadeIndex={1}
+          >
+            <PaperBookPanel initialTab="holdings" />
+          </Win>
+        );
+
+      case 'trade-paper-positions':
+        return (
+          <Win
+            id="paper-book"
+            title="Paper Positions"
+            subtitle="Open F&O paper positions · MTM · order history"
+            icon={<Layers className="h-4 w-4 text-sky-300" />}
+            cascadeIndex={1}
+          >
+            <PaperBookPanel initialTab="positions" />
           </Win>
         );
 

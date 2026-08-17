@@ -37,6 +37,23 @@ router.get(
 );
 
 router.get(
+  '/instruments/:instrument_id/contract-quote',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const kindRaw = String(req.query.kind || 'ALL').toUpperCase();
+    const kind = (['WEEKLY', 'MONTHLY', 'ALL'].includes(kindRaw) ? kindRaw : 'ALL') as
+      | 'WEEKLY'
+      | 'MONTHLY'
+      | 'ALL';
+    const data = await TradingTerminalService.getContractQuote(req.user!.id, req.params.instrument_id, {
+      expiry: req.query.expiry ? String(req.query.expiry) : undefined,
+      kind
+    });
+    res.json({ success: true, data });
+  })
+);
+
+router.get(
   '/instruments/:instrument_id/derivatives',
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {

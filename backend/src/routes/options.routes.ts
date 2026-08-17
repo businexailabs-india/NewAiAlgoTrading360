@@ -47,7 +47,10 @@ router.get(
       underlying,
       expiry,
       userId: req.user!.id,
-      includeGreeks: req.query.greeks === '1'
+      includeGreeks: req.query.greeks === '1',
+      kind: (['WEEKLY', 'MONTHLY', 'ALL'].includes(String(req.query.kind || '').toUpperCase())
+        ? String(req.query.kind).toUpperCase()
+        : 'ALL') as 'WEEKLY' | 'MONTHLY' | 'ALL'
     });
     res.json({ success: true, data });
   })

@@ -5,6 +5,7 @@ COPY libs /workspace/libs
 COPY services/trade-approval-service /workspace/services/trade-approval-service
 WORKDIR /workspace/services/trade-approval-service
 RUN pip install --no-cache-dir -e ../../libs/advisory-core \
+    -e ../../libs/live-risk-gate \
     -e . \
     && pip install --no-cache-dir fastapi uvicorn[standard]
 USER appuser

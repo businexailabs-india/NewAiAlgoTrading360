@@ -188,7 +188,116 @@ export const tradingApi = {
     return fetch(`${API_BASE_URL}/trading-terminal/audits`, { headers: headers() }).then((r) =>
       json<Record<string, unknown>[]>(r)
     );
+  },
+
+  getQuote(symbol: string) {
+    return fetch(`${API_BASE_URL}/market/quote/${encodeURIComponent(symbol)}`, {
+      headers: headers()
+    }).then((r) => json<MarketQuote>(r));
+  },
+
+  getContractQuote(instrumentId: string, opts?: { expiry?: string; kind?: 'WEEKLY' | 'MONTHLY' | 'ALL' }) {
+    const q = new URLSearchParams();
+    if (opts?.expiry) q.set('expiry', opts.expiry);
+    if (opts?.kind) q.set('kind', opts.kind);
+    const qs = q.toString();
+    return fetch(
+      `${API_BASE_URL}/instruments/${encodeURIComponent(instrumentId)}/contract-quote${qs ? `?${qs}` : ''}`,
+      { headers: headers() }
+    ).then((r) => json<ContractQuote>(r));
+  },
+
+  getOptionExpiries(underlying: string) {
+    return fetch(
+      `${API_BASE_URL}/options/expiries?underlying=${encodeURIComponent(underlying)}`,
+      { headers: headers() }
+    ).then((r) => json<OptionExpiryCalendar>(r));
+  },
+
+  getOptionsChain(params: { underlying: string; expiry?: string; kind?: 'WEEKLY' | 'MONTHLY' | 'ALL' }) {
+    const q = new URLSearchParams({ underlying: params.underlying });
+    if (params.expiry) q.set('expiry', params.expiry);
+    if (params.kind) q.set('kind', params.kind);
+    return fetch(`${API_BASE_URL}/options/chain?${q}`, { headers: headers() }).then((r) =>
+      json<OptionsChainPayload>(r)
+    );
   }
+};
+
+export type MarketQuote = {
+  symbol: string;
+  name?: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  previousClose?: number;
+  volume?: number;
+  timestamp?: string;
+  asOf?: string;
+  stale?: boolean;
+  source?: string;
+  available?: boolean;
+};
+
+export type FoExpiryEntry = {
+  date: string;
+  kind: 'WEEKLY' | 'MONTHLY';
+  label: string;
+  weekday: string;
+  scheduled?: string;
+  holiday_adjusted?: boolean;
+  holiday_name?: string;
+};
+
+export type OptionExpiryCalendar = {
+  underlying: string;
+  expiries: string[];
+  calendar: FoExpiryEntry[];
+  weekly: FoExpiryEntry[];
+  monthly: FoExpiryEntry[];
+  source: string;
+};
+
+export type OptionsChainPayload = {
+  underlying?: string;
+  expiry?: string;
+  expiry_kind?: 'WEEKLY' | 'MONTHLY' | null;
+  expiry_label?: string | null;
+  spotPrice?: number;
+  atm?: number;
+  rows?: Array<{
+    strike: number;
+    ce?: { ltp: number; iv?: number; oi?: number; tradingSymbol?: string };
+    pe?: { ltp: number; iv?: number; oi?: number; tradingSymbol?: string };
+  }>;
+  providerStatus?: string;
+  message?: string;
+  expiry_calendar?: OptionExpiryCalendar;
+};
+
+export type ContractQuote = {
+  instrument: Instrument;
+  underlying: string | null;
+  strike: number | null;
+  option_type: 'CE' | 'PE' | null;
+  expiry: string | null;
+  expiry_kind?: 'WEEKLY' | 'MONTHLY' | null;
+  expiry_label?: string | null;
+  expiry_calendar?: OptionExpiryCalendar | null;
+  lot_size: number;
+  spot: number | null;
+  spot_change: number;
+  spot_change_percent: number;
+  spot_source: string | null;
+  premium: number | null;
+  intrinsic: number | null;
+  time_value: number | null;
+  premium_source: string | null;
+  order_price: number | null;
+  message: string | null;
 };
 
 export type ChartPosition = {

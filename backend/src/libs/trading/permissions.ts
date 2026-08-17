@@ -19,10 +19,20 @@ export type TradeRole =
   | 'Admin';
 
 const ROLE_PERMS: Record<TradeRole, TradePermission[]> = {
-  Beginner: ['paper_trade', 'trade_stock', 'chart_quick_trade', 'chart_exit_position', 'create_basket_order'],
+  Beginner: [
+    'paper_trade',
+    'trade_stock',
+    'trade_index_derivatives',
+    'trade_options',
+    'chart_quick_trade',
+    'chart_exit_position',
+    'create_basket_order'
+  ],
   Trader: [
     'paper_trade',
     'trade_stock',
+    'trade_index_derivatives',
+    'trade_options',
     'chart_quick_trade',
     'chart_exit_position',
     'create_basket_order',
@@ -71,6 +81,13 @@ const ROLE_PERMS: Record<TradeRole, TradePermission[]> = {
 export function roleFromUserRole(role?: string | null): TradeRole {
   if (role === 'admin') return 'Admin';
   return 'Trader';
+}
+
+export function permissionForInstrumentType(instrumentType: string): TradePermission {
+  const t = (instrumentType || '').toUpperCase();
+  if (t.includes('OPTION')) return 'trade_options';
+  if (t.includes('FUTURE') || t === 'INDEX') return 'trade_index_derivatives';
+  return 'trade_stock';
 }
 
 export function hasPermission(role: TradeRole, perm: TradePermission): boolean {
