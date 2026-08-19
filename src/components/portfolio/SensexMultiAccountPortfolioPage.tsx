@@ -818,7 +818,6 @@ export function SensexMultiAccountPortfolioPage() {
                   >
                     <option value="all">All brokers</option>
                     <option value="dhan">dhan</option>
-                    <option value="ibkr">ibkr</option>
                     <option value="zerodha">zerodha</option>
                     <option value="upstox">upstox</option>
                     <option value="paper">paper</option>
@@ -831,7 +830,6 @@ export function SensexMultiAccountPortfolioPage() {
                     <option value="all">All exchanges</option>
                     <option value="BSE">BSE</option>
                     <option value="NSE">NSE</option>
-                    <option value="GLOBAL">GLOBAL</option>
                   </select>
                   <input
                     className={cn(inputCls, 'min-w-[10rem] flex-1')}

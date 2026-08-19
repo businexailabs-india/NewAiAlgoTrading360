@@ -30,12 +30,22 @@ export const DHAN_NSE_EQ_IDS: Record<string, number> = {
   COALINDIA: 2031
 };
 
-/** Index securityIds (IDX_I) */
+/** Index securityIds (IDX_I) — Dhan optionchain / spot */
 export const DHAN_IDX_IDS: Record<string, number> = {
   'NIFTY 50': 13,
+  NIFTY: 13,
   'NIFTY BANK': 25,
+  BANKNIFTY: 25,
+  FINNIFTY: 27,
+  MIDCPNIFTY: 442,
+  NIFTYNXT50: 38,
+  NIFTYFPI: 864,
   'NIFTY IT': 35,
-  SENSEX: 51
+  NIFTYIT: 35,
+  'NIFTY AUTO': 14,
+  NIFTYAUTO: 14,
+  SENSEX: 51,
+  BANKEX: 12
 };
 
 export class DhanService {

@@ -98,6 +98,25 @@ router.get(
     const { FnoPositionService } = await import('../services/options/fno-position.service');
     const isPaper =
       req.query.isPaper === 'true' ? true : req.query.isPaper === 'false' ? false : undefined;
+    // Always re-mark on load so Paper Positions LTP/MTM move (broker when available, else model).
+    const refresh =
+      req.query.refresh !== '0' && req.query.refresh !== 'false';
+    if (refresh) {
+      const mtm = await FnoPositionService.refreshMtm(req.user!.id, {
+        isPaper,
+        underlying: req.query.underlying ? String(req.query.underlying) : undefined
+      });
+      res.json({
+        success: true,
+        data: mtm.positions,
+        meta: {
+          quoteSource: mtm.quoteSource,
+          brokerMarks: mtm.brokerMarks,
+          modelMarks: mtm.modelMarks
+        }
+      });
+      return;
+    }
     const data = await FnoPositionService.list(req.user!.id, isPaper);
     res.json({ success: true, data });
   })

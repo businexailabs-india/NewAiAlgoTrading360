@@ -110,6 +110,29 @@ export const tradingApi = {
     );
   },
 
+  updateBasket(id: string, body: { basket_name?: string; partial_allowed?: boolean; all_or_none?: boolean }) {
+    return fetch(`${API_BASE_URL}/baskets/${id}`, {
+      method: 'PUT',
+      headers: headers(),
+      body: JSON.stringify(body)
+    }).then((r) => json<Record<string, unknown>>(r));
+  },
+
+  deleteBasket(id: string) {
+    return fetch(`${API_BASE_URL}/baskets/${id}`, {
+      method: 'DELETE',
+      headers: headers()
+    }).then((r) => json<Record<string, unknown>>(r));
+  },
+
+  duplicateBasket(id: string) {
+    return fetch(`${API_BASE_URL}/baskets/${id}/duplicate`, {
+      method: 'POST',
+      headers: headers(),
+      body: '{}'
+    }).then((r) => json<Record<string, unknown>>(r));
+  },
+
   addBasketLeg(basketId: string, leg: Record<string, unknown>) {
     return fetch(`${API_BASE_URL}/baskets/${basketId}/legs`, {
       method: 'POST',
@@ -259,6 +282,9 @@ export type OptionExpiryCalendar = {
   weekly: FoExpiryEntry[];
   monthly: FoExpiryEntry[];
   source: string;
+  has_weekly?: boolean;
+  monthly_only?: boolean;
+  expiry_mode?: 'WEEKLY_AND_MONTHLY' | 'MONTHLY_ONLY';
 };
 
 export type OptionsChainPayload = {
@@ -270,10 +296,13 @@ export type OptionsChainPayload = {
   atm?: number;
   rows?: Array<{
     strike: number;
-    ce?: { ltp: number; iv?: number; oi?: number; tradingSymbol?: string };
-    pe?: { ltp: number; iv?: number; oi?: number; tradingSymbol?: string };
+    ce?: { ltp: number; iv?: number; oi?: number; tradingSymbol?: string; quoteSource?: string };
+    pe?: { ltp: number; iv?: number; oi?: number; tradingSymbol?: string; quoteSource?: string };
   }>;
   providerStatus?: string;
+  quoteSource?: string;
+  quoteFreshness?: 'live' | 'delayed';
+  brokerQuoteCount?: number;
   message?: string;
   expiry_calendar?: OptionExpiryCalendar;
 };

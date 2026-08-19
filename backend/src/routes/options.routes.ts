@@ -57,6 +57,19 @@ router.get(
 );
 
 router.get(
+  '/futures',
+  asyncHandler(async (req: Request, res: Response) => {
+    const underlying = String(req.query.underlying || '');
+    if (!underlying) {
+      res.status(400).json({ success: false, message: 'underlying query required' });
+      return;
+    }
+    const data = await OptionsChainService.getFuturesChain(underlying);
+    res.json({ success: true, data });
+  })
+);
+
+router.get(
   '/greeks',
   asyncHandler(async (req: Request, res: Response) => {
     const data = await OptionsChainService.getGreeks({

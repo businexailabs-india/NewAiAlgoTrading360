@@ -1,3 +1,5 @@
+import { foDerivativeUnderlyings } from './fo-index-catalog';
+
 export type InstrumentType =
   | 'STOCK'
   | 'INDEX'
@@ -122,8 +124,86 @@ export const SEED_INSTRUMENTS: Omit<CatalogInstrument, 'instrument_id'>[] = [
     trading_status: 'OPEN'
   },
   {
+    symbol: 'FINNIFTY',
+    display_name: 'Fin Nifty Index',
+    exchange: 'NSE',
+    segment: 'IDX',
+    asset_class: 'INDEX',
+    instrument_type: 'INDEX',
+    tradable: false,
+    direct_trading_allowed: false,
+    lot_size: 1,
+    tick_size: 0.05,
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'MIDCPNIFTY',
+    display_name: 'Nifty Midcap Select Index',
+    exchange: 'NSE',
+    segment: 'IDX',
+    asset_class: 'INDEX',
+    instrument_type: 'INDEX',
+    tradable: false,
+    direct_trading_allowed: false,
+    lot_size: 1,
+    tick_size: 0.05,
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'NIFTYNXT50',
+    display_name: 'Nifty Next 50 Index',
+    exchange: 'NSE',
+    segment: 'IDX',
+    asset_class: 'INDEX',
+    instrument_type: 'INDEX',
+    tradable: false,
+    direct_trading_allowed: false,
+    lot_size: 1,
+    tick_size: 0.05,
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'NIFTYAUTO',
+    display_name: 'Nifty Auto Index (spot only — no F&O on Dhan)',
+    exchange: 'NSE',
+    segment: 'IDX',
+    asset_class: 'INDEX',
+    instrument_type: 'INDEX',
+    tradable: false,
+    direct_trading_allowed: false,
+    lot_size: 1,
+    tick_size: 0.05,
+    trading_status: 'OPEN'
+  },
+  {
     symbol: 'SENSEX',
     display_name: 'BSE Sensex Index',
+    exchange: 'BSE',
+    segment: 'IDX',
+    asset_class: 'INDEX',
+    instrument_type: 'INDEX',
+    tradable: false,
+    direct_trading_allowed: false,
+    lot_size: 1,
+    tick_size: 0.05,
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'BANKEX',
+    display_name: 'BSE Bankex Index',
+    exchange: 'BSE',
+    segment: 'IDX',
+    asset_class: 'INDEX',
+    instrument_type: 'INDEX',
+    tradable: false,
+    direct_trading_allowed: false,
+    lot_size: 1,
+    tick_size: 0.05,
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'SENSEX50',
+    display_name: 'BSE Sensex 50 Index',
     exchange: 'BSE',
     segment: 'IDX',
     asset_class: 'INDEX',
@@ -159,11 +239,75 @@ export const SEED_INSTRUMENTS: Omit<CatalogInstrument, 'instrument_id'>[] = [
     instrument_type: 'INDEX_FUTURE',
     tradable: true,
     direct_trading_allowed: true,
-    lot_size: 15,
+    lot_size: 30,
     tick_size: 0.05,
     expiry: 'CURRENT',
     underlying_symbol: 'BANKNIFTY',
     broker_symbol: 'BANKNIFTY-FUT',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'FINNIFTY',
+    display_name: 'Fin Nifty Current Month Future',
+    exchange: 'NSE',
+    segment: 'NFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_FUTURE',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 60,
+    tick_size: 0.05,
+    expiry: 'CURRENT',
+    underlying_symbol: 'FINNIFTY',
+    broker_symbol: 'FINNIFTY-FUT',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'MIDCPNIFTY',
+    display_name: 'Midcap Nifty Current Month Future',
+    exchange: 'NSE',
+    segment: 'NFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_FUTURE',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 120,
+    tick_size: 0.05,
+    expiry: 'CURRENT',
+    underlying_symbol: 'MIDCPNIFTY',
+    broker_symbol: 'MIDCPNIFTY-FUT',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'NIFTYNXT50',
+    display_name: 'Nifty Next 50 Current Month Future',
+    exchange: 'NSE',
+    segment: 'NFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_FUTURE',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 25,
+    tick_size: 0.05,
+    expiry: 'CURRENT',
+    underlying_symbol: 'NIFTYNXT50',
+    broker_symbol: 'NIFTYNXT50-FUT',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'SENSEX',
+    display_name: 'Sensex Current Month Future',
+    exchange: 'BSE',
+    segment: 'BFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_FUTURE',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 20,
+    tick_size: 0.05,
+    expiry: 'CURRENT',
+    underlying_symbol: 'SENSEX',
+    broker_symbol: 'SENSEX-FUT',
     trading_status: 'OPEN'
   },
   {
@@ -200,6 +344,114 @@ export const SEED_INSTRUMENTS: Omit<CatalogInstrument, 'instrument_id'>[] = [
     option_type: 'PE',
     underlying_symbol: 'NIFTY',
     broker_symbol: 'NIFTY-ATM-PE',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'BANKNIFTY',
+    display_name: 'Bank Nifty ATM Call',
+    exchange: 'NSE',
+    segment: 'NFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_OPTION',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 30,
+    tick_size: 0.05,
+    expiry: 'NEAR',
+    strike: 0,
+    option_type: 'CE',
+    underlying_symbol: 'BANKNIFTY',
+    broker_symbol: 'BANKNIFTY-ATM-CE',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'BANKNIFTY',
+    display_name: 'Bank Nifty ATM Put',
+    exchange: 'NSE',
+    segment: 'NFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_OPTION',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 30,
+    tick_size: 0.05,
+    expiry: 'NEAR',
+    strike: 0,
+    option_type: 'PE',
+    underlying_symbol: 'BANKNIFTY',
+    broker_symbol: 'BANKNIFTY-ATM-PE',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'FINNIFTY',
+    display_name: 'Fin Nifty ATM Call',
+    exchange: 'NSE',
+    segment: 'NFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_OPTION',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 60,
+    tick_size: 0.05,
+    expiry: 'NEAR',
+    strike: 0,
+    option_type: 'CE',
+    underlying_symbol: 'FINNIFTY',
+    broker_symbol: 'FINNIFTY-ATM-CE',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'FINNIFTY',
+    display_name: 'Fin Nifty ATM Put',
+    exchange: 'NSE',
+    segment: 'NFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_OPTION',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 60,
+    tick_size: 0.05,
+    expiry: 'NEAR',
+    strike: 0,
+    option_type: 'PE',
+    underlying_symbol: 'FINNIFTY',
+    broker_symbol: 'FINNIFTY-ATM-PE',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'MIDCPNIFTY',
+    display_name: 'Midcap Nifty ATM Call',
+    exchange: 'NSE',
+    segment: 'NFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_OPTION',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 120,
+    tick_size: 0.05,
+    expiry: 'NEAR',
+    strike: 0,
+    option_type: 'CE',
+    underlying_symbol: 'MIDCPNIFTY',
+    broker_symbol: 'MIDCPNIFTY-ATM-CE',
+    trading_status: 'OPEN'
+  },
+  {
+    symbol: 'MIDCPNIFTY',
+    display_name: 'Midcap Nifty ATM Put',
+    exchange: 'NSE',
+    segment: 'NFO',
+    asset_class: 'DERIVATIVE',
+    instrument_type: 'INDEX_OPTION',
+    tradable: true,
+    direct_trading_allowed: true,
+    lot_size: 120,
+    tick_size: 0.05,
+    expiry: 'NEAR',
+    strike: 0,
+    option_type: 'PE',
+    underlying_symbol: 'MIDCPNIFTY',
+    broker_symbol: 'MIDCPNIFTY-ATM-PE',
     trading_status: 'OPEN'
   },
   {
@@ -273,14 +525,11 @@ export function productForInstrument(instrumentType: InstrumentType, product?: s
   return 'NRML';
 }
 
-const FO_UNDERLYINGS = [
-  { symbol: 'BANKNIFTY', lot: 15, step: 100 },
-  { symbol: 'MIDCPNIFTY', lot: 50, step: 25 },
-  { symbol: 'FINNIFTY', lot: 25, step: 50 },
-  { symbol: 'BANKEX', lot: 15, step: 100 },
-  { symbol: 'SENSEX', lot: 20, step: 100 },
-  { symbol: 'NIFTY', lot: 65, step: 50 }
-] as const;
+const FO_UNDERLYINGS = foDerivativeUnderlyings().map((x) => ({
+  symbol: x.symbol,
+  lot: x.lot,
+  step: x.step
+}));
 
 /** Parse compact F&O symbols: NIFTY24400CE, BANKNIFTY52000PE, NIFTYFUT */
 export function parseFoContractSymbol(symbol: string): {
@@ -293,7 +542,9 @@ export function parseFoContractSymbol(symbol: string): {
 } | null {
   const raw = (symbol || '').toUpperCase().replace(/\s+/g, '').trim();
   if (!raw) return null;
-  const u = FO_UNDERLYINGS.find((x) => raw === x.symbol || raw.startsWith(x.symbol));
+  // Longest symbol match first (NIFTYNXT50 before NIFTY)
+  const sorted = [...FO_UNDERLYINGS].sort((a, b) => b.symbol.length - a.symbol.length);
+  const u = sorted.find((x) => raw === x.symbol || raw.startsWith(x.symbol));
   if (!u) return null;
   const rest = raw.slice(u.symbol.length);
   if (!rest) {
@@ -353,12 +604,13 @@ export function estimateOptionPremium(
   if (!Number.isFinite(days) || days < 0) days = 7;
   days = Math.max(days, 2 / 24);
 
-  // Lazy import avoided — inline BS to keep catalog free of circular deps
+  // Futures-style index BS (q=r) — matches NSE short-dated premiums better than equity carry
   const T = days / 365;
   const r = 0.065;
+  const q = r;
   const sigma = Math.max(ivPct, 1) / 100;
   const sqrtT = Math.sqrt(T);
-  const d1 = (Math.log(spot / strike) + (r + (sigma * sigma) / 2) * T) / (sigma * sqrtT);
+  const d1 = (Math.log(spot / strike) + (r - q + (sigma * sigma) / 2) * T) / (sigma * sqrtT);
   const d2 = d1 - sigma * sqrtT;
   const normCdf = (x: number) => {
     const t = 1 / (1 + 0.2316419 * Math.abs(x));
@@ -367,11 +619,12 @@ export function estimateOptionPremium(
       d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
     return x > 0 ? 1 - p : p;
   };
-  const disc = Math.exp(-r * T);
+  const dfQ = Math.exp(-q * T);
+  const dfR = Math.exp(-r * T);
   const raw =
     optionType === 'CE'
-      ? spot * normCdf(d1) - strike * disc * normCdf(d2)
-      : strike * disc * normCdf(-d2) - spot * normCdf(-d1);
+      ? spot * dfQ * normCdf(d1) - strike * dfR * normCdf(d2)
+      : strike * dfR * normCdf(-d2) - spot * dfQ * normCdf(-d1);
   const premium = Number(Math.max(raw, intrinsic * 0.99, 0.05).toFixed(2));
   const timeValue = Number(Math.max(0, premium - intrinsic).toFixed(2));
   return { premium, intrinsic: Number(intrinsic.toFixed(2)), timeValue, iv: ivPct };

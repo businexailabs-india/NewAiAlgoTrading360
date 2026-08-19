@@ -1,0 +1,104 @@
+# AlgoTradingV360 — local Docker stack (frontend + backend + postgres + redis)
+# Usage:
+#   docker compose up --build -d
+# App:  http://localhost:3002
+# API:  http://localhost:3001/health
+# Postgres (host): 5433  Redis (host): 6380
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: bxai-postgres
+    environment:
+      POSTGRES_USER: smarttrade
+      POSTGRES_PASSWORD: smarttrade_password
+      POSTGRES_DB: smarttrade
+    ports:
+      - "5433:5432"
+    volumes:
+      - bxai_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smarttrade"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+
+  redis:
+    image: redis:7-alpine
+    container_name: bxai-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - bxai_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bxai-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://smarttrade:smarttrade_password@postgres:5432/smarttrade?schema=public
+      REDIS_URL: redis://redis:6379
+      FRONTEND_URL: http://localhost:3002
+      API_URL: http://localhost:3001
+      JWT_SECRET: ${JWT_SECRET:-docker-dev-jwt-secret-change-me}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}
+      LOCAL_AUTH_BYPASS: ${LOCAL_AUTH_BYPASS:-true}
+      RATE_LIMIT_DISABLE_IN_DEV: "true"
+      USE_PYTHON_ML: "false"
+      # Fresh Docker DB: prefer schema push when migration history is incomplete
+      PRISMA_SCHEMA_PUSH: "true"
+      # Live option LTPs (Dhan optionchain). Set in backend/.env or shell before compose up.
+      DHAN_CLIENT_ID: ${DHAN_CLIENT_ID:-}
+      DHAN_ACCESS_TOKEN: ${DHAN_ACCESS_TOKEN:-}
+      DHAN_APP_NAME: ${DHAN_APP_NAME:-}
+    env_file:
+      - path: ./backend/.env
+        required: false
+    volumes:
+      - ./backend/logs:/app/logs
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:'+(process.env.PORT||3001)+'/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_API_URL: /api
+    container_name: bxai-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3002:80"
+    restart: unless-stopped
+
+volumes:
+  bxai_postgres_data:
+  bxai_redis_data:

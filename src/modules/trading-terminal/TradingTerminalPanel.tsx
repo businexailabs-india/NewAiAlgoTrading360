@@ -2,7 +2,105 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { toast } from 'sonner';
 import { tradingApi, type Instrument, type MarketQuote, type ContractQuote, type FoExpiryEntry } from '@/api/trading';
 import { ChartTradePanel } from '@/components/trading/ChartTradePanel';
+import { StockChartModal } from '@/components/StockChartModal';
+import type { WatchlistItem } from '@/api/watchlist';
 import { useBasketOrders, useInstrumentSearch } from '@/hooks/trading/useTradingTerminal';
+
+const FO_STRIKE_STEP: Record<string, number> = {
+  NIFTY: 50,
+  BANKNIFTY: 100,
+  FINNIFTY: 50,
+  MIDCPNIFTY: 25,
+  NIFTYNXT50: 100,
+  NIFTYFPI: 5,
+  SENSEX: 100,
+  BANKEX: 100,
+  SENSEX50: 50,
+  FOCIT: 100
+};
+
+/** Most-traded index desks — one click opens monthly option chain. */
+const QUICK_INDICES: Array<{
+  symbol: string;
+  label: string;
+  lot: number;
+  step: number;
+  exchange: string;
+}> = [
+  { symbol: 'NIFTY', label: 'Nifty', lot: 65, step: 50, exchange: 'NSE' },
+  { symbol: 'BANKNIFTY', label: 'Bank Nifty', lot: 30, step: 100, exchange: 'NSE' },
+  { symbol: 'SENSEX', label: 'Sensex', lot: 20, step: 100, exchange: 'BSE' }
+];
+
+type ChainLeg = {
+  ltp?: number;
+  iv?: number;
+  oi?: number;
+  tradingSymbol?: string;
+  id?: string;
+};
+
+type ChainQuoteMeta = {
+  quoteSource?: string;
+  brokerQuoteCount?: number;
+  message?: string;
+  quoteFreshness?: 'live' | 'delayed';
+};
+
+type IndexDeskState = {
+  underlying: string;
+  label: string;
+  lot: number;
+  step: number;
+  exchange: string;
+  expiry: string;
+  expiryLabel: string;
+  spot: number;
+  atm: number;
+  rows: Array<{ strike: number; ce?: ChainLeg; pe?: ChainLeg }>;
+  loading: boolean;
+  quoteMeta?: ChainQuoteMeta;
+};
+
+function isLiveBrokerQuotes(meta?: ChainQuoteMeta | null): boolean {
+  const src = (meta?.quoteSource || '').toLowerCase();
+  return (meta?.brokerQuoteCount || 0) > 0 && !src.includes('model') && src !== 'unavailable';
+}
+
+function ChainPremiumBanner({ meta }: { meta?: ChainQuoteMeta | null }) {
+  if (!meta?.quoteSource && meta?.brokerQuoteCount == null) return null;
+  const live = isLiveBrokerQuotes(meta);
+  return (
+    <div
+      style={{
+        fontSize: 11,
+        lineHeight: 1.35,
+        padding: '6px 8px',
+        borderRadius: 6,
+        border: live ? '1px solid rgba(74,222,128,0.45)' : '1px solid rgba(251,191,36,0.5)',
+        background: live ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
+        color: live ? '#86efac' : '#fcd34d'
+      }}
+    >
+      {live ? (
+        <>
+          Live broker premiums ({meta?.quoteSource}
+          {meta?.brokerQuoteCount != null ? ` · ${meta.brokerQuoteCount} legs` : ''})
+        </>
+      ) : (
+        <>
+          Model premiums (not exchange LTP) — connect Dhan or set DHAN_CLIENT_ID / DHAN_ACCESS_TOKEN
+          for prices that match Zerodha/Dhan.
+          {meta?.message ? ` ${meta.message}` : ''}
+        </>
+      )}
+    </div>
+  );
+}
+
+function foStrikeStep(underlying: string): number {
+  return FO_STRIKE_STEP[(underlying || '').toUpperCase()] ?? 50;
+}
 
 const panel: CSSProperties = {
   borderRadius: 12,
@@ -45,6 +143,9 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
   const [tradability, setTradability] = useState<Record<string, unknown> | null>(null);
   const [derivatives, setDerivatives] = useState<Instrument[]>([]);
   const [qty, setQty] = useState(1);
+  /** Order size mode: absolute units vs number of lots (FO lot × lots). */
+  const [qtyMode, setQtyMode] = useState<'QUANTITY' | 'LOTS'>('LOTS');
+  const [lots, setLots] = useState(1);
   const [orderType, setOrderType] = useState('MARKET');
   const [product, setProduct] = useState('CNC');
   const [price, setPrice] = useState(0);
@@ -57,19 +158,27 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [expiryKind, setExpiryKind] = useState<'WEEKLY' | 'MONTHLY' | 'ALL'>('ALL');
+  const [monthlyOnly, setMonthlyOnly] = useState(false);
   const [selectedExpiry, setSelectedExpiry] = useState('');
   const [expiryOptions, setExpiryOptions] = useState<FoExpiryEntry[]>([]);
   const [chainRows, setChainRows] = useState<
     Array<{ strike: number; ce?: { ltp: number }; pe?: { ltp: number } }>
   >([]);
+  const [chainQuoteMeta, setChainQuoteMeta] = useState<ChainQuoteMeta | null>(null);
   const [liveAtm, setLiveAtm] = useState<number | null>(null);
   const { baskets, reload: reloadBaskets, error: basketsError } = useBasketOrders();
   const [activeBasketId, setActiveBasketId] = useState<string | null>(null);
   const [basketDetail, setBasketDetail] = useState<Record<string, unknown> | null>(null);
+  const [basketNameDraft, setBasketNameDraft] = useState('Terminal Basket');
+  const [newBasketName, setNewBasketName] = useState('');
   const [audits, setAudits] = useState<Record<string, unknown>[]>([]);
   const [legSymbol, setLegSymbol] = useState('RELIANCE');
   const [legSide, setLegSide] = useState<'BUY' | 'SELL'>('BUY');
   const [legQty, setLegQty] = useState(1);
+  const [indexDesk, setIndexDesk] = useState<IndexDeskState | null>(null);
+  const [deskBusy, setDeskBusy] = useState(false);
+  const [chartStock, setChartStock] = useState<WatchlistItem | null>(null);
+  const [chartTradeInstrument, setChartTradeInstrument] = useState<Instrument | null>(null);
 
   useEffect(() => {
     if (tab === 'basket') {
@@ -96,6 +205,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
       setQuoteErr(null);
       setExpiryOptions([]);
       setChainRows([]);
+      setChainQuoteMeta(null);
       setLiveAtm(null);
       return;
     }
@@ -124,6 +234,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
       }
       if (cq.lot_size > 1) {
         setQty((prev) => (prev === 1 ? cq.lot_size : prev));
+        setLots((prev) => (prev < 1 ? 1 : prev));
       }
     };
 
@@ -140,8 +251,14 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
           applyContractQuote(cq);
 
           const cal = cq.expiry_calendar?.calendar || [];
+          const onlyMonthly =
+            Boolean((cq.expiry_calendar as { monthly_only?: boolean } | undefined)?.monthly_only) ||
+            (cal.length > 0 && cal.every((e) => e.kind === 'MONTHLY'));
+          setMonthlyOnly(onlyMonthly);
+          const kindFilter = onlyMonthly ? 'MONTHLY' : expiryKind;
+          if (onlyMonthly && expiryKind !== 'MONTHLY') setExpiryKind('MONTHLY');
           const filtered =
-            expiryKind === 'ALL' ? cal : cal.filter((e) => e.kind === expiryKind);
+            kindFilter === 'ALL' ? cal : cal.filter((e) => e.kind === kindFilter);
           setExpiryOptions(filtered.length ? filtered : cal);
 
           // Keep dropdown + quote on the same settlement date (avoid stale instrument.expiry)
@@ -158,19 +275,26 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
             const chain = await tradingApi.getOptionsChain({
               underlying: und,
               expiry: exp,
-              kind: expiryKind
+              kind: kindFilter
             });
             if (cancelled) return;
             setChainRows(chain.rows || []);
+            setChainQuoteMeta({
+              quoteSource: chain.quoteSource,
+              brokerQuoteCount: chain.brokerQuoteCount,
+              message: chain.message,
+              quoteFreshness: chain.quoteFreshness
+            });
             if (chain.atm != null && chain.atm > 0) setLiveAtm(chain.atm);
             else if (cq.spot && cq.spot > 0) {
-              const step = und === 'BANKNIFTY' || und === 'SENSEX' ? 100 : 50;
+              const step = foStrikeStep(und);
               setLiveAtm(Math.round(cq.spot / step) * step);
             }
           }
         } else {
           setContractQuote(null);
           setChainRows([]);
+          setChainQuoteMeta(null);
           setLiveAtm(null);
           const q = await tradingApi.getQuote(selected.symbol);
           if (cancelled) return;
@@ -213,13 +337,237 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
     setSelectedExpiry('');
     setExpiryKind('ALL');
     setChainRows([]);
+    setChainQuoteMeta(null);
     setLiveAtm(null);
     if (inst.instrument_type.includes('FUTURE') || inst.instrument_type.includes('OPTION')) {
       setProduct('NRML');
-      setQty(inst.lot_size || 1);
+      const lot = Math.max(1, inst.lot_size || 1);
+      setQtyMode(lot > 1 ? 'LOTS' : 'QUANTITY');
+      setLots(1);
+      setQty(lot);
     } else {
       setProduct('CNC');
+      setQtyMode('QUANTITY');
+      setLots(1);
       setQty(1);
+    }
+  };
+
+  const lotSize = Math.max(
+    1,
+    Number(contractQuote?.lot_size || selected?.lot_size || 1) || 1
+  );
+  const isFoLot =
+    Boolean(selected) &&
+    (selected!.instrument_type.includes('FUTURE') ||
+      selected!.instrument_type.includes('OPTION') ||
+      /CE$|PE$|FUT$/i.test(selected!.symbol)) &&
+    lotSize > 1;
+
+  /** Units sent to the broker / paper engine. */
+  const orderQuantity = () => {
+    if (qtyMode === 'LOTS' && isFoLot) return Math.max(1, Math.floor(lots)) * lotSize;
+    return Math.max(1, Math.floor(qty));
+  };
+
+  const resolveOptionInstrument = async (
+    underlying: string,
+    strike: number,
+    side: 'CE' | 'PE',
+    expiry?: string
+  ): Promise<Instrument | null> => {
+    const q = `${underlying} ${strike}`;
+    const rows = await tradingApi.searchInstruments(q);
+    const sym = `${underlying}${strike}${side}`;
+    const hit =
+      rows.find((x) => x.symbol === sym) ||
+      rows.find(
+        (x) =>
+          Number(x.strike) === strike &&
+          (x.option_type || '').toUpperCase() === side &&
+          (x.underlying_symbol || '').toUpperCase() === underlying
+      ) ||
+      rows.find(
+        (x) => Number(x.strike) === strike && (x.option_type || '').toUpperCase() === side
+      );
+    if (hit && expiry) {
+      // Keep monthly expiry on the instrument for premium/quote
+      return { ...hit, expiry };
+    }
+    return hit || null;
+  };
+
+  const openIndexDesk = async (idx: (typeof QUICK_INDICES)[number]) => {
+    setTab('ticket');
+    setIndexDesk({
+      underlying: idx.symbol,
+      label: idx.label,
+      lot: idx.lot,
+      step: idx.step,
+      exchange: idx.exchange,
+      expiry: '',
+      expiryLabel: '',
+      spot: 0,
+      atm: 0,
+      rows: [],
+      loading: true
+    });
+    setExpiryKind('MONTHLY');
+    setQtyMode('LOTS');
+    setLots(1);
+    setQty(idx.lot);
+    setProduct('NRML');
+    setBusy(true);
+    try {
+      const cal = await tradingApi.getOptionExpiries(idx.symbol);
+      const monthly = (cal.monthly?.length ? cal.monthly : cal.calendar.filter((e) => e.kind === 'MONTHLY')) || [];
+      const exp = monthly[0]?.date || cal.expiries[0] || '';
+      const expLabel = monthly[0]?.label || cal.calendar.find((e) => e.date === exp)?.label || exp;
+      if (!exp) throw new Error(`No monthly expiry for ${idx.symbol}`);
+      setSelectedExpiry(exp);
+      setExpiryOptions(monthly.length ? monthly : cal.calendar);
+
+      const chain = await tradingApi.getOptionsChain({
+        underlying: idx.symbol,
+        expiry: exp,
+        kind: 'MONTHLY'
+      });
+      const spot = Number(chain.spotPrice || 0);
+      const atm =
+        chain.atm && chain.atm > 0
+          ? chain.atm
+          : spot > 0
+            ? Math.round(spot / idx.step) * idx.step
+            : 0;
+      setLiveAtm(atm || null);
+      setChainRows(chain.rows || []);
+      const quoteMeta: ChainQuoteMeta = {
+        quoteSource: chain.quoteSource,
+        brokerQuoteCount: chain.brokerQuoteCount,
+        message: chain.message,
+        quoteFreshness: chain.quoteFreshness
+      };
+      setChainQuoteMeta(quoteMeta);
+      setIndexDesk({
+        underlying: idx.symbol,
+        label: idx.label,
+        lot: idx.lot,
+        step: idx.step,
+        exchange: idx.exchange,
+        expiry: exp,
+        expiryLabel: chain.expiry_label || expLabel,
+        spot,
+        atm,
+        rows: chain.rows || [],
+        loading: false,
+        quoteMeta
+      });
+
+      // Seed ticket with ATM CE so Buy/Sell + chart work immediately
+      if (atm > 0) {
+        const seed = await resolveOptionInstrument(idx.symbol, atm, 'CE', exp);
+        if (seed) {
+          pick(seed);
+          setSelectedExpiry(exp);
+          if (chain.rows) {
+            const row = chain.rows.find((r) => r.strike === atm);
+            if (row?.ce?.ltp && row.ce.ltp > 0) setPrice(Math.round(row.ce.ltp * 100) / 100);
+          }
+        } else {
+          setQuery(`${idx.symbol} ${atm}`);
+          void search(`${idx.symbol} ${atm}`);
+        }
+      }
+      toast.success(`${idx.label} monthly chain · ${expLabel}`);
+    } catch (e) {
+      setIndexDesk(null);
+      toast.error(e instanceof Error ? e.message : `Failed to open ${idx.label} chain`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tradeChainLeg = async (
+    underlying: string,
+    strike: number,
+    optionType: 'CE' | 'PE',
+    side: 'BUY' | 'SELL',
+    ltp?: number,
+    expiry?: string
+  ) => {
+    setDeskBusy(true);
+    try {
+      const inst = await resolveOptionInstrument(underlying, strike, optionType, expiry || selectedExpiry);
+      if (!inst) {
+        toast.error(`Could not resolve ${underlying} ${strike} ${optionType}`);
+        return;
+      }
+      pick(inst);
+      if (expiry || selectedExpiry) setSelectedExpiry(expiry || selectedExpiry);
+      if (ltp && ltp > 0) setPrice(Math.round(ltp * 100) / 100);
+      const lot = Math.max(1, inst.lot_size || indexDesk?.lot || 1);
+      setQtyMode('LOTS');
+      setLots(1);
+      setQty(lot);
+      const quantity = lot; // 1 lot
+      const p = await tradingApi.previewOrder({
+        instrument_id: inst.instrument_id,
+        symbol: inst.symbol,
+        exchange: inst.exchange,
+        side,
+        quantity,
+        order_type: orderType,
+        product_type: 'NRML',
+        price: ltp && ltp > 0 ? ltp : undefined,
+        mode: 'PAPER',
+        source: 'ORDER_TICKET'
+      });
+      if (!p.allowed || !p.preview_id) {
+        toast.error(`Blocked: ${JSON.stringify(p.warnings)}`);
+        setPreview(p);
+        return;
+      }
+      await tradingApi.submitOrder(String(p.preview_id));
+      toast.success(`${side} ${inst.symbol} · 1 lot (${quantity} qty)`);
+      setMsg(`${side} submitted ${inst.symbol}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Trade failed');
+    } finally {
+      setDeskBusy(false);
+    }
+  };
+
+  const openChartForLeg = async (
+    underlying: string,
+    strike: number,
+    optionType: 'CE' | 'PE',
+    ltp?: number,
+    expiry?: string
+  ) => {
+    try {
+      const inst = await resolveOptionInstrument(underlying, strike, optionType, expiry || selectedExpiry);
+      if (!inst) {
+        toast.error(`Could not resolve ${underlying} ${strike} ${optionType}`);
+        return;
+      }
+      pick(inst);
+      if (expiry || selectedExpiry) setSelectedExpiry(expiry || selectedExpiry);
+      if (ltp && ltp > 0) setPrice(Math.round(ltp * 100) / 100);
+      setQtyMode('LOTS');
+      setLots(1);
+      setQty(Math.max(1, inst.lot_size || 1));
+      setChartTradeInstrument(inst);
+      setChartStock({
+        id: `chart-${underlying}`,
+        symbol: underlying,
+        exchange: indexDesk?.exchange || (underlying === 'SENSEX' ? 'BSE' : 'NSE'),
+        sortOrder: 0,
+        name: `${underlying} · ${strike} ${optionType}`
+      });
+      setTab('chart');
+      toast.message(`Chart · trade ${inst.symbol} on the right rail`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Chart open failed');
     }
   };
 
@@ -239,7 +587,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
         symbol: selected.symbol,
         exchange: selected.exchange,
         side,
-        quantity: qty,
+        quantity: orderQuantity(),
         order_type: orderType,
         product_type: product,
         price: orderPrice(),
@@ -268,7 +616,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
         symbol: selected.symbol,
         exchange: selected.exchange,
         side,
-        quantity: qty,
+        quantity: orderQuantity(),
         order_type: orderType,
         product_type: product,
         price: orderPrice(),
@@ -308,21 +656,56 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
     }
   };
 
-  const createBasket = async () => {
+  const createBasket = async (name?: string) => {
     setBusy(true);
     try {
-      const b = await tradingApi.createBasket({ basket_name: 'Terminal Basket', mode: 'PAPER' });
+      const basket_name = (name || newBasketName || basketNameDraft || 'Terminal Basket').trim();
+      const b = await tradingApi.createBasket({ basket_name, mode: 'PAPER' });
       const id = String(b.id || '');
       if (!id) throw new Error('Basket created but no id returned');
       setActiveBasketId(id);
+      setBasketNameDraft(basket_name);
+      setNewBasketName('');
       await reloadBaskets();
       setBasketDetail(await tradingApi.getBasket(id));
-      toast.success('Basket created (paper) — open Basket tab or Basket Orders');
+      toast.success(`Saved basket “${basket_name}”`);
       setTab('basket');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Create basket failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const saveBasketName = async () => {
+    if (!activeBasketId) return;
+    const name = basketNameDraft.trim();
+    if (!name) {
+      toast.error('Enter a basket name');
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await tradingApi.updateBasket(activeBasketId, { basket_name: name });
+      setBasketDetail(updated);
+      setBasketNameDraft(String(updated.basket_name || updated.basketName || name));
+      await reloadBaskets();
+      toast.success(`Basket saved as “${name}”`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save basket failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectBasket = async (id: string) => {
+    setActiveBasketId(id);
+    try {
+      const detail = await tradingApi.getBasket(id);
+      setBasketDetail(detail);
+      setBasketNameDraft(String(detail.basket_name || detail.basketName || 'Basket'));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Load basket failed');
     }
   };
 
@@ -355,6 +738,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
         `Basket margin ₹${p.total_estimated_margin} · risk ₹${p.total_risk} · allowed=${p.allowed}`
       );
       setBasketDetail(await tradingApi.getBasket(activeBasketId));
+      toast.success(p.allowed ? 'Risk preview OK' : 'Risk preview blocked — check warnings');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Preview basket failed');
     } finally {
@@ -364,14 +748,48 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
 
   const submitBasket = async () => {
     if (!activeBasketId) return;
+    const legs = (basketDetail?.legs as unknown[]) || [];
+    if (!legs.length) {
+      toast.error('Add at least one leg before executing');
+      return;
+    }
+    const name = String(basketDetail?.basket_name || basketDetail?.basketName || basketNameDraft);
+    if (
+      !window.confirm(
+        `Execute paper basket “${name}” with ${legs.length} leg(s) now?\nThis places paper orders immediately.`
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     try {
+      // Persist name before execute so the fill is attributed to the saved label
+      if (basketNameDraft.trim() && basketNameDraft.trim() !== name) {
+        await tradingApi.updateBasket(activeBasketId, { basket_name: basketNameDraft.trim() });
+      }
       const res = await tradingApi.submitBasket(activeBasketId);
-      toast.success(`Basket ${String((res.basket as { status?: string })?.status)} · filled ${res.filled}`);
+      const status = String((res.basket as { status?: string })?.status || 'EXECUTED');
+      toast.success(`Executed “${name}” · ${status} · filled ${res.filled}`);
       setBasketDetail(await tradingApi.getBasket(activeBasketId));
       await reloadBaskets();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Submit basket failed');
+      toast.error(e instanceof Error ? e.message : 'Execute basket failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const duplicateBasket = async () => {
+    if (!activeBasketId) return;
+    setBusy(true);
+    try {
+      const copy = await tradingApi.duplicateBasket(activeBasketId);
+      const id = String(copy.id || '');
+      await reloadBaskets();
+      if (id) await selectBasket(id);
+      toast.success(`Duplicated as “${String(copy.basket_name || copy.basketName)}”`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Duplicate failed');
     } finally {
       setBusy(false);
     }
@@ -406,6 +824,31 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
 
       {(tab === 'ticket' || tab === 'chart') && (
         <div style={{ marginTop: 14, display: 'grid', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>Index desk</span>
+            {QUICK_INDICES.map((idx) => (
+              <button
+                key={idx.symbol}
+                type="button"
+                style={{
+                  ...btn,
+                  fontWeight: 700,
+                  borderColor:
+                    indexDesk?.underlying === idx.symbol ? '#22d3ee' : 'rgba(56,189,248,0.45)',
+                  background:
+                    indexDesk?.underlying === idx.symbol
+                      ? 'rgba(34,211,238,0.22)'
+                      : 'rgba(14,165,233,0.18)'
+                }}
+                disabled={busy}
+                onClick={() => void openIndexDesk(idx)}
+              >
+                {idx.label}
+                <span style={{ opacity: 0.75, fontWeight: 500 }}> · lot {idx.lot}</span>
+              </button>
+            ))}
+            <span style={{ fontSize: 11, color: '#64748b' }}>Opens monthly option chain + Buy/Sell</span>
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               style={input}
@@ -439,6 +882,211 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
               </button>
             ))}
           </div>
+
+          {tab === 'ticket' && indexDesk ? (
+            <div
+              style={{
+                marginTop: 4,
+                padding: 12,
+                borderRadius: 10,
+                border: '1px solid rgba(34,211,238,0.35)',
+                background: 'rgba(8,47,73,0.35)',
+                display: 'grid',
+                gap: 10
+              }}
+            >
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                <div style={{ fontWeight: 700, color: '#ecfeff', fontSize: 15 }}>
+                  {indexDesk.label} · monthly chain
+                </div>
+                <span style={{ fontSize: 12, color: '#7dd3fc' }}>
+                  {indexDesk.expiryLabel || indexDesk.expiry}
+                </span>
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                  Spot ₹{formatPrice(indexDesk.spot)}
+                  {indexDesk.atm ? ` · ATM ${indexDesk.atm}` : ''}
+                  {` · lot ${indexDesk.lot}`}
+                </span>
+                <div style={{ flex: 1 }} />
+                <button
+                  type="button"
+                  style={{ ...btn, padding: '4px 10px' }}
+                  disabled={busy || indexDesk.loading}
+                  onClick={() => {
+                    const idx = QUICK_INDICES.find((x) => x.symbol === indexDesk.underlying);
+                    if (idx) void openIndexDesk(idx);
+                  }}
+                >
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  style={{ ...btn, padding: '4px 10px' }}
+                  onClick={() => {
+                    setChartTradeInstrument(selected);
+                    setChartStock({
+                      id: `chart-${indexDesk.underlying}`,
+                      symbol: indexDesk.underlying,
+                      exchange: indexDesk.exchange,
+                      sortOrder: 0,
+                      name: indexDesk.label
+                    });
+                  }}
+                >
+                  Open chart
+                </button>
+                <button type="button" style={{ ...btn, padding: '4px 10px' }} onClick={() => setIndexDesk(null)}>
+                  Close desk
+                </button>
+              </div>
+              {indexDesk.loading ? (
+                <div style={{ color: '#94a3b8', fontSize: 12 }}>Loading monthly option chain…</div>
+              ) : (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <ChainPremiumBanner meta={indexDesk.quoteMeta} />
+                <div style={{ overflowX: 'auto', maxHeight: 360, borderRadius: 8, border: '1px solid #334155' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ color: '#94a3b8', position: 'sticky', top: 0, background: '#0f172a' }}>
+                        <th style={{ padding: 6, textAlign: 'left' }}>CE LTP</th>
+                        <th style={{ padding: 6, textAlign: 'center' }}>CE</th>
+                        <th style={{ padding: 6, textAlign: 'center' }}>Strike</th>
+                        <th style={{ padding: 6, textAlign: 'center' }}>PE</th>
+                        <th style={{ padding: 6, textAlign: 'right' }}>PE LTP</th>
+                        <th style={{ padding: 6, textAlign: 'center' }}>Chart</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(indexDesk.rows.length
+                        ? indexDesk.rows.filter((r) => {
+                            if (!indexDesk.atm) return true;
+                            return Math.abs(r.strike - indexDesk.atm) <= indexDesk.step * 8;
+                          })
+                        : []
+                      )
+                        .sort((a, b) => a.strike - b.strike)
+                        .map((r) => {
+                          const isAtm = indexDesk.atm > 0 && r.strike === indexDesk.atm;
+                          const mini = (label: string, onClick: () => void, color: string) => (
+                            <button
+                              key={label}
+                              type="button"
+                              disabled={deskBusy || busy}
+                              style={{
+                                ...btn,
+                                padding: '2px 6px',
+                                fontSize: 10,
+                                color,
+                                borderColor: 'rgba(148,163,184,0.35)'
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onClick();
+                              }}
+                            >
+                              {label}
+                            </button>
+                          );
+                          return (
+                            <tr
+                              key={r.strike}
+                              style={{
+                                background: isAtm ? 'rgba(34,197,94,0.16)' : 'transparent',
+                                borderTop: '1px solid rgba(51,65,85,0.45)'
+                              }}
+                            >
+                              <td style={{ padding: 6, color: '#86efac' }}>
+                                {r.ce?.ltp != null ? formatPrice(r.ce.ltp) : '—'}
+                              </td>
+                              <td style={{ padding: 4, textAlign: 'center' }}>
+                                <div style={{ display: 'inline-flex', gap: 4 }}>
+                                  {mini('B', () =>
+                                    void tradeChainLeg(
+                                      indexDesk.underlying,
+                                      r.strike,
+                                      'CE',
+                                      'BUY',
+                                      r.ce?.ltp,
+                                      indexDesk.expiry
+                                    ), '#86efac')}
+                                  {mini('S', () =>
+                                    void tradeChainLeg(
+                                      indexDesk.underlying,
+                                      r.strike,
+                                      'CE',
+                                      'SELL',
+                                      r.ce?.ltp,
+                                      indexDesk.expiry
+                                    ), '#fca5a5')}
+                                </div>
+                              </td>
+                              <td
+                                style={{
+                                  padding: 6,
+                                  textAlign: 'center',
+                                  fontWeight: 700,
+                                  color: isAtm ? '#86efac' : '#e2e8f0'
+                                }}
+                              >
+                                {r.strike}
+                                {isAtm ? ' ATM' : ''}
+                              </td>
+                              <td style={{ padding: 4, textAlign: 'center' }}>
+                                <div style={{ display: 'inline-flex', gap: 4 }}>
+                                  {mini('B', () =>
+                                    void tradeChainLeg(
+                                      indexDesk.underlying,
+                                      r.strike,
+                                      'PE',
+                                      'BUY',
+                                      r.pe?.ltp,
+                                      indexDesk.expiry
+                                    ), '#86efac')}
+                                  {mini('S', () =>
+                                    void tradeChainLeg(
+                                      indexDesk.underlying,
+                                      r.strike,
+                                      'PE',
+                                      'SELL',
+                                      r.pe?.ltp,
+                                      indexDesk.expiry
+                                    ), '#fca5a5')}
+                                </div>
+                              </td>
+                              <td style={{ padding: 6, textAlign: 'right', color: '#fca5a5' }}>
+                                {r.pe?.ltp != null ? formatPrice(r.pe.ltp) : '—'}
+                              </td>
+                              <td style={{ padding: 4, textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  style={{ ...btn, padding: '2px 8px', fontSize: 10 }}
+                                  onClick={() =>
+                                    void openChartForLeg(
+                                      indexDesk.underlying,
+                                      r.strike,
+                                      'CE',
+                                      r.ce?.ltp,
+                                      indexDesk.expiry
+                                    )
+                                  }
+                                >
+                                  Chart
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                B/S = Buy/Sell 1 lot on that CE/PE. Chart opens underlying candles with option ticket on the
+                right.
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -498,7 +1146,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                 {(selected.instrument_type.includes('OPTION') || /CE$|PE$/i.test(selected.symbol)) && (
                   <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {(['ALL', 'WEEKLY', 'MONTHLY'] as const).map((k) => (
+                      {((monthlyOnly ? ['MONTHLY'] : ['ALL', 'WEEKLY', 'MONTHLY']) as const).map((k) => (
                         <button
                           key={k}
                           type="button"
@@ -564,12 +1212,16 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                           style={{
                             padding: '4px 8px',
                             borderRadius: 6,
-                            background: 'rgba(34,197,94,0.15)',
-                            border: '1px solid rgba(74,222,128,0.4)',
-                            color: '#86efac'
+                            background: isLiveBrokerQuotes(chainQuoteMeta)
+                              ? 'rgba(34,197,94,0.15)'
+                              : 'rgba(245,158,11,0.12)',
+                            border: isLiveBrokerQuotes(chainQuoteMeta)
+                              ? '1px solid rgba(74,222,128,0.4)'
+                              : '1px solid rgba(251,191,36,0.45)',
+                            color: isLiveBrokerQuotes(chainQuoteMeta) ? '#86efac' : '#fcd34d'
                           }}
                         >
-                          Live ATM{' '}
+                          {isLiveBrokerQuotes(chainQuoteMeta) ? 'Live ATM' : 'ATM'}{' '}
                           <b style={{ color: '#f8fafc' }}>
                             {liveAtm != null
                               ? liveAtm
@@ -590,7 +1242,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                             const side = (contractQuote?.option_type ||
                               selected.option_type ||
                               'CE') as 'CE' | 'PE';
-                            const step = und === 'BANKNIFTY' || und === 'SENSEX' ? 100 : 50;
+                            const step = foStrikeStep(und);
                             const atm =
                               liveAtm ??
                               Math.round(Number(contractQuote?.spot || 0) / step) * step;
@@ -623,6 +1275,8 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                       </div>
                     ) : null}
                     {chainRows.length > 0 ? (
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        <ChainPremiumBanner meta={chainQuoteMeta} />
                       <div style={{ overflowX: 'auto', maxHeight: 220, borderRadius: 8, border: '1px solid #334155' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                           <thead>
@@ -732,6 +1386,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                           </tbody>
                         </table>
                       </div>
+                      </div>
                     ) : null}
                   </div>
                 )}
@@ -836,11 +1491,87 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8 }}>
-                <label style={{ fontSize: 12 }}>
-                  Qty
-                  <input style={input} type="number" value={qty} onChange={(e) => setQty(Number(e.target.value))} />
-                </label>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {isFoLot ? (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>Size by</span>
+                    {(['LOTS', 'QUANTITY'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        style={{
+                          ...btn,
+                          padding: '4px 10px',
+                          opacity: qtyMode === m ? 1 : 0.65,
+                          borderColor: qtyMode === m ? '#22d3ee' : 'rgba(56,189,248,0.4)',
+                          background:
+                            qtyMode === m ? 'rgba(34,211,238,0.2)' : 'rgba(14,165,233,0.15)'
+                        }}
+                        onClick={() => {
+                          if (m === 'LOTS') {
+                            setLots(Math.max(1, Math.round(qty / lotSize) || 1));
+                          } else {
+                            setQty(Math.max(lotSize, Math.floor(lots) * lotSize));
+                          }
+                          setQtyMode(m);
+                        }}
+                      >
+                        {m === 'LOTS' ? 'Lots' : 'Quantity'}
+                      </button>
+                    ))}
+                    <span style={{ fontSize: 11, color: '#64748b' }}>
+                      1 lot = {lotSize} units
+                      {selected?.underlying_symbol || /NIFTY|SENSEX/i.test(selected?.symbol || '')
+                        ? ` · ${selected?.underlying_symbol || selected?.symbol}`
+                        : ''}
+                    </span>
+                  </div>
+                ) : null}
+                <div
+                  style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8 }}
+                >
+                  {qtyMode === 'LOTS' && isFoLot ? (
+                    <label style={{ fontSize: 12 }}>
+                      Lots
+                      <input
+                        style={input}
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={lots}
+                        onChange={(e) => setLots(Math.max(1, Number(e.target.value) || 1))}
+                      />
+                      <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: '#7dd3fc' }}>
+                        Order qty = {orderQuantity().toLocaleString('en-IN')} ({lots} × {lotSize})
+                      </span>
+                    </label>
+                  ) : (
+                    <label style={{ fontSize: 12 }}>
+                      Quantity
+                      <input
+                        style={input}
+                        type="number"
+                        min={1}
+                        step={isFoLot ? lotSize : 1}
+                        value={qty}
+                        onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+                      />
+                      {isFoLot ? (
+                        <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: '#94a3b8' }}>
+                          Multiple of {lotSize}
+                          {qty % lotSize !== 0 ? (
+                            <span style={{ color: '#fca5a5' }}> · not a full lot</span>
+                          ) : (
+                            <span style={{ color: '#86efac' }}>
+                              {' '}
+                              · {Math.floor(qty / lotSize)} lot
+                              {Math.floor(qty / lotSize) === 1 ? '' : 's'}
+                            </span>
+                          )}
+                        </span>
+                      ) : null}
+                    </label>
+                  )}
                 <label style={{ fontSize: 12 }}>
                   Price
                   <input
@@ -880,6 +1611,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                     ))}
                   </select>
                 </label>
+                </div>
               </div>
               {!buySellEnabled ? (
                 <div style={{ color: '#fca5a5', fontSize: 12 }}>
@@ -894,6 +1626,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                   onClick={() => void doBuySell('BUY')}
                 >
                   Buy
+                  {isFoLot && qtyMode === 'LOTS' ? ` ${lots} lot${lots === 1 ? '' : 's'}` : ''}
                 </button>
                 <button
                   type="button"
@@ -902,6 +1635,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                   onClick={() => void doBuySell('SELL')}
                 >
                   Sell
+                  {isFoLot && qtyMode === 'LOTS' ? ` ${lots} lot${lots === 1 ? '' : 's'}` : ''}
                 </button>
                 <button
                   type="button"
@@ -948,10 +1682,40 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
               Refresh
             </button>
           </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gap: 8,
+              padding: 12,
+              borderRadius: 10,
+              border: '1px solid rgba(56,189,248,0.28)',
+              background: 'rgba(8,47,73,0.28)'
+            }}
+          >
+            <div style={{ fontSize: 12, color: '#7dd3fc', fontWeight: 600 }}>New basket</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <input
+                style={{ ...input, flex: 1, minWidth: 180 }}
+                value={newBasketName}
+                placeholder="Basket name (e.g. Nifty straddle Aug)"
+                onChange={(e) => setNewBasketName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void createBasket(newBasketName);
+                }}
+              />
+              <button
+                type="button"
+                style={btn}
+                disabled={busy}
+                onClick={() => void createBasket(newBasketName || 'Terminal Basket')}
+              >
+                Create &amp; save
+              </button>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" style={btn} onClick={() => void createBasket()}>
-              New basket
-            </button>
             {baskets.map((b) => {
               const id = String(b.id || '');
               const name = String(b.basketName || b.basket_name || 'Basket');
@@ -963,10 +1727,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                     ...btn,
                     borderColor: activeBasketId === id ? '#22d3ee' : 'rgba(56,189,248,0.4)'
                   }}
-                  onClick={() => {
-                    setActiveBasketId(id);
-                    void tradingApi.getBasket(id).then(setBasketDetail);
-                  }}
+                  onClick={() => void selectBasket(id)}
                 >
                   {name} · {String(b.status || 'DRAFT')}
                   {b.legs_count != null ? ` · ${String(b.legs_count)} legs` : ''}
@@ -976,11 +1737,42 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
           </div>
           {!baskets.length && !basketsError ? (
             <div style={{ fontSize: 12, color: '#94a3b8' }}>
-              No baskets yet. Create one here or from the ticket tab.
+              No saved baskets yet. Name one above and click Create &amp; save.
             </div>
           ) : null}
           {activeBasketId ? (
             <>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  padding: 10,
+                  borderRadius: 8,
+                  border: '1px solid rgba(148,163,184,0.25)',
+                  background: 'rgba(15,23,42,0.5)'
+                }}
+              >
+                <label style={{ fontSize: 12, color: '#94a3b8', display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 220 }}>
+                  Basket name
+                  <input
+                    style={{ ...input, flex: 1 }}
+                    value={basketNameDraft}
+                    onChange={(e) => setBasketNameDraft(e.target.value)}
+                    placeholder="Name this basket"
+                  />
+                </label>
+                <button type="button" style={btn} disabled={busy} onClick={() => void saveBasketName()}>
+                  Save name
+                </button>
+                <button type="button" style={btn} disabled={busy} onClick={() => void duplicateBasket()}>
+                  Duplicate
+                </button>
+                <span style={{ fontSize: 11, color: '#64748b' }}>
+                  Status {String(basketDetail?.status || 'DRAFT')}
+                </span>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8 }}>
                 <input style={input} value={legSymbol} onChange={(e) => setLegSymbol(e.target.value)} placeholder="Symbol" />
                 <select style={input} value={legSide} onChange={(e) => setLegSide(e.target.value as 'BUY' | 'SELL')}>
@@ -993,7 +1785,7 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                   value={legQty}
                   onChange={(e) => setLegQty(Number(e.target.value))}
                 />
-                <button type="button" style={btn} onClick={() => void addLeg()}>
+                <button type="button" style={btn} disabled={busy} onClick={() => void addLeg()}>
                   Add leg
                 </button>
               </div>
@@ -1026,14 +1818,33 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
                     ))}
                   </tbody>
                 </table>
+                {!((basketDetail?.legs as unknown[]) || []).length ? (
+                  <div style={{ padding: 12, fontSize: 12, color: '#94a3b8' }}>
+                    No legs yet — add symbols above, then execute.
+                  </div>
+                ) : null}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" style={btn} onClick={() => void previewBasket()}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button type="button" style={btn} disabled={busy} onClick={() => void previewBasket()}>
                   Preview / risk
                 </button>
-                <button type="button" style={btn} onClick={() => void submitBasket()}>
-                  Approve &amp; submit paper
+                <button
+                  type="button"
+                  style={{
+                    ...btn,
+                    fontWeight: 700,
+                    borderColor: 'rgba(52,211,153,0.65)',
+                    background: 'rgba(16,185,129,0.2)',
+                    color: '#6ee7b7'
+                  }}
+                  disabled={busy || !((basketDetail?.legs as unknown[]) || []).length}
+                  onClick={() => void submitBasket()}
+                >
+                  Execute paper now
                 </button>
+                <span style={{ fontSize: 11, color: '#64748b' }}>
+                  Approves risk + places all legs as paper orders in one step
+                </span>
               </div>
             </>
           ) : (
@@ -1043,14 +1854,70 @@ export function TradingTerminalPanel({ initialTab = 'ticket' }: { initialTab?: T
       )}
 
       {tab === 'chart' && (
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
           {!selected ? (
-            <div style={{ color: '#94a3b8' }}>Select an instrument above</div>
+            <div style={{ color: '#94a3b8' }}>
+              Select Nifty / Bank Nifty / Sensex above, pick a strike, then open Chart — or search any symbol.
+            </div>
           ) : (
-            <ChartTradePanel symbol={selected.symbol} instrument={selected} price={price} />
+            <>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <div style={{ fontWeight: 650, color: '#e2e8f0' }}>
+                  {selected.display_name || selected.symbol}
+                </div>
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                  Paper Buy/Sell on chart · lot {selected.lot_size || 1}
+                </span>
+                <button
+                  type="button"
+                  style={btn}
+                  onClick={() => {
+                    const und =
+                      selected.underlying_symbol ||
+                      indexDesk?.underlying ||
+                      (/^(NIFTY|BANKNIFTY|SENSEX)/i.test(selected.symbol)
+                        ? selected.symbol.replace(/\d+.*$/, '')
+                        : selected.symbol);
+                    setChartTradeInstrument(selected);
+                    setChartStock({
+                      id: `chart-${und}`,
+                      symbol: und,
+                      exchange: indexDesk?.exchange || selected.exchange || 'NSE',
+                      sortOrder: 0,
+                      name: selected.display_name || selected.symbol
+                    });
+                  }}
+                >
+                  Open full chart + ticket
+                </button>
+              </div>
+              <ChartTradePanel
+                symbol={selected.symbol}
+                instrument={selected}
+                price={price}
+                qty={orderQuantity()}
+                onQtyChange={(n) => {
+                  if (qtyMode === 'LOTS' && lotSize > 1) {
+                    setLots(Math.max(1, Math.round(n / lotSize)));
+                    setQty(n);
+                  } else setQty(n);
+                }}
+              />
+            </>
           )}
         </div>
       )}
+
+      {chartStock ? (
+        <StockChartModal
+          stock={chartStock}
+          tradeInstrument={chartTradeInstrument}
+          onClose={() => {
+            setChartStock(null);
+            setChartTradeInstrument(null);
+          }}
+        />
+      ) : null}
 
       {tab === 'audit' && (
         <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>

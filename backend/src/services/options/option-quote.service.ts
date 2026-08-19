@@ -2,19 +2,23 @@ import axios from 'axios';
 import { prisma } from '../../config/database';
 import { EncryptionService } from '../encryption.service';
 import { DhanService, DHAN_IDX_IDS, DHAN_NSE_EQ_IDS } from '../dhan.service';
+import { foDerivativeUnderlyings } from '../../libs/trading/fo-index-catalog';
 import { logger } from '../../utils/logger';
 
 const DHAN_BASE = 'https://api.dhan.co/v2';
 
-/** Index / equity underlying → Dhan optionchain request identity */
+/** Index / equity underlying → Dhan optionchain request identity (from FO catalog + aliases) */
 const UNDERLYING_SCRIP: Record<string, { scrip: number; seg: string }> = {
-  NIFTY: { scrip: DHAN_IDX_IDS['NIFTY 50'] ?? 13, seg: 'IDX_I' },
   NIFTY50: { scrip: 13, seg: 'IDX_I' },
-  BANKNIFTY: { scrip: DHAN_IDX_IDS['NIFTY BANK'] ?? 25, seg: 'IDX_I' },
-  FINNIFTY: { scrip: 27, seg: 'IDX_I' },
-  MIDCPNIFTY: { scrip: 442, seg: 'IDX_I' },
-  SENSEX: { scrip: DHAN_IDX_IDS.SENSEX ?? 51, seg: 'IDX_I' },
-  BANKEX: { scrip: 12, seg: 'IDX_I' }
+  ...Object.fromEntries(
+    foDerivativeUnderlyings()
+      .filter((x) => x.dhanScripId > 0)
+      .map((x) => [x.symbol, { scrip: x.dhanScripId, seg: 'IDX_I' as const }])
+  ),
+  // Extra aliases
+  NIFTY: { scrip: DHAN_IDX_IDS.NIFTY ?? 13, seg: 'IDX_I' },
+  BANKNIFTY: { scrip: DHAN_IDX_IDS.BANKNIFTY ?? 25, seg: 'IDX_I' },
+  SENSEX: { scrip: DHAN_IDX_IDS.SENSEX ?? 51, seg: 'IDX_I' }
 };
 
 export type DepthQuote = {

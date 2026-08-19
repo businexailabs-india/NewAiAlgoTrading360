@@ -73,7 +73,7 @@ function addDays(d: Date, n: number): Date {
 
 export function exchangeForUnderlying(underlying: string): MarketExchange {
   const u = (underlying || '').toUpperCase();
-  if (u === 'SENSEX' || u === 'BANKEX' || u === 'SENSEX50') return 'BSE';
+  if (u === 'SENSEX' || u === 'BANKEX' || u === 'SENSEX50' || u === 'FOCIT') return 'BSE';
   return 'NSE';
 }
 

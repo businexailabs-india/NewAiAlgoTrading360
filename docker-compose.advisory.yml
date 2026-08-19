@@ -113,7 +113,7 @@ services:
       MCP_ENABLE_FINVASIA_SHOONYA: "false"
       MCP_ENABLE_MOCK: "true"
       MCP_ENABLE_MOCK_MARKET_DATA: "true"
-      MCP_ENABLE_IBKR: "true"
+      MCP_ENABLE_IBKR: "false"
       SECRET_MANAGER_PROVIDER: local_encrypted
       LOCAL_SECRET_KEY: ${LOCAL_SECRET_KEY:-change-this-in-production}
       MCP_PROVIDERS_CONFIG_DIR: /workspace/config/mcp-providers
@@ -121,15 +121,6 @@ services:
       DHAN_API_KEY: ${DHAN_API_KEY:-}
       DHAN_CLIENT_ID: ${DHAN_CLIENT_ID:-}
       DHAN_ACCESS_TOKEN: ${DHAN_ACCESS_TOKEN:-}
-      IBKR_HOST: ${IBKR_HOST:-127.0.0.1}
-      IBKR_PORT: ${IBKR_PORT:-7497}
-      IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-1001}
-      IBKR_ACCOUNT_ID: ${IBKR_ACCOUNT_ID:-}
-      IBKR_MODE: ${IBKR_MODE:-paper}
-      IBKR_LIVE_TRADING_ENABLED: "false"
-      IBKR_USE_MOCK: "true"
-      IBKR_CONNECTION_MODE: mock
-      IBKR_CONNECT_TIMEOUT_SECONDS: ${IBKR_CONNECT_TIMEOUT_SECONDS:-15}
     depends_on:
       - redpanda
     volumes:

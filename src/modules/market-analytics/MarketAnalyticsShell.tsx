@@ -208,7 +208,7 @@ export function MarketAnalyticsShell() {
             <div className="space-y-3">
               <p className="text-sm text-slate-400">{chart.licenseNote}</p>
               {chart.renderChart({
-                symbol: 'SPY',
+                symbol: 'NIFTY',
                 candles: demoCandles(),
                 overlays: signals[0]
                   ? {

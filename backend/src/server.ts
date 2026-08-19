@@ -61,7 +61,6 @@ import tradingviewRoutes from './routes/tradingview.routes';
 import tradingTerminalRoutes from './routes/trading-terminal.routes';
 import executionGovernanceRoutes from './routes/execution-governance.routes';
 import liveRoutes from './routes/live.routes';
-import ibkrUsStocksRoutes from './routes/ibkr-us-stocks.routes';
 import marketAnalyticsV1Routes from './market-analytics/routes/v1.routes';
 import { RiskGateService } from './services/risk-gate.service';
 import { OutboxService } from './events/outbox.service';
@@ -184,7 +183,6 @@ app.use('/api', tradingviewRoutes);
 app.use('/api', tradingTerminalRoutes);
 app.use('/api', executionGovernanceRoutes);
 app.use('/api/live', liveRoutes);
-app.use('/api/trade/us-stocks', ibkrUsStocksRoutes);
 // BxAi Trade Market Analytics — paper-only (/api/v1/*)
 app.use('/api/v1', marketAnalyticsV1Routes);
 try {

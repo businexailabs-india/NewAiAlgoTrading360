@@ -1,5 +1,6 @@
 import { MarketService } from './market.service';
 import { generateWeeklyExpiries } from '../libs/trading/fo-expiry-calendar';
+import { foStrikeStep } from '../libs/trading/fo-index-catalog';
 import {
   blackScholesPrice,
   estimateIndexOptionIv,
@@ -42,15 +43,7 @@ function nextWeeklyExpiry(underlying = 'NIFTY'): string {
 }
 
 function strikeStep(underlying: string, spot: number): number {
-  if (underlying === 'NIFTY') return 50;
-  if (underlying === 'BANKNIFTY') return 100;
-  if (underlying === 'FINNIFTY') return 50;
-  if (underlying === 'MIDCPNIFTY') return 25;
-  if (underlying === 'SENSEX' || underlying === 'BANKEX') return 100;
-  if (spot >= 5000) return 100;
-  if (spot >= 1000) return 50;
-  if (spot >= 200) return 10;
-  return 5;
+  return foStrikeStep(underlying, spot);
 }
 
 function roundStrike(spot: number, step: number): number {
@@ -61,10 +54,11 @@ function estimatePremium(
   spot: number,
   strike: number,
   optionType: 'CE' | 'PE',
-  expiry: string
+  expiry: string,
+  indiaVix?: number | null
 ): { ltp: number; iv: number } {
   const dte = daysToExpiry(new Date(`${expiry}T15:30:00+05:30`));
-  const iv = estimateIndexOptionIv(spot, strike, dte, optionType);
+  const iv = estimateIndexOptionIv(spot, strike, dte, optionType, { indiaVix });
   const ltp = blackScholesPrice({
     spot,
     strike,
@@ -79,7 +73,7 @@ function buildHeuristicContracts(
   underlying: string,
   spot: number,
   changePercent: number,
-  opts?: { expiry?: string; strikeCount?: number }
+  opts?: { expiry?: string; strikeCount?: number; indiaVix?: number | null }
 ): OptionContract[] {
   const step = strikeStep(underlying, spot);
   const atm = roundStrike(spot, step);
@@ -97,7 +91,7 @@ function buildHeuristicContracts(
   const contracts: OptionContract[] = [];
   for (const strike of strikes) {
     for (const optionType of ['CE', 'PE'] as const) {
-      const { ltp, iv } = estimatePremium(spot, strike, optionType, expiry);
+      const { ltp, iv } = estimatePremium(spot, strike, optionType, expiry, opts?.indiaVix);
       const isAtm = strike === atm;
       let signal: 'BUY' | 'SELL' | 'HOLD' = 'HOLD';
       let strategy = `${optionType} ${strike}`;
@@ -178,10 +172,19 @@ export class OptionsService {
       };
     }
 
+    let indiaVix: number | null = null;
+    try {
+      const vixQ = await MarketService.getQuote('INDIAVIX', userId);
+      if (vixQ.price > 0 && vixQ.price < 80) indiaVix = vixQ.price;
+    } catch {
+      /* optional */
+    }
+
     const expiry = opts?.expiry || nextWeeklyExpiry(underlying);
     const contracts = buildHeuristicContracts(underlying, spot, changePercent, {
       expiry,
-      strikeCount: opts?.strikeCount || 41
+      strikeCount: opts?.strikeCount || 41,
+      indiaVix
     });
     const recommendations = contracts
       .filter((c) => c.signal === 'BUY')

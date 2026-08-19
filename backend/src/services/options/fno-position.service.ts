@@ -1,6 +1,72 @@
 import { prisma } from '../../config/database';
 import { OptionQuoteService } from './option-quote.service';
+import { MarketService } from '../market.service';
+import {
+  blackScholesPrice,
+  daysToExpiry,
+  estimateIndexOptionIv,
+  yearsToExpiry
+} from './greeks.service';
+import { FO_INDEX_CATALOG } from '../../libs/trading/fo-index-catalog';
 import { logger } from '../../utils/logger';
+
+/** Longest-first so BANKNIFTY wins over NIFTY. */
+const UNDERLYING_PREFIXES = [...FO_INDEX_CATALOG.map((x) => x.symbol)].sort(
+  (a, b) => b.length - a.length
+);
+
+function inferUnderlying(tradingSymbol: string): string | null {
+  const s = tradingSymbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  for (const u of UNDERLYING_PREFIXES) {
+    if (s.startsWith(u)) return u;
+  }
+  return null;
+}
+
+function parseOptionLeg(
+  tradingSymbol: string,
+  existing?: { strike?: number | null; optionType?: string | null }
+): { underlying: string | null; strike: number | null; optionType: 'CE' | 'PE' | null } {
+  const underlying = inferUnderlying(tradingSymbol);
+  let strike = existing?.strike != null && Number.isFinite(existing.strike) ? Number(existing.strike) : null;
+  let optionType =
+    existing?.optionType === 'CE' || existing?.optionType === 'PE'
+      ? existing.optionType
+      : null;
+  if (underlying && (strike == null || !optionType)) {
+    const rest = tradingSymbol
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(underlying.length);
+    const m = rest.match(/^(\d+)(CE|PE)$/);
+    if (m) {
+      strike = Number(m[1]);
+      optionType = m[2] as 'CE' | 'PE';
+    }
+  }
+  return { underlying, strike, optionType };
+}
+
+function modelOptionLtp(params: {
+  spot: number;
+  strike: number;
+  optionType: 'CE' | 'PE';
+  expiry: Date;
+  indiaVix?: number | null;
+}): number {
+  const expYmd = params.expiry.toISOString().slice(0, 10);
+  const dte = daysToExpiry(params.expiry);
+  const iv = estimateIndexOptionIv(params.spot, params.strike, dte, params.optionType, {
+    indiaVix: params.indiaVix
+  });
+  return blackScholesPrice({
+    spot: params.spot,
+    strike: params.strike,
+    timeYears: yearsToExpiry(expYmd),
+    ivPct: iv,
+    optionType: params.optionType
+  });
+}
 
 export type ApplyFillInput = {
   userId: string;
@@ -197,33 +263,52 @@ export class FnoPositionService {
 
   static async refreshMtm(userId: string, opts?: { isPaper?: boolean; underlying?: string }) {
     const positions = await this.list(userId, opts?.isPaper);
-    if (!positions.length) return { updated: 0, positions: [] as typeof positions };
+    if (!positions.length) {
+      return {
+        updated: 0,
+        positions: [] as typeof positions,
+        quoteSource: 'none' as const,
+        brokerMarks: 0,
+        modelMarks: 0
+      };
+    }
 
     const tokens = positions.map((p) => p.instrumentToken).filter(Boolean) as string[];
     const feed = await OptionQuoteService.fetchMarketfeedQuotes(tokens, userId);
 
-    // Also try optionchain overlay if underlying provided
-    let byStrike = new Map<string, { ltp: number }>();
-    if (opts?.underlying) {
+    /** `${underlying}|${expiry}|${strike}|CE` → ltp */
+    const byStrike = new Map<string, number>();
+
+    const underlyings = [
+      ...new Set(
+        [
+          opts?.underlying?.toUpperCase(),
+          ...positions.map((p) => inferUnderlying(p.tradingSymbol))
+        ].filter(Boolean) as string[]
+      )
+    ];
+
+    for (const underlying of underlyings) {
       const expiries = [
         ...new Set(
           positions
+            .filter((p) => !opts?.underlying || inferUnderlying(p.tradingSymbol) === underlying)
             .map((p) => (p.expiry ? p.expiry.toISOString().slice(0, 10) : null))
             .filter(Boolean) as string[]
         )
       ];
-      for (const expiry of expiries.slice(0, 2)) {
+      for (const expiry of expiries.slice(0, 3)) {
         try {
           const overlay = await OptionQuoteService.fetchOverlay({
-            underlying: opts.underlying,
+            underlying,
             expiry,
             userId
           });
           for (const [k, q] of overlay.byStrikeType) {
-            byStrike.set(k, { ltp: q.ltp });
+            if (q.ltp > 0) byStrike.set(`${underlying}|${expiry}|${k}`, q.ltp);
           }
           for (const [sid, q] of overlay.bySecurityId) {
-            feed.set(sid, { ltp: q.ltp, oi: q.oi, bid: q.bid, ask: q.ask });
+            if (q.ltp > 0) feed.set(sid, { ltp: q.ltp, oi: q.oi, bid: q.bid, ask: q.ask });
           }
         } catch (err) {
           logger.warn(`MTM overlay failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -231,30 +316,109 @@ export class FnoPositionService {
       }
     }
 
+    let indiaVix: number | null = null;
+    try {
+      const vixQ = await MarketService.getQuote('INDIAVIX', userId);
+      if (vixQ.price > 0 && vixQ.price < 80) indiaVix = vixQ.price;
+    } catch {
+      /* optional */
+    }
+
+    const spotByUnderlying = new Map<string, number>();
+    const loadSpot = async (u: string) => {
+      if (spotByUnderlying.has(u)) return spotByUnderlying.get(u)!;
+      try {
+        const q = await MarketService.getQuote(u, userId);
+        const px = q.price > 0 ? q.price : 0;
+        spotByUnderlying.set(u, px);
+        return px;
+      } catch {
+        spotByUnderlying.set(u, 0);
+        return 0;
+      }
+    };
+
+    let brokerMarks = 0;
+    let modelMarks = 0;
     const updated = [];
     for (const pos of positions) {
-      let last = pos.lastPrice;
+      let last = 0;
+      let source: 'broker' | 'model' | 'stale' = 'stale';
+
       if (pos.instrumentToken && feed.get(pos.instrumentToken)?.ltp) {
         last = feed.get(pos.instrumentToken)!.ltp;
-      } else if (pos.strike != null && pos.optionType) {
-        const hit = byStrike.get(`${pos.strike}|${pos.optionType}`);
-        if (hit?.ltp) last = hit.ltp;
+        source = 'broker';
       }
+
+      const und = inferUnderlying(pos.tradingSymbol);
+      const expYmd = pos.expiry ? pos.expiry.toISOString().slice(0, 10) : null;
+      const leg = parseOptionLeg(pos.tradingSymbol, {
+        strike: pos.strike,
+        optionType: pos.optionType
+      });
+      if (!(last > 0) && und && expYmd && leg.strike != null && leg.optionType) {
+        const hit =
+          byStrike.get(`${und}|${expYmd}|${leg.strike}|${leg.optionType}`) ||
+          byStrike.get(`${und}|${expYmd}|${leg.strike}|${String(leg.optionType).toUpperCase()}`);
+        if (hit && hit > 0) {
+          last = hit;
+          source = 'broker';
+        }
+      }
+
+      // No Dhan LTP — mark options with BS model from live index spot (Yahoo/etc.)
+      if (!(last > 0) && und && pos.expiry && leg.strike != null && leg.optionType) {
+        const spot = await loadSpot(und);
+        if (spot > 0) {
+          last = modelOptionLtp({
+            spot,
+            strike: leg.strike,
+            optionType: leg.optionType,
+            expiry: pos.expiry,
+            indiaVix
+          });
+          source = 'model';
+        }
+      }
+
+      if (!(last > 0)) {
+        last = pos.lastPrice;
+        source = 'stale';
+      }
+
+      if (source === 'broker') brokerMarks++;
+      else if (source === 'model') modelMarks++;
+
       if (!(last > 0)) {
         updated.push(pos);
         continue;
       }
+
       const mtm =
         pos.side === 'LONG'
           ? (last - pos.avgPrice) * pos.quantity
           : (pos.avgPrice - last) * pos.quantity;
+      const prevMeta = (pos.meta as Record<string, unknown>) || {};
       const row = await prisma.derivativePosition.update({
         where: { id: pos.id },
-        data: { lastPrice: last, mtm: Number(mtm.toFixed(2)) }
+        data: {
+          lastPrice: last,
+          mtm: Number(mtm.toFixed(2)),
+          meta: { ...prevMeta, mtmSource: source, mtmAt: new Date().toISOString() }
+        }
       });
       updated.push(row);
     }
 
-    return { updated: updated.length, positions: updated };
+    const quoteSource =
+      brokerMarks > 0 ? ('broker' as const) : modelMarks > 0 ? ('model' as const) : ('stale' as const);
+
+    return {
+      updated: updated.length,
+      positions: updated,
+      quoteSource,
+      brokerMarks,
+      modelMarks
+    };
   }
 }

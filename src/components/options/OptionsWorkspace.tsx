@@ -58,6 +58,7 @@ export function OptionsWorkspace({
     Array<{ date: string; kind: 'WEEKLY' | 'MONTHLY'; label: string }>
   >([]);
   const [expiryKind, setExpiryKind] = useState<'ALL' | 'WEEKLY' | 'MONTHLY'>('ALL');
+  const [monthlyOnly, setMonthlyOnly] = useState(false);
   const [expiry, setExpiry] = useState('');
   const [chain, setChain] = useState<{
     spotPrice?: number;
@@ -73,6 +74,9 @@ export function OptionsWorkspace({
     message?: string;
     empty?: boolean;
   } | null>(null);
+  const [futures, setFutures] = useState<
+    Array<{ id: string; tradingSymbol: string; expiry: string; lotSize: number }>
+  >([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
@@ -100,9 +104,14 @@ export function OptionsWorkspace({
       label: string;
     }>;
     const list = (json.data?.expiries || calendar.map((c) => c.date) || []) as string[];
+    const onlyMonthly = Boolean(json.data?.monthly_only);
+    setMonthlyOnly(onlyMonthly);
+    if (onlyMonthly) setExpiryKind('MONTHLY');
     setExpiryCalendar(calendar);
     setExpiries(list);
-    setExpiry((prev) => (list.includes(prev) ? prev : list[0] || ''));
+    const monthlyDates = calendar.filter((c) => c.kind === 'MONTHLY').map((c) => c.date);
+    const preferred = onlyMonthly ? monthlyDates[0] || list[0] : list[0];
+    setExpiry((prev) => (list.includes(prev) ? prev : preferred || ''));
   }, []);
 
   const filteredExpiries = useMemo(() => {
@@ -124,7 +133,32 @@ export function OptionsWorkspace({
     }
   }, [filteredExpiries, expiry]);
 
+  const loadFutures = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/options/futures?underlying=${encodeURIComponent(underlying)}`,
+        { headers: authHeaders() }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Failed to load futures');
+      setFutures(json.data?.futures || []);
+      setChain(null);
+      if (json.data?.message && !(json.data?.futures || []).length) {
+        toast.message(json.data.message);
+      }
+    } catch (e) {
+      if (!opts?.silent) toast.error(e instanceof Error ? e.message : 'Futures load failed');
+    } finally {
+      if (!opts?.silent) setLoading(false);
+    }
+  }, [underlying]);
+
   const loadChain = useCallback(async (opts?: { silent?: boolean }) => {
+    if (segment === 'FUT') {
+      await loadFutures(opts);
+      return;
+    }
     if (!opts?.silent) setLoading(true);
     try {
       const qs = new URLSearchParams({ underlying, greeks: analytics ? '1' : '0' });
@@ -134,12 +168,13 @@ export function OptionsWorkspace({
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.message || 'Failed to load chain');
       setChain(json.data);
+      setFutures([]);
     } catch (e) {
       if (!opts?.silent) toast.error(e instanceof Error ? e.message : 'Chain load failed');
     } finally {
       if (!opts?.silent) setLoading(false);
     }
-  }, [underlying, expiry, expiryKind, analytics]);
+  }, [underlying, expiry, expiryKind, analytics, segment, loadFutures]);
 
   useEffect(() => {
     void loadUnderlyings().catch((e) => toast.error(e.message));
@@ -277,7 +312,10 @@ export function OptionsWorkspace({
         <label style={labelStyle}>
           Expiry type
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-            {(['ALL', 'WEEKLY', 'MONTHLY'] as const).map((k) => (
+            {(monthlyOnly
+              ? (['MONTHLY'] as const)
+              : (['ALL', 'WEEKLY', 'MONTHLY'] as const)
+            ).map((k) => (
               <button
                 key={k}
                 type="button"
@@ -325,6 +363,47 @@ export function OptionsWorkspace({
         </div>
       ) : null}
 
+      {segment === 'FUT' ? (
+        <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid rgba(51,65,85,0.8)' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'rgba(15,23,42,0.95)', color: '#94a3b8' }}>
+                <th style={th}>Symbol</th>
+                <th style={th}>Expiry</th>
+                <th style={th}>Lot</th>
+                <th style={th}>Token</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && !futures.length ? (
+                <tr>
+                  <td colSpan={4} style={{ padding: 16, color: '#94a3b8', textAlign: 'center' }}>
+                    Loading futures…
+                  </td>
+                </tr>
+              ) : null}
+              {!loading && !futures.length ? (
+                <tr>
+                  <td colSpan={4} style={{ padding: 16, color: '#94a3b8', textAlign: 'center' }}>
+                    No futures — sync Dhan instrument master for this underlying.
+                  </td>
+                </tr>
+              ) : null}
+              {futures.map((f) => (
+                <tr
+                  key={f.id}
+                  style={{ borderTop: '1px solid rgba(51,65,85,0.5)', color: '#e2e8f0' }}
+                >
+                  <td style={td}>{f.tradingSymbol}</td>
+                  <td style={td}>{f.expiry}</td>
+                  <td style={td}>{f.lotSize}</td>
+                  <td style={td}>{f.id}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
       <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid rgba(51,65,85,0.8)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
@@ -392,6 +471,7 @@ export function OptionsWorkspace({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

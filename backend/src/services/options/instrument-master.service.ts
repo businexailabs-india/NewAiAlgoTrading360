@@ -200,18 +200,26 @@ export class InstrumentMasterService {
     const { generateFoExpiryCalendar, classifyExpiryDates, filterExpiriesByKind } = await import(
       '../../libs/trading/fo-expiry-calendar'
     );
+    const { getFoIndex, hasWeeklyExpiries, isMonthlyOnlyUnderlying } = await import(
+      '../../libs/trading/fo-index-catalog'
+    );
     const sym = underlying.toUpperCase();
     const masterDates = await this.listExpiries(sym, segment);
     const calendar =
       masterDates.length > 0
         ? classifyExpiryDates(sym, masterDates)
         : generateFoExpiryCalendar(sym, { weeks: 26, months: 8 });
+    const meta = getFoIndex(sym);
+    const monthlyOnly = isMonthlyOnlyUnderlying(sym);
     return {
       underlying: sym,
       expiries: calendar.map((e) => e.date),
       calendar,
       weekly: filterExpiriesByKind(calendar, 'WEEKLY'),
       monthly: filterExpiriesByKind(calendar, 'MONTHLY'),
+      has_weekly: hasWeeklyExpiries(sym),
+      monthly_only: monthlyOnly,
+      expiry_mode: meta?.expiryMode || (monthlyOnly ? 'MONTHLY_ONLY' : 'WEEKLY_AND_MONTHLY'),
       source: masterDates.length > 0 ? ('instrument_master' as const) : ('paper_calendar' as const)
     };
   }
@@ -239,5 +247,28 @@ export class InstrumentMasterService {
     });
 
     return { underlying: u, contracts };
+  }
+
+  /** Upcoming index/stock futures for an underlying (from Dhan master FUTIDX/FUTSTK). */
+  static async listFutures(underlying: string, segment?: string) {
+    const u = await prisma.derivativeUnderlying.findFirst({
+      where: {
+        symbol: underlying.toUpperCase(),
+        tradable: true,
+        ...(segment ? { segment } : {})
+      }
+    });
+    if (!u) return { underlying: underlying.toUpperCase(), futures: [] as Awaited<ReturnType<typeof prisma.derivativeInstrument.findMany>> };
+
+    const futures = await prisma.derivativeInstrument.findMany({
+      where: {
+        underlyingId: u.id,
+        tradable: true,
+        instrumentType: 'FUT',
+        expiry: { gte: new Date(Date.now() - 86400000) }
+      },
+      orderBy: { expiry: 'asc' }
+    });
+    return { underlying: u.symbol, futures };
   }
 }

@@ -5,7 +5,6 @@ import { getMaEngine } from '../engine';
 import { maEventBus } from '../events/bus';
 import { loadMaConfig, canSubmitPaperOrders } from '../config';
 import { SimulatedBrokerAdapter } from '../brokers/SimulatedBrokerAdapter';
-import { IBKRPaperAdapter } from '../brokers/IBKRPaperAdapter';
 import { assertPaperAccountId } from '../brokers/BrokerAdapter';
 import { randomUUID } from 'crypto';
 
@@ -110,20 +109,20 @@ router.post('/accounts/connect', authenticate, async (req, res) => {
   // Never auto-pick first account — client must send exact ID
   const type = String(brokerType || 'SIMULATED').toUpperCase();
   if (type === 'IBKR_PAPER' || type === 'IBKR') {
-    const cfg = loadMaConfig();
-    if (String(paperAccountId).toUpperCase() !== cfg.ibkrPaperAccountId.toUpperCase() && cfg.ibkrPaperAccountId) {
-      res.status(400).json({ success: false, message: 'paperAccountId must match IBKR_PAPER_ACCOUNT_ID' });
-      return;
-    }
+    res.status(400).json({
+      success: false,
+      message: 'US/IBKR paper adapters removed — use SIMULATED (India paper only)'
+    });
+    return;
   }
   const acct = {
     id: randomUUID(),
     tenantId,
     userId: userId(req),
     connectionName: String(connectionName || 'Paper'),
-    brokerType: type === 'IBKR' ? 'IBKR_PAPER' : type,
+    brokerType: type,
     paperAccountId: String(paperAccountId),
-    baseCurrency: String(baseCurrency || 'USD'),
+    baseCurrency: String(baseCurrency || 'INR'),
     status: 'connected',
     netLiquidation: engine.cfg.startingEquity,
     cashBalance: engine.cfg.startingEquity,
@@ -134,7 +133,7 @@ router.post('/accounts/connect', authenticate, async (req, res) => {
     lastSyncAt: new Date().toISOString(),
     isDemo: false,
     connectionHealth: 'healthy',
-    dataEntitlement: type.startsWith('IBKR') ? 'unknown' : 'simulated',
+    dataEntitlement: 'simulated',
   };
   engine.store.accounts.push(acct);
   engine.audit(tenantId, 'account.connect', { id: acct.id, paperAccountId: acct.paperAccountId }, userId(req));
@@ -439,7 +438,7 @@ router.get('/meta/safety', (_req, res) => {
       enablePaperOrders: cfg.enablePaperOrders,
       paperOrderConfirmation: cfg.paperOrderConfirmation,
       canSubmitPaperOrders: canSubmitPaperOrders(cfg),
-      adapters: ['SIMULATED', 'IBKR_PAPER'],
+      adapters: ['SIMULATED'],
     },
   });
 });
@@ -463,6 +462,4 @@ router.get('/openapi.json', (_req, res) => {
 
 export default router;
 
-// silence unused import warnings for adapter registry documentation
 void SimulatedBrokerAdapter;
-void IBKRPaperAdapter;

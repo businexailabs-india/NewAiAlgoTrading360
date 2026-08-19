@@ -4,6 +4,7 @@ import {
   BrokerInstrumentRow
 } from './instrument-adapter';
 import { logger } from '../../../utils/logger';
+import { isIndexFoUnderlying, normalizeDhanUnderlying } from '../../../libs/trading/fo-index-catalog';
 
 /** Public Dhan scrip master — strikes/expiries/lots come only from this feed. */
 const DHAN_SCRIP_MASTER_URL =
@@ -89,7 +90,8 @@ export class DhanInstrumentAdapter implements BrokerInstrumentAdapter {
     const iInst = idx(['SEM_INSTRUMENT_NAME', 'INSTRUMENT', 'INSTRUMENT_TYPE']);
     const iTs = idx(['SEM_TRADING_SYMBOL', 'TRADING_SYMBOL', 'SYMBOL_NAME']);
     const iTok = idx(['SEM_SMST_SECURITY_ID', 'SECURITY_ID', 'INSTRUMENT_TOKEN', 'TOKEN']);
-    const iUnder = idx(['SEM_CUSTOM_SYMBOL', 'UNDERLYING_SYMBOL', 'UNDERLYING', 'SYM_NAME']);
+    const iCustom = idx(['SEM_CUSTOM_SYMBOL', 'CUSTOM_SYMBOL']);
+    const iSmName = idx(['SM_SYMBOL_NAME', 'UNDERLYING_SYMBOL', 'UNDERLYING', 'SYM_NAME']);
     const iStrike = idx(['SEM_STRIKE_PRICE', 'STRIKE_PRICE', 'STRIKE']);
     const iExpiry = idx(['SEM_EXPIRY_DATE', 'EXPIRY_DATE', 'EXPIRY']);
     const iLot = idx(['SEM_LOT_UNITS', 'LOT_SIZE', 'SEM_LOT_SIZE']);
@@ -157,23 +159,17 @@ export class DhanInstrumentAdapter implements BrokerInstrumentAdapter {
         continue;
       }
 
-      let underlying = get(iUnder);
-      if (!underlying || underlying === tradingSymbol) {
-        // Derive underlying from trading symbol prefix letters
-        const m = tradingSymbol.match(/^([A-Z]+)/);
-        underlying = m ? m[1] : tradingSymbol;
+      const underlying = normalizeDhanUnderlying(tradingSymbol, get(iCustom), get(iSmName));
+      if (!underlying) {
+        skipped++;
+        continue;
       }
-      underlying = underlying.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      // Strip trailing date fragments sometimes embedded
-      if (underlying.length > 20) underlying = underlying.slice(0, 20);
 
       const lotSize = Math.max(1, Math.floor(Number(get(iLot)) || 1));
       const freezeQty = Number(get(iFreeze));
       const tickSize = Number(get(iTick));
       const instrumentKind: 'INDEX' | 'STOCK' =
-        instrumentName.includes('IDX') || ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'].includes(underlying)
-          ? 'INDEX'
-          : 'STOCK';
+        instrumentName.includes('IDX') || isIndexFoUnderlying(underlying) ? 'INDEX' : 'STOCK';
 
       rows.push({
         exchange,

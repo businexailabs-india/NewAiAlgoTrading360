@@ -3,11 +3,26 @@ import {
   useEffect,
   useMemo,
   useState,
+  Fragment,
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import { Briefcase, FileText, Layers, RefreshCw, Shield } from 'lucide-react';
+import {
+  Briefcase,
+  Calculator,
+  FileText,
+  Layers,
+  LineChart,
+  LogOut,
+  RefreshCw,
+  Shield,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { API_BASE_URL } from '@/lib/api';
+import { tradingApi } from '@/api/trading';
+import { tradingService } from '@/services/tradingService';
+import { StockChartModal } from '@/components/StockChartModal';
+import type { WatchlistItem } from '@/api/watchlist';
 
 type Tab = 'holdings' | 'positions' | 'orders';
 
@@ -34,9 +49,11 @@ type PositionRow = {
   lastPrice: number;
   mtm: number;
   product: string;
+  exchange?: string;
   optionType?: string;
   strike?: number;
   expiry?: string;
+  mtmSource?: string;
 };
 
 type OrderRow = {
@@ -49,6 +66,19 @@ type OrderRow = {
   product: string;
   createdAt: string;
 };
+
+const UNDERLYING_PREFIXES = [
+  'BANKNIFTY',
+  'MIDCPNIFTY',
+  'FINNIFTY',
+  'NIFTYNXT50',
+  'NIFTYFPI',
+  'SENSEX50',
+  'BANKEX',
+  'SENSEX',
+  'NIFTY',
+  'FOCIT',
+];
 
 function authHeaders(): HeadersInit {
   const token = localStorage.getItem('authToken');
@@ -65,6 +95,20 @@ function inr(n: number, digits = 2) {
   })}`;
 }
 
+function inferUnderlying(symbol: string): string {
+  const s = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  for (const u of UNDERLYING_PREFIXES) {
+    if (s.startsWith(u)) return u;
+  }
+  return symbol.replace(/(\d+)(CE|PE)$/i, '').toUpperCase() || symbol;
+}
+
+function approxPnl(side: string, qty: number, avg: number, exitPx: number): number {
+  return side.toUpperCase() === 'SHORT' || side.toUpperCase() === 'SELL'
+    ? (avg - exitPx) * qty
+    : (exitPx - avg) * qty;
+}
+
 const tabBtn = (active: boolean): CSSProperties => ({
   padding: '7px 12px',
   borderRadius: 8,
@@ -76,6 +120,20 @@ const tabBtn = (active: boolean): CSSProperties => ({
   display: 'inline-flex',
   alignItems: 'center',
   gap: 6,
+});
+
+const actionBtn = (color: string): CSSProperties => ({
+  padding: '4px 8px',
+  borderRadius: 6,
+  fontSize: 11,
+  border: `1px solid ${color}`,
+  background: 'transparent',
+  color,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  whiteSpace: 'nowrap',
 });
 
 const th: CSSProperties = {
@@ -95,6 +153,16 @@ const td: CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
+const inputSm: CSSProperties = {
+  width: 88,
+  padding: '4px 6px',
+  borderRadius: 6,
+  border: '1px solid rgba(148,163,184,0.35)',
+  background: 'rgba(15,23,42,0.85)',
+  color: '#e2e8f0',
+  fontSize: 12,
+};
+
 export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [loading, setLoading] = useState(true);
@@ -104,6 +172,25 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
   const [holdings, setHoldings] = useState<HoldingRow[]>([]);
   const [positions, setPositions] = useState<PositionRow[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [mtmMeta, setMtmMeta] = useState<{ quoteSource?: string; modelMarks?: number } | null>(
+    null
+  );
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [whatIfId, setWhatIfId] = useState<string | null>(null);
+  const [whatIfPrice, setWhatIfPrice] = useState('');
+  const [chartStock, setChartStock] = useState<WatchlistItem | null>(null);
+  const [chartTrade, setChartTrade] = useState<{
+    instrument_id: string;
+    symbol: string;
+    instrument_type: string;
+    lot_size: number;
+    direct_trading_allowed: boolean;
+    exchange?: string;
+    display_name?: string;
+    strike?: number | null;
+    option_type?: string | null;
+    underlying_symbol?: string | null;
+  } | null>(null);
 
   useEffect(() => {
     setTab(initialTab);
@@ -154,22 +241,35 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
       );
 
       const rawPos = Array.isArray(posRes?.data) ? posRes.data : [];
+      if (posRes?.meta) {
+        setMtmMeta({
+          quoteSource: String(posRes.meta.quoteSource || ''),
+          modelMarks: Number(posRes.meta.modelMarks || 0),
+        });
+      } else {
+        setMtmMeta(null);
+      }
       setPositions(
         rawPos
           .filter((p: Record<string, unknown>) => Number(p.quantity || 0) !== 0)
-          .map((p: Record<string, unknown>, i: number) => ({
-            id: String(p.id || i),
-            symbol: String(p.tradingSymbol || p.symbol || '—'),
-            side: String(p.side || 'LONG'),
-            quantity: Math.abs(Number(p.quantity || 0)),
-            avgPrice: Number(p.avgPrice || p.averagePrice || 0),
-            lastPrice: Number(p.lastPrice || 0),
-            mtm: Number(p.mtm || p.unrealizedPnl || 0),
-            product: String(p.product || 'NRML'),
-            optionType: p.optionType ? String(p.optionType) : undefined,
-            strike: p.strike != null ? Number(p.strike) : undefined,
-            expiry: p.expiry ? String(p.expiry).slice(0, 10) : undefined,
-          }))
+          .map((p: Record<string, unknown>, i: number) => {
+            const meta = (p.meta as Record<string, unknown> | null) || null;
+            return {
+              id: String(p.id || i),
+              symbol: String(p.tradingSymbol || p.symbol || '—'),
+              side: String(p.side || 'LONG'),
+              quantity: Math.abs(Number(p.quantity || 0)),
+              avgPrice: Number(p.avgPrice || p.averagePrice || 0),
+              lastPrice: Number(p.lastPrice || 0),
+              mtm: Number(p.mtm || p.unrealizedPnl || 0),
+              product: String(p.product || 'NRML'),
+              exchange: p.exchange ? String(p.exchange) : undefined,
+              optionType: p.optionType ? String(p.optionType) : undefined,
+              strike: p.strike != null ? Number(p.strike) : undefined,
+              expiry: p.expiry ? String(p.expiry).slice(0, 10) : undefined,
+              mtmSource: meta?.mtmSource ? String(meta.mtmSource) : undefined,
+            };
+          })
       );
 
       const rawOrders = Array.isArray(ordRes?.data) ? ordRes.data : [];
@@ -207,17 +307,151 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
   const holdingsMtm = useMemo(() => holdings.reduce((s, h) => s + h.pnl, 0), [holdings]);
   const positionsMtm = useMemo(() => positions.reduce((s, p) => s + p.mtm, 0), [positions]);
 
+  const exitPosition = async (p: PositionRow, exitPrice?: number) => {
+    const side = p.side.toUpperCase() === 'SHORT' || p.side.toUpperCase() === 'SELL' ? 'BUY' : 'SELL';
+    const px = exitPrice && exitPrice > 0 ? exitPrice : p.lastPrice > 0 ? p.lastPrice : p.avgPrice;
+    if (!(px > 0)) {
+      toast.error('Need a mark price to exit — wait for LTP or enter a what-if price');
+      return;
+    }
+    const pnl = approxPnl(p.side, p.quantity, p.avgPrice, px);
+    if (
+      !window.confirm(
+        `Exit ${p.symbol} ${p.side} × ${p.quantity} at ≈ ${inr(px)}?\nApprox P&L: ${inr(pnl)}`
+      )
+    ) {
+      return;
+    }
+    setBusyId(p.id);
+    try {
+      const optType =
+        p.optionType === 'CE' || p.optionType === 'PE'
+          ? p.optionType
+          : /CE$/i.test(p.symbol)
+            ? 'CE'
+            : /PE$/i.test(p.symbol)
+              ? 'PE'
+              : undefined;
+      await tradingService.placeOrder({
+        symbol: p.symbol,
+        tradeType: side,
+        quantity: p.quantity,
+        orderType: 'LIMIT',
+        product: p.product || 'NRML',
+        price: px,
+        isPaper: true,
+        instrumentType: /CE$|PE$/i.test(p.symbol) ? 'OPTION' : 'EQUITY',
+        optionDetails:
+          optType && p.strike != null && p.expiry
+            ? { strike: p.strike, expiry: p.expiry, optionType: optType }
+            : undefined,
+        source: 'PAPER_BOOK_EXIT',
+      });
+      toast.success(`Exited ${p.symbol} · approx ${inr(pnl)}`);
+      setWhatIfId(null);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Exit failed');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const openChart = async (p: PositionRow) => {
+    setBusyId(p.id);
+    try {
+      const und = inferUnderlying(p.symbol);
+      const rows = await tradingApi.searchInstruments(p.symbol);
+      const hit =
+        rows.find((x) => x.symbol.toUpperCase() === p.symbol.toUpperCase()) ||
+        rows.find(
+          (x) =>
+            p.strike != null &&
+            Number(x.strike) === p.strike &&
+            (x.option_type || '').toUpperCase() === (p.optionType || '').toUpperCase()
+        ) ||
+        rows[0];
+      setChartStock({
+        id: `paper-${p.id}`,
+        symbol: und,
+        exchange: p.exchange === 'BFO' || und === 'SENSEX' ? 'BSE' : 'NSE',
+        sortOrder: 0,
+        name: `${p.symbol} · ${p.side}`,
+      });
+      setChartTrade(
+        hit
+          ? {
+              instrument_id: hit.instrument_id,
+              symbol: hit.symbol,
+              instrument_type: hit.instrument_type,
+              lot_size: hit.lot_size || p.quantity || 1,
+              direct_trading_allowed: hit.direct_trading_allowed,
+              exchange: hit.exchange,
+              display_name: hit.display_name,
+              strike: hit.strike ?? p.strike,
+              option_type: hit.option_type ?? p.optionType,
+              underlying_symbol: hit.underlying_symbol ?? und,
+            }
+          : {
+              instrument_id: p.id,
+              symbol: p.symbol,
+              instrument_type: 'OPTION',
+              lot_size: p.quantity || 1,
+              direct_trading_allowed: true,
+              exchange: p.exchange || 'NFO',
+              display_name: p.symbol,
+              strike: p.strike,
+              option_type: p.optionType,
+              underlying_symbol: und,
+            }
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not open chart');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggleWhatIf = (p: PositionRow) => {
+    if (whatIfId === p.id) {
+      setWhatIfId(null);
+      return;
+    }
+    setWhatIfId(p.id);
+    setWhatIfPrice(
+      p.lastPrice > 0 ? String(Math.round(p.lastPrice * 100) / 100) : String(p.avgPrice || '')
+    );
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: 420 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontWeight: 600, fontSize: 16, color: '#f1f5f9', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 16,
+              color: '#f1f5f9',
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+            }}
+          >
             <Shield className="h-4 w-4 text-sky-300" />
             Paper Book
           </div>
           <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
             Simulated holdings, F&amp;O positions, and order fills — no live broker risk
           </div>
+          {mtmMeta?.quoteSource === 'model' || (mtmMeta?.modelMarks || 0) > 0 ? (
+            <div style={{ fontSize: 11, color: '#fcd34d', marginTop: 6 }}>
+              F&amp;O marks use model premiums (Dhan not connected). Connect Dhan for exchange LTP.
+            </div>
+          ) : mtmMeta?.quoteSource === 'broker' ? (
+            <div style={{ fontSize: 11, color: '#86efac', marginTop: 6 }}>
+              F&amp;O LTP from broker quotes
+            </div>
+          ) : null}
         </div>
         <button type="button" onClick={() => void load()} style={tabBtn(false)} disabled={loading}>
           <RefreshCw className="h-3.5 w-3.5" style={{ opacity: loading ? 0.5 : 1 }} />
@@ -301,22 +535,16 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
       )}
 
       {tab === 'positions' && (
-        <BookTable
-          empty="No open paper F&O positions. Option fills appear here when typed as OPTION."
+        <PositionsTable
           loading={loading}
-          headers={['Symbol', 'Side', 'Qty', 'Avg', 'LTP', 'MTM', 'Expiry', 'Product']}
-          rows={positions.map((p) => [
-            p.symbol,
-            p.side,
-            String(p.quantity),
-            inr(p.avgPrice),
-            inr(p.lastPrice),
-            <span key={`${p.id}-mtm`} style={{ color: p.mtm >= 0 ? '#34d399' : '#f87171' }}>
-              {inr(p.mtm)}
-            </span>,
-            p.expiry || '—',
-            p.product,
-          ])}
+          positions={positions}
+          busyId={busyId}
+          whatIfId={whatIfId}
+          whatIfPrice={whatIfPrice}
+          onWhatIfPrice={setWhatIfPrice}
+          onToggleWhatIf={toggleWhatIf}
+          onExit={(p, px) => void exitPosition(p, px)}
+          onChart={(p) => void openChart(p)}
         />
       )}
 
@@ -341,6 +569,197 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
           ])}
         />
       )}
+
+      {chartStock ? (
+        <StockChartModal
+          stock={chartStock}
+          tradeInstrument={chartTrade}
+          onClose={() => {
+            setChartStock(null);
+            setChartTrade(null);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PositionsTable({
+  loading,
+  positions,
+  busyId,
+  whatIfId,
+  whatIfPrice,
+  onWhatIfPrice,
+  onToggleWhatIf,
+  onExit,
+  onChart,
+}: {
+  loading: boolean;
+  positions: PositionRow[];
+  busyId: string | null;
+  whatIfId: string | null;
+  whatIfPrice: string;
+  onWhatIfPrice: (v: string) => void;
+  onToggleWhatIf: (p: PositionRow) => void;
+  onExit: (p: PositionRow, exitPx?: number) => void;
+  onChart: (p: PositionRow) => void;
+}) {
+  if (loading && !positions.length) {
+    return <div style={{ color: '#64748b', fontSize: 13 }}>Loading paper book…</div>;
+  }
+  if (!positions.length) {
+    return (
+      <div
+        style={{
+          padding: 18,
+          borderRadius: 10,
+          border: '1px dashed rgba(148,163,184,0.25)',
+          color: '#94a3b8',
+          fontSize: 13,
+        }}
+      >
+        No open paper F&amp;O positions. Option fills appear here when typed as OPTION.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid rgba(148,163,184,0.15)' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            {['Symbol', 'Side', 'Qty', 'Avg', 'LTP', 'MTM', 'Expiry', 'Actions'].map((h) => (
+              <th key={h} style={th}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {positions.map((p) => {
+            const target = Number(whatIfPrice);
+            const whatIfPnl =
+              whatIfId === p.id && Number.isFinite(target) && target > 0
+                ? approxPnl(p.side, p.quantity, p.avgPrice, target)
+                : null;
+            const premiumAtRisk = p.avgPrice * p.quantity;
+            const whatIfPct =
+              whatIfPnl != null && premiumAtRisk > 0 ? (whatIfPnl / premiumAtRisk) * 100 : null;
+            const busy = busyId === p.id;
+
+            return (
+              <Fragment key={p.id}>
+                <tr>
+                  <td style={td}>{p.symbol}</td>
+                  <td style={td}>{p.side}</td>
+                  <td style={td}>{p.quantity}</td>
+                  <td style={td}>{inr(p.avgPrice)}</td>
+                  <td style={td}>
+                    {inr(p.lastPrice)}
+                    {p.mtmSource === 'model' ? (
+                      <span style={{ marginLeft: 4, fontSize: 10, color: '#fcd34d' }}>mdl</span>
+                    ) : null}
+                  </td>
+                  <td style={{ ...td, color: p.mtm >= 0 ? '#34d399' : '#f87171' }}>{inr(p.mtm)}</td>
+                  <td style={td}>{p.expiry || '—'}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        style={actionBtn('rgba(248,113,113,0.75)')}
+                        onClick={() => onExit(p)}
+                        title="Square off at current LTP"
+                      >
+                        <LogOut className="h-3 w-3" />
+                        Exit
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        style={actionBtn('rgba(56,189,248,0.75)')}
+                        onClick={() => onChart(p)}
+                        title="Open chart"
+                      >
+                        <LineChart className="h-3 w-3" />
+                        Chart
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        style={actionBtn(
+                          whatIfId === p.id ? 'rgba(52,211,153,0.85)' : 'rgba(251,191,36,0.75)'
+                        )}
+                        onClick={() => onToggleWhatIf(p)}
+                        title="Approximate P&L at a target premium"
+                      >
+                        <Calculator className="h-3 w-3" />
+                        What-if
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                {whatIfId === p.id ? (
+                  <tr>
+                    <td colSpan={8} style={{ ...td, background: 'rgba(15,23,42,0.65)', whiteSpace: 'normal' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 12,
+                          alignItems: 'center',
+                          padding: '4px 0',
+                        }}
+                      >
+                        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                          Approx P&amp;L if exit premium =
+                        </span>
+                        <input
+                          style={inputSm}
+                          type="number"
+                          min={0}
+                          step={0.05}
+                          value={whatIfPrice}
+                          onChange={(e) => onWhatIfPrice(e.target.value)}
+                          aria-label="Target exit premium"
+                        />
+                        {whatIfPnl != null ? (
+                          <span
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: whatIfPnl >= 0 ? '#34d399' : '#f87171',
+                            }}
+                          >
+                            {inr(whatIfPnl)}
+                            {whatIfPct != null
+                              ? ` (${whatIfPct >= 0 ? '+' : ''}${whatIfPct.toFixed(1)}% on premium)`
+                              : ''}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 12, color: '#64748b' }}>Enter a price &gt; 0</span>
+                        )}
+                        <span style={{ fontSize: 11, color: '#64748b' }}>
+                          Formula: ({p.side === 'SHORT' ? 'avg − exit' : 'exit − avg'}) × qty
+                        </span>
+                        <button
+                          type="button"
+                          disabled={busy || !(whatIfPnl != null)}
+                          style={actionBtn('rgba(248,113,113,0.75)')}
+                          onClick={() => onExit(p, target)}
+                        >
+                          Exit at this price
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

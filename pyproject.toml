@@ -24,7 +24,6 @@ members = [
   "libs/risk-rules",
   "libs/market-simulator",
   "libs/paper-broker",
-  "libs/ibkr-orb-paper",
   "libs/performance-metrics",
   "libs/algo-platform-store",
   "libs/llm-providers",
@@ -59,7 +58,6 @@ asyncio_mode = "auto"
 testpaths = [
   "libs/advisory-core/tests",
   "libs/mcp-connectors/tests",
-  "libs/ibkr-orb-paper/tests",
   "libs/strategy-normalizer/tests",
   "libs/risk-explainability/tests",
   "libs/market-regime-detector/tests",

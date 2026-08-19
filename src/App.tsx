@@ -44,7 +44,6 @@ import { OptionsWorkspace } from './components/options/OptionsWorkspace';
 import { PaperOptionsTerminal } from './components/options/PaperOptionsTerminal';
 import { PaperBookPanel } from './components/trading/PaperBookPanel';
 import { SensexMultiAccountPortfolioPage } from './components/portfolio';
-import { UsStocksManualTradingPage } from './components/trading/us-stocks';
 import { LiveOptionsTerminal } from './components/options/LiveOptionsTerminal';
 import { StrategyBuilder } from './components/options/StrategyBuilder';
 import { RiskCenterPanel } from './components/options/RiskCenterPanel';
@@ -106,7 +105,6 @@ const SECTION_WINDOWS: Record<string, string[]> = {
   'markets-fno-scanner': ['fno-scanner'],
   'execution-governance': ['execution-governance'],
   'trading-terminal': ['trading-terminal'],
-  'trade-us-stocks': ['us-stocks-manual-trading'],
   'basket-orders': ['basket-orders'],
   'trade-paper': ['paper-options-terminal'],
   'trade-live': ['live-options-terminal'],
@@ -541,19 +539,6 @@ export default function App() {
             cascadeIndex={1}
           >
             <TradingTerminalPanel />
-          </Win>
-        );
-
-      case 'trade-us-stocks':
-        return (
-          <Win
-            id="us-stocks-manual-trading"
-            title="US Stocks Manual Trading"
-            subtitle="IBKR paper/live · ConID · preview · broker reply · audit"
-            icon={<CandlestickChart className="h-4 w-4 text-sky-300" />}
-            cascadeIndex={1}
-          >
-            <UsStocksManualTradingPage />
           </Win>
         );
 

@@ -1,0 +1,14 @@
+node_modules
+backend/node_modules
+**/node_modules
+.git
+backend/config.db
+backend/logs
+backend/scripts/output
+**/.env
+**/*.md
+dist
+build
+coverage
+agent-transcripts
+.cursor

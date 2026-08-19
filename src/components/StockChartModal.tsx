@@ -933,9 +933,23 @@ function VolumeSvg({ data, width, height }: { data: BarPoint[]; width: number; h
 export function StockChartModal({
   stock,
   onClose,
+  tradeInstrument,
 }: {
   stock: WatchlistItem;
   onClose: () => void;
+  /** When set, chart rail places paper orders on this FO contract (not index spot). */
+  tradeInstrument?: {
+    instrument_id: string;
+    symbol: string;
+    instrument_type: string;
+    lot_size: number;
+    direct_trading_allowed: boolean;
+    exchange?: string;
+    display_name?: string;
+    strike?: number | null;
+    option_type?: string | null;
+    underlying_symbol?: string | null;
+  } | null;
 }) {
   const [chartInterval, setChartInterval] = useState<string>('15m');
   const [range, setRange] = useState<string>('5d');
@@ -972,6 +986,12 @@ export function StockChartModal({
   const [winState, setWinState] = useState<'normal' | 'max' | 'min'>('normal');
   const aiReqRef = useRef(0);
   const savedSizeRef = useRef(panelSize);
+
+  useEffect(() => {
+    if (tradeInstrument?.lot_size && tradeInstrument.lot_size > 1) {
+      setQty(String(tradeInstrument.lot_size));
+    }
+  }, [tradeInstrument?.instrument_id, tradeInstrument?.lot_size]);
 
   /** Right-side paper ticket width — chart gets the rest */
   const TRADE_RAIL_W = 248;
@@ -1923,9 +1943,39 @@ export function StockChartModal({
           <div style={{ width: TRADE_RAIL_W, flexShrink: 0, minHeight: 0, overflow: 'auto' }}>
             <ChartTradePanel
               variant="rail"
-              symbol={stock.symbol}
-              price={stats.last || Number(limitPrice) || undefined}
-              qty={Math.max(1, Number(qty) || 1)}
+              symbol={tradeInstrument?.symbol || stock.symbol}
+              instrument={
+                tradeInstrument
+                  ? ({
+                      instrument_id: tradeInstrument.instrument_id,
+                      symbol: tradeInstrument.symbol,
+                      display_name: tradeInstrument.display_name || tradeInstrument.symbol,
+                      exchange: tradeInstrument.exchange || stock.exchange || 'NSE',
+                      segment: 'NFO',
+                      asset_class: 'DERIVATIVE',
+                      instrument_type: tradeInstrument.instrument_type,
+                      tradable: true,
+                      direct_trading_allowed: tradeInstrument.direct_trading_allowed,
+                      lot_size: tradeInstrument.lot_size,
+                      tick_size: 0.05,
+                      strike: tradeInstrument.strike,
+                      option_type: tradeInstrument.option_type,
+                      underlying_symbol: tradeInstrument.underlying_symbol,
+                      trading_status: 'OPEN'
+                    } as import('@/api/trading').Instrument)
+                  : undefined
+              }
+              price={
+                tradeInstrument
+                  ? Number(limitPrice) || stats.last || undefined
+                  : stats.last || Number(limitPrice) || undefined
+              }
+              qty={Math.max(
+                1,
+                Number(qty) || (tradeInstrument?.lot_size && tradeInstrument.lot_size > 1
+                  ? tradeInstrument.lot_size
+                  : 1)
+              )}
               onQtyChange={(n) => setQty(String(n))}
             />
           </div>

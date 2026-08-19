@@ -24,7 +24,6 @@
     "test:trading-terminal": "ts-node --transpile-only scripts/unit-trading-terminal.ts",
     "test:execution-governance": "ts-node --transpile-only scripts/unit-execution-governance.ts",
     "test:market-analytics": "ts-node --transpile-only scripts/unit-market-analytics.ts",
-    "test:ibkr-us-stocks": "ts-node --transpile-only scripts/unit-ibkr-us-stocks.ts",
     "test:unlock:live": "ts-node --transpile-only scripts/live-unlock.ts",
     "test:unit:oms": "ts-node --transpile-only scripts/unit-options-oms.ts",
     "test:advisory": "powershell -File ../scripts/run-advisory-tests.ps1",

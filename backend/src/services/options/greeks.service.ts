@@ -28,6 +28,8 @@ export function blackScholesGreeks(input: {
   strike: number;
   timeYears: number;
   rate?: number;
+  /** Dividend / yield. Index options default to q=r (futures-style forward = spot). */
+  dividendYield?: number;
   ivPct: number;
   optionType: 'CE' | 'PE';
 }): GreeksResult {
@@ -35,19 +37,28 @@ export function blackScholesGreeks(input: {
   const K = input.strike;
   const T = Math.max(input.timeYears, 1 / (365 * 24));
   const r = input.rate ?? 0.065;
+  const q = input.dividendYield ?? r;
   const sigma = Math.max(input.ivPct, 1) / 100;
   const sqrtT = Math.sqrt(T);
-  const d1 = (Math.log(S / K) + (r + (sigma * sigma) / 2) * T) / (sigma * sqrtT);
+  const d1 = (Math.log(S / K) + (r - q + (sigma * sigma) / 2) * T) / (sigma * sqrtT);
   const d2 = d1 - sigma * sqrtT;
+  const dfQ = Math.exp(-q * T);
+  const dfR = Math.exp(-r * T);
 
   const delta =
-    input.optionType === 'CE' ? normCdf(d1) : normCdf(d1) - 1;
-  const gamma = normPdf(d1) / (S * sigma * sqrtT);
-  const vega = (S * normPdf(d1) * sqrtT) / 100;
+    input.optionType === 'CE' ? dfQ * normCdf(d1) : dfQ * (normCdf(d1) - 1);
+  const gamma = (dfQ * normPdf(d1)) / (S * sigma * sqrtT);
+  const vega = (S * dfQ * normPdf(d1) * sqrtT) / 100;
   const theta =
     input.optionType === 'CE'
-      ? (-(S * normPdf(d1) * sigma) / (2 * sqrtT) - r * K * Math.exp(-r * T) * normCdf(d2)) / 365
-      : (-(S * normPdf(d1) * sigma) / (2 * sqrtT) + r * K * Math.exp(-r * T) * normCdf(-d2)) / 365;
+      ? (-(S * dfQ * normPdf(d1) * sigma) / (2 * sqrtT) +
+          q * S * dfQ * normCdf(d1) -
+          r * K * dfR * normCdf(d2)) /
+        365
+      : (-(S * dfQ * normPdf(d1) * sigma) / (2 * sqrtT) -
+          q * S * dfQ * normCdf(-d1) +
+          r * K * dfR * normCdf(-d2)) /
+        365;
 
   return {
     delta: Number(delta.toFixed(4)),
@@ -60,12 +71,13 @@ export function blackScholesGreeks(input: {
   };
 }
 
-/** Black-Scholes theoretical option premium (INR). */
+/** Black-Scholes theoretical option premium (INR). Index defaults: q=r (futures-style). */
 export function blackScholesPrice(input: {
   spot: number;
   strike: number;
   timeYears: number;
   rate?: number;
+  dividendYield?: number;
   ivPct: number;
   optionType: 'CE' | 'PE';
 }): number {
@@ -73,15 +85,17 @@ export function blackScholesPrice(input: {
   const K = input.strike;
   const T = Math.max(input.timeYears, 1 / (365 * 24));
   const r = input.rate ?? 0.065;
+  const q = input.dividendYield ?? r;
   const sigma = Math.max(input.ivPct, 1) / 100;
   const sqrtT = Math.sqrt(T);
-  const d1 = (Math.log(S / K) + (r + (sigma * sigma) / 2) * T) / (sigma * sqrtT);
+  const d1 = (Math.log(S / K) + (r - q + (sigma * sigma) / 2) * T) / (sigma * sqrtT);
   const d2 = d1 - sigma * sqrtT;
-  const disc = Math.exp(-r * T);
+  const dfQ = Math.exp(-q * T);
+  const dfR = Math.exp(-r * T);
   const price =
     input.optionType === 'CE'
-      ? S * normCdf(d1) - K * disc * normCdf(d2)
-      : K * disc * normCdf(-d2) - S * normCdf(-d1);
+      ? S * dfQ * normCdf(d1) - K * dfR * normCdf(d2)
+      : K * dfR * normCdf(-d2) - S * dfQ * normCdf(-d1);
   const intrinsic =
     input.optionType === 'CE' ? Math.max(0, S - K) : Math.max(0, K - S);
   return Number(Math.max(price, intrinsic * 0.99, 0.05).toFixed(2));
@@ -89,23 +103,38 @@ export function blackScholesPrice(input: {
 
 /**
  * India index option IV proxy with mild skew.
- * Near-expiry weeklies use lower effective IV so OTM premiums stay realistic.
+ * Short-dated ATM often prints ~6–8% in calm tape (≈0.55–0.7× India VIX), not raw VIX.
+ * Combined with futures-style BS (q=r), this tracks NSE weeklies (~₹80–90 ATM) instead of ~₹150+.
  */
 export function estimateIndexOptionIv(
   spot: number,
   strike: number,
   daysToExpiry: number,
-  optionType: 'CE' | 'PE'
+  optionType: 'CE' | 'PE',
+  opts?: { indiaVix?: number | null }
 ): number {
   const dte = Math.max(daysToExpiry, 0.25);
   const m = (strike - spot) / Math.max(spot, 1);
-  let iv = 12 + Math.min(10, Math.sqrt(dte) * 1.8);
-  // Skew: OTM puts richer, OTM calls cheaper
-  if (optionType === 'PE' && m < 0) iv += Math.min(8, Math.abs(m) * 80);
-  if (optionType === 'CE' && m > 0) iv += Math.min(6, Math.abs(m) * 40);
-  if (optionType === 'CE' && m < -0.005) iv -= Math.min(3, Math.abs(m) * 30);
-  if (dte <= 2) iv = Math.max(9, iv - 2);
-  return Number(Math.min(45, Math.max(8, iv)).toFixed(1));
+
+  const vix =
+    opts?.indiaVix != null && Number.isFinite(opts.indiaVix) && opts.indiaVix > 0
+      ? Number(opts.indiaVix)
+      : null;
+
+  // Calm near-dated ATM ≈ 0.5–0.6× VIX; without VIX use ~6.0% base → ~₹80–90 ATM weeklies
+  let iv = vix != null ? Math.max(5.2, vix * 0.52) : 6.0;
+  // Mild term structure (farther expiries a bit richer)
+  iv += Math.min(2.2, Math.sqrt(dte) * 0.3);
+
+  // Skew: OTM puts richer, far OTM calls a bit richer; ITM calls slightly cheaper IV
+  if (optionType === 'PE' && m < 0) iv += Math.min(5, Math.abs(m) * 65);
+  if (optionType === 'CE' && m > 0.004) iv += Math.min(3.5, Math.abs(m) * 30);
+  if (optionType === 'CE' && m < -0.004) iv -= Math.min(2, Math.abs(m) * 20);
+
+  if (dte <= 3) iv = Math.max(5.5, iv - 0.8);
+  if (dte <= 1) iv = Math.max(5, iv - 0.8);
+
+  return Number(Math.min(38, Math.max(5, iv)).toFixed(1));
 }
 
 export function daysToExpiry(expiry: Date, now = new Date()): number {

@@ -95,12 +95,6 @@ export function Sidebar({
         icon: CandlestickChart,
         children: [
           { id: 'trading-terminal', label: 'Trading Terminal', icon: CandlestickChart },
-          {
-            id: 'trade-us-stocks',
-            label: 'US Stocks (IBKR)',
-            icon: CandlestickChart,
-            badge: { text: 'IBKR', color: 'cyan' },
-          },
           { id: 'basket-orders', label: 'Basket Orders', icon: Briefcase },
           { id: 'trade-orders', label: 'Orders', icon: FileText },
           { id: 'trade-positions', label: 'Positions', icon: Briefcase },

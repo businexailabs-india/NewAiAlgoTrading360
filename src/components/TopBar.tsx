@@ -17,7 +17,6 @@ type TradeDest = {
 
 const TRADE_DESTINATIONS: TradeDest[] = [
   { id: 'trading-terminal', label: 'Trading Terminal', hint: 'India FO · paper default' },
-  { id: 'trade-us-stocks', label: 'US Stocks (IBKR)', hint: 'Paper / live profiles' },
   { id: 'basket-orders', label: 'Basket Orders', hint: 'Multi-leg paper baskets' },
   { id: 'trade-orders', label: 'Orders', hint: 'Order desk' },
   { id: 'trade-positions', label: 'Positions', hint: 'Open book' },

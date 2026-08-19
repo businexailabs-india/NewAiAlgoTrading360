@@ -359,13 +359,21 @@ export class TradingTerminalService {
         }
       }
 
-      // 3) Direct BS fallback with correct DTE
+      // 3) Direct BS fallback with correct DTE + India VIX when available
       if (premium == null) {
         const { estimateIndexOptionIv, daysToExpiry } = await import('../options/greeks.service');
         const dte = selectedExpiry
           ? daysToExpiry(new Date(`${selectedExpiry}T15:30:00+05:30`))
           : 7;
-        const iv = estimateIndexOptionIv(spot, strike, dte, optionType);
+        let indiaVix: number | null = null;
+        try {
+          const { MarketService } = await import('../market.service');
+          const vixQ = await MarketService.getQuote('INDIAVIX', userId);
+          if (vixQ.price > 0 && vixQ.price < 80) indiaVix = vixQ.price;
+        } catch {
+          /* optional */
+        }
+        const iv = estimateIndexOptionIv(spot, strike, dte, optionType, { indiaVix });
         const est = estimateOptionPremium(spot, strike, optionType, iv, {
           expiry: selectedExpiry,
           daysToExpiry: dte
@@ -373,7 +381,7 @@ export class TradingTerminalService {
         premium = est.premium;
         intrinsic = est.intrinsic;
         timeValue = est.timeValue;
-        premiumSource = 'bs-model';
+        premiumSource = indiaVix != null ? 'bs-model+vix' : 'bs-model';
       } else {
         const est = estimateOptionPremium(spot, strike, optionType, 14, {
           expiry: selectedExpiry || expiry
@@ -838,15 +846,28 @@ export class TradingTerminalService {
     body: { basket_name?: string; partial_allowed?: boolean; all_or_none?: boolean }
   ) {
     await this.getBasket(userId, basketId);
-    return prisma.basketOrder.update({
+    const data: {
+      basketName?: string;
+      partialAllowed?: boolean;
+      allOrNone?: boolean;
+    } = {};
+    if (body.basket_name != null && String(body.basket_name).trim()) {
+      data.basketName = String(body.basket_name).trim();
+    }
+    if (body.partial_allowed !== undefined) data.partialAllowed = !!body.partial_allowed;
+    if (body.all_or_none !== undefined) data.allOrNone = !!body.all_or_none;
+    const updated = await prisma.basketOrder.update({
       where: { id: basketId },
-      data: {
-        basketName: body.basket_name,
-        partialAllowed: body.partial_allowed,
-        allOrNone: body.all_or_none
-      },
+      data,
       include: { legs: true }
     });
+    await audit(userId, 'basket_updated', 'BASKET', updated.basketName, basketId);
+    return {
+      ...updated,
+      basket_name: updated.basketName,
+      basketName: updated.basketName,
+      legs: updated.legs
+    };
   }
 
   static async deleteBasket(userId: string, basketId: string) {

@@ -12,6 +12,7 @@ import {
   exchangeForUnderlying,
   type MarketExchange
 } from './market-holidays';
+import { hasWeeklyExpiries, isMonthlyOnlyUnderlying } from './fo-index-catalog';
 
 export type ExpiryKind = 'WEEKLY' | 'MONTHLY';
 
@@ -92,16 +93,62 @@ export function classifyExpiry(dateYmd: string, underlying = 'NIFTY'): ExpiryKin
   return isMonthlyExpiry(dateYmd, underlying) ? 'MONTHLY' : 'WEEKLY';
 }
 
+const MONTH_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+] as const;
+
+function displayUnderlyingName(underlying: string): string {
+  const u = underlying.toUpperCase();
+  const names: Record<string, string> = {
+    NIFTY: 'Nifty',
+    SENSEX: 'Sensex',
+    BANKNIFTY: 'Bank Nifty',
+    FINNIFTY: 'Fin Nifty',
+    MIDCPNIFTY: 'Midcap Nifty',
+    NIFTYNXT50: 'Nifty Next 50',
+    NIFTYFPI: 'Nifty FPI',
+    BANKEX: 'Bankex',
+    SENSEX50: 'Sensex 50',
+    FOCIT: 'FOCIT'
+  };
+  return names[u] || underlying;
+}
+
+/**
+ * Monthly (last expiry of month): "Nifty Aug Expiry" — not the settlement day.
+ * Weekly: "18 Aug 2026".
+ */
 function formatLabel(
   dateYmd: string,
   kind: ExpiryKind,
+  underlying: string,
   adj?: { adjusted: boolean; holidayName?: string; scheduled?: string }
 ): string {
   const d = parseYmd(dateYmd);
   const day = d.getUTCDate();
-  const mon = d.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
+  const mon = MONTH_SHORT[d.getUTCMonth()];
   const year = d.getUTCFullYear();
-  const base = `${kind === 'MONTHLY' ? 'Monthly' : 'Weekly'} - ${day} ${mon} ${year}`;
+  const nowYear = new Date().getUTCFullYear();
+
+  let base: string;
+  if (kind === 'MONTHLY') {
+    const name = displayUnderlyingName(underlying);
+    base = year !== nowYear ? `${name} ${mon} ${year} Expiry` : `${name} ${mon} Expiry`;
+  } else {
+    base = `${day} ${mon} ${year}`;
+  }
+
   if (adj?.adjusted && adj.holidayName) {
     return `${base} (was ${adj.scheduled}, ${adj.holidayName})`;
   }
@@ -115,7 +162,7 @@ function toEntryFromScheduled(scheduledYmd: string, underlying: string, forceKin
   return {
     date: settled.date,
     kind,
-    label: formatLabel(settled.date, kind, {
+    label: formatLabel(settled.date, kind, underlying, {
       adjusted: settled.adjusted,
       holidayName: settled.holidayName,
       scheduled: settled.scheduled
@@ -182,15 +229,20 @@ export function generateMonthlyExpiries(underlying: string, count = 6, from = ne
 
 /** Merged upcoming weekly + monthly calendar (deduped by settlement date).
  * Rule: within each calendar month, the last expiry date is MONTHLY; earlier ones are WEEKLY.
+ * Monthly-only indices (Bank/Fin/Midcap/…) never invent weeklies — only month-end expiries.
  */
 export function generateFoExpiryCalendar(
   underlying: string,
   opts?: { weeks?: number; months?: number; from?: Date }
 ): FoExpiryEntry[] {
-  const weeks = generateWeeklyExpiries(underlying, opts?.weeks ?? 26, opts?.from);
-  // Also ensure we have at least `months` months of last-expiry coverage beyond the weekly window
   const monthsNeeded = opts?.months ?? 8;
   const from = opts?.from || new Date();
+
+  if (isMonthlyOnlyUnderlying(underlying) || !hasWeeklyExpiries(underlying)) {
+    return generateMonthlyExpiries(underlying, monthsNeeded, from);
+  }
+
+  const weeks = generateWeeklyExpiries(underlying, opts?.weeks ?? 26, from);
   const today = ymd(new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate())));
   const wd = expiryWeekday(underlying);
   const map = new Map<string, FoExpiryEntry>();
@@ -210,11 +262,17 @@ export function generateFoExpiryCalendar(
   }
 
   const sorted = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-  return markLastExpiryOfMonthAsMonthly(sorted);
+  return markLastExpiryOfMonthAsMonthly(sorted, underlying);
 }
 
-/** Last settlement date in each YYYY-MM is the monthly expiry. */
-export function markLastExpiryOfMonthAsMonthly(entries: FoExpiryEntry[]): FoExpiryEntry[] {
+/** Last settlement date in each YYYY-MM is the monthly expiry.
+ * For monthly-only underlyings, every listed date is MONTHLY (e.g. Fin Nifty Aug Expiry).
+ */
+export function markLastExpiryOfMonthAsMonthly(
+  entries: FoExpiryEntry[],
+  underlying = 'NIFTY'
+): FoExpiryEntry[] {
+  const monthlyOnly = isMonthlyOnlyUnderlying(underlying);
   const byMonth = new Map<string, string>(); // YYYY-MM → last date
   for (const e of entries) {
     const key = e.date.slice(0, 7);
@@ -223,11 +281,12 @@ export function markLastExpiryOfMonthAsMonthly(entries: FoExpiryEntry[]): FoExpi
   }
   return entries.map((e) => {
     const last = byMonth.get(e.date.slice(0, 7));
-    const kind: ExpiryKind = last === e.date ? 'MONTHLY' : 'WEEKLY';
+    const kind: ExpiryKind =
+      monthlyOnly || last === e.date ? 'MONTHLY' : 'WEEKLY';
     return {
       ...e,
       kind,
-      label: formatLabel(e.date, kind, {
+      label: formatLabel(e.date, kind, underlying, {
         adjusted: !!e.holiday_adjusted,
         holidayName: e.holiday_name,
         scheduled: e.scheduled
@@ -245,7 +304,7 @@ export function classifyExpiryDates(underlying: string, dates: string[]): FoExpi
     return {
       date: d,
       kind: 'WEEKLY' as ExpiryKind,
-      label: formatLabel(d, 'WEEKLY', {
+      label: formatLabel(d, 'WEEKLY', underlying, {
         adjusted: settled.adjusted && settled.scheduled === d,
         holidayName: settled.holidayName,
         scheduled: settled.scheduled
@@ -255,7 +314,7 @@ export function classifyExpiryDates(underlying: string, dates: string[]): FoExpi
       holiday_name: settled.adjusted && settled.scheduled === d ? settled.holidayName : undefined
     };
   });
-  return markLastExpiryOfMonthAsMonthly(entries);
+  return markLastExpiryOfMonthAsMonthly(entries, underlying);
 }
 
 export function filterExpiriesByKind(

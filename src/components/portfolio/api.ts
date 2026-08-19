@@ -51,22 +51,6 @@ export const mockPortfolioService: PortfolioService = {
   async getPortfolioSummary(accountIds) {
     await delay();
     const summary = buildDemoSummary();
-    if (accountIds.length === 1 && accountIds[0] === 'acc-ibkr-hedge') {
-      return {
-        ...summary,
-        reportingCurrency: 'USD',
-        netLiquidation: 42_180,
-        investedValue: 28_400,
-        availableCash: 13_780,
-        dayPnl: 105,
-        totalPnl: 2_400,
-        realizedPnl: 0,
-        unrealizedPnl: 105,
-        marginUtilized: 6_400,
-        buyingPower: 22_000,
-        fxWarning: 'Single USD account — no INR conversion applied.',
-      };
-    }
     return summary;
   },
   async getPortfolioHistory(_accountIds, _period: HistoryPeriod, _benchmark: BenchmarkId) {

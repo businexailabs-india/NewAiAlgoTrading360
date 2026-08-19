@@ -3,7 +3,7 @@
  * Separate from broker wire formats — map at the adapter boundary.
  */
 
-export type BrokerId = 'dhan' | 'ibkr' | 'zerodha' | 'upstox' | 'paper' | 'other';
+export type BrokerId = 'dhan' | 'zerodha' | 'upstox' | 'paper' | 'other';
 export type ExchangeId = 'BSE' | 'NSE' | 'GLOBAL' | 'UNMAPPED';
 export type SegmentId = 'EQ' | 'FO' | 'CD' | 'COM' | 'OTHER';
 export type ProductType = 'CNC' | 'MIS' | 'NRML' | 'MTF' | 'OTHER';

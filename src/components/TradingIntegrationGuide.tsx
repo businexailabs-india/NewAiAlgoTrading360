@@ -116,7 +116,7 @@ export function TradingIntegrationGuide() {
                     <ul className="text-sm text-gray-300 space-y-1">
                       <li>• Zerodha (Kite Connect API)</li>
                       <li>• AngelOne (SmartAPI)</li>
-                      <li>• Interactive Brokers (IB Gateway)</li>
+                      <li>• Dhan (DhanHQ API)</li>
                       <li>• Upstox, 5Paisa (coming soon)</li>
                     </ul>
                   </div>
@@ -405,51 +405,6 @@ print(f"Order ID: {order_id}")`}
                     <li>• Order modification & cancellation</li>
                     <li>• Portfolio holdings & positions API</li>
                   </ul>
-                </div>
-              </div>
-            </div>
-
-            {/* Interactive Brokers */}
-            <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white text-xl">Interactive Brokers (IBKR)</h3>
-                <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">Enterprise</Badge>
-              </div>
-              
-              <div className="space-y-4 text-gray-300">
-                <p>
-                  IBKR provides global market access including NSE/BSE through IB Gateway or TWS API.
-                </p>
-
-                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <h5 className="text-yellow-400 mb-1">Prerequisites:</h5>
-                      <p className="text-sm">
-                        Requires IB Gateway installed and running. Minimum account balance of $10,000 for Indian market access.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-gray-900/50 rounded-lg p-4 font-mono text-sm">
-                  <div className="text-gray-400 mb-2"># Python Example - Using ib_insync</div>
-                  <pre className="text-cyan-400 overflow-x-auto">
-{`from ib_insync import *
-
-ib = IB()
-ib.connect('127.0.0.1', 7497, clientId=1)
-
-# Define Indian stock contract
-contract = Stock('RELIANCE', 'NSE', 'INR')
-
-# Place order
-order = MarketOrder('BUY', 1)
-trade = ib.placeOrder(contract, order)
-
-print(f"Order status: {trade.orderStatus.status}")`}
-                  </pre>
                 </div>
               </div>
             </div>

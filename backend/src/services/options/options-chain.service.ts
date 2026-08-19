@@ -3,6 +3,7 @@ import { InstrumentMasterService } from './instrument-master.service';
 import { blackScholesGreeks, blackScholesPrice, daysToExpiry, estimateIndexOptionIv, yearsToExpiry } from './greeks.service';
 import { OptionsService } from '../options.service';
 import { OptionQuoteService } from './option-quote.service';
+import { foLotSize } from '../../libs/trading/fo-index-catalog';
 
 export type ChainRow = {
   strike: number;
@@ -47,11 +48,12 @@ function estimatePremium(
   spot: number,
   strike: number,
   optionType: 'CE' | 'PE',
-  expiry: string | Date
+  expiry: string | Date,
+  indiaVix?: number | null
 ): { ltp: number; iv: number } {
   const expDate = typeof expiry === 'string' ? new Date(`${expiry}T15:30:00+05:30`) : expiry;
   const dte = daysToExpiry(expDate);
-  const iv = estimateIndexOptionIv(spot, strike, dte, optionType);
+  const iv = estimateIndexOptionIv(spot, strike, dte, optionType, { indiaVix });
   const expYmd =
     typeof expiry === 'string' ? expiry.slice(0, 10) : expiry.toISOString().slice(0, 10);
   const ltp = blackScholesPrice({
@@ -79,15 +81,91 @@ function oiSignal(oi: number, previousOi: number, changePercent: number): Contra
 export class OptionsChainService {
   static async getUnderlyings() {
     const list = await InstrumentMasterService.listUnderlyings();
+    if (list.length > 0) {
+      return {
+        underlyings: list,
+        source: 'instrument_master' as const,
+        empty: false
+      };
+    }
+    // Before sync: expose Dhan-aligned catalog so UI can still pick indices
+    const { foDerivativeUnderlyings, SPOT_ONLY_INDICES } = await import('../../libs/trading/fo-index-catalog');
+    const catalog = [
+      ...foDerivativeUnderlyings().map((x) => ({
+        id: `catalog-${x.symbol}`,
+        symbol: x.symbol,
+        exchange: x.exchange,
+        segment: x.exchange === 'BSE' ? 'BFO' : 'NFO',
+        name: x.name,
+        instrumentKind: 'INDEX' as const,
+        lotSizeHint: x.lot,
+        syncedAt: null as Date | null,
+        brokerSource: 'catalog',
+        strikeStep: x.step,
+        hasDerivatives: true
+      })),
+      ...SPOT_ONLY_INDICES.map((x) => ({
+        id: `catalog-${x.symbol}`,
+        symbol: x.symbol,
+        exchange: 'NSE',
+        segment: 'IDX',
+        name: x.name,
+        instrumentKind: 'INDEX' as const,
+        lotSizeHint: 1,
+        syncedAt: null as Date | null,
+        brokerSource: 'catalog',
+        strikeStep: null as number | null,
+        hasDerivatives: false
+      }))
+    ];
     return {
-      underlyings: list,
-      source: 'instrument_master' as const,
-      empty: list.length === 0
+      underlyings: catalog,
+      source: 'fo_catalog' as const,
+      empty: false,
+      message: 'Run POST /api/options/sync to load Dhan strikes, lots, option & future chains.'
     };
   }
 
   static async getExpiries(underlying: string) {
     return InstrumentMasterService.listExpiryCalendar(underlying);
+  }
+
+  /** Futures chain (near/next/far) from instrument master. */
+  static async getFuturesChain(underlying: string) {
+    const sym = underlying.toUpperCase();
+    const { foLotSize, getFoIndex, SPOT_ONLY_INDICES } = await import('../../libs/trading/fo-index-catalog');
+    const spotOnly = SPOT_ONLY_INDICES.find((x) => x.symbol === sym);
+    if (spotOnly) {
+      return {
+        underlying: sym,
+        futures: [],
+        available: false,
+        providerStatus: 'unavailable' as const,
+        message: `${spotOnly.name} is spot-only on Dhan — no index futures/options.`
+      };
+    }
+    const { futures } = await InstrumentMasterService.listFutures(sym);
+    const meta = getFoIndex(sym);
+    return {
+      underlying: sym,
+      lotSize: futures[0]?.lotSize || foLotSize(sym),
+      strikeStep: meta?.step ?? null,
+      futures: futures.map((f) => ({
+        id: f.id,
+        tradingSymbol: f.tradingSymbol,
+        instrumentToken: f.instrumentToken,
+        expiry: f.expiry.toISOString().slice(0, 10),
+        lotSize: f.lotSize,
+        tickSize: f.tickSize,
+        exchange: f.exchange || meta?.exchange || 'NSE'
+      })),
+      available: futures.length > 0,
+      providerStatus: futures.length > 0 ? ('ok' as const) : ('unavailable' as const),
+      message:
+        futures.length > 0
+          ? undefined
+          : 'No futures in instrument master — run POST /api/options/sync (Dhan).'
+    };
   }
 
   static async getChain(params: {
@@ -100,12 +178,17 @@ export class OptionsChainService {
     const underlying = params.underlying.toUpperCase();
     const calendar = await InstrumentMasterService.listExpiryCalendar(underlying);
     let expiry = params.expiry;
+    let effectiveKind = params.kind || 'ALL';
+    // Monthly-only indices (Bank/Fin/Midcap/…) — force monthly filter so chain picks month contracts
+    if (calendar.monthly_only) {
+      effectiveKind = 'MONTHLY';
+    }
     if (!expiry) {
       const filtered =
-        params.kind && params.kind !== 'ALL'
-          ? calendar.calendar.filter((e) => e.kind === params.kind)
+        effectiveKind && effectiveKind !== 'ALL'
+          ? calendar.calendar.filter((e) => e.kind === effectiveKind)
           : calendar.calendar;
-      expiry = filtered[0]?.date || calendar.expiries[0];
+      expiry = filtered[0]?.date || calendar.monthly[0]?.date || calendar.expiries[0];
     }
 
     if (!expiry) {
@@ -139,7 +222,7 @@ export class OptionsChainService {
           optionType: c.optionType,
           strike: c.strike,
           expiry: c.expiry,
-          lotSize: underlying === 'SENSEX' || underlying === 'BANKEX' ? 20 : underlying === 'BANKNIFTY' ? 15 : 65,
+          lotSize: foLotSize(underlying),
           freezeQty: null,
           ltp: c.ltp,
           oi: c.oi,
@@ -207,6 +290,14 @@ export class OptionsChainService {
       }
     }
 
+    let indiaVix: number | null = null;
+    try {
+      const vixQ = await MarketService.getQuote('INDIAVIX', params.userId);
+      if (vixQ.price > 0 && vixQ.price < 80) indiaVix = vixQ.price;
+    } catch {
+      /* VIX optional for model IV */
+    }
+
     const byStrike = new Map<number, ChainRow>();
     let brokerQuoteCount = 0;
 
@@ -220,7 +311,7 @@ export class OptionsChainService {
 
       const model =
         spot > 0
-          ? estimatePremium(spot, strike, optionType, c.expiry || expiry)
+          ? estimatePremium(spot, strike, optionType, c.expiry || expiry, indiaVix)
           : { ltp: 0, iv: 14 };
       const modelLtp = model.ltp;
       const modelIv = model.iv;

@@ -74,9 +74,20 @@ const FO_UNDERLYINGS: Array<{ symbol: string; aliases: string[]; name: string; s
   { symbol: 'BANKNIFTY', aliases: ['BANKNIFTY', 'BANK NIFTY', 'NIFTY BANK'], name: 'Nifty Bank Index', step: 100 },
   { symbol: 'FINNIFTY', aliases: ['FINNIFTY', 'FIN NIFTY'], name: 'Nifty Financial Services Index', step: 50 },
   { symbol: 'MIDCPNIFTY', aliases: ['MIDCPNIFTY', 'MIDCAP NIFTY'], name: 'Nifty Midcap Select Index', step: 25 },
+  { symbol: 'NIFTYNXT50', aliases: ['NIFTYNXT50', 'NIFTY NEXT 50', 'NIFTYNXT'], name: 'Nifty Next 50 Index', step: 100 },
+  { symbol: 'NIFTYFPI', aliases: ['NIFTYFPI', 'NIFTY FPI'], name: 'Nifty FPI Index', step: 5 },
   { symbol: 'SENSEX', aliases: ['SENSEX'], name: 'BSE Sensex Index', step: 100 },
   { symbol: 'BANKEX', aliases: ['BANKEX'], name: 'BSE Bankex Index', step: 100 },
+  { symbol: 'SENSEX50', aliases: ['SENSEX50', 'SENSEX 50'], name: 'BSE Sensex 50 Index', step: 50 },
 ];
+
+/** Spot-only — no option/future chain on Dhan */
+const SPOT_ONLY_INDICES = new Set(['NIFTYAUTO', 'NIFTYIT', 'NIFTYPHARMA', 'NIFTYFMCG', 'NIFTYMETAL', 'NIFTYENERGY', 'NIFTYREALTY', 'INDIAVIX']);
+
+function foStrikeStep(underlying: string): number {
+  const u = FO_UNDERLYINGS.find((x) => x.symbol === underlying.toUpperCase());
+  return u?.step ?? 50;
+}
 
 function relatedFoScripts(query: string): StockOption[] {
   const raw = query.toUpperCase().replace(/\s+/g, ' ').trim();
