@@ -86,7 +86,7 @@ export function roleFromUserRole(role?: string | null): TradeRole {
 export function permissionForInstrumentType(instrumentType: string): TradePermission {
   const t = (instrumentType || '').toUpperCase();
   if (t.includes('OPTION')) return 'trade_options';
-  if (t.includes('FUTURE') || t === 'INDEX') return 'trade_index_derivatives';
+  if (t.includes('FUTURE') || t === 'INDEX' || t === 'COMMODITY') return 'trade_index_derivatives';
   return 'trade_stock';
 }
 

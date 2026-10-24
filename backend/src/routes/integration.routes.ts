@@ -15,10 +15,12 @@ import {
   addIndianMcpServers,
   listAccounts,
   upsertDhanAccount,
+  upsertFyersAccount,
   validateAccount,
   setAccountEnabled,
   syncAccountPortfolio,
   bootstrapEnvDhan,
+  bootstrapEnvFyers,
   getExecutionContext,
   updateExecutionContext,
   updateTradingControl,
@@ -43,7 +45,9 @@ router.post('/mcp-servers/:id/test', testMcpServer);
 
 router.get('/accounts', listAccounts);
 router.post('/accounts/dhan', upsertDhanAccount);
+router.post('/accounts/fyers', upsertFyersAccount);
 router.post('/accounts/dhan/bootstrap-env', bootstrapEnvDhan);
+router.post('/accounts/fyers/bootstrap-env', bootstrapEnvFyers);
 router.post('/accounts/:id/validate', validateAccount);
 router.post('/accounts/:id/enable', setAccountEnabled);
 router.post('/accounts/:id/sync', syncAccountPortfolio);

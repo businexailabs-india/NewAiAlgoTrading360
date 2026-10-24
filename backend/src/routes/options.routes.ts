@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth.middleware';
+import { authenticate, optionalAuth } from '../middleware/auth.middleware';
 import { asyncHandler } from '../middleware/error.middleware';
 import { Request, Response } from 'express';
 import { OptionsChainService } from '../services/options/options-chain.service';
@@ -7,14 +7,14 @@ import { InstrumentMasterService } from '../services/options/instrument-master.s
 import * as optionsController from '../controllers/options.controller';
 
 const router = Router();
-router.use(authenticate);
 
-/** Legacy heuristic chain */
-router.get('/chain/:symbol', optionsController.getOptionsChain);
-router.post('/signals', optionsController.getOptionsSignals);
+/** Legacy heuristic chain — read-only, login optional so Index desk (Nifty) works without JWT. */
+router.get('/chain/:symbol', optionalAuth, optionsController.getOptionsChain);
+router.post('/signals', authenticate, optionsController.getOptionsSignals);
 
 router.get(
   '/underlyings',
+  optionalAuth,
   asyncHandler(async (_req: Request, res: Response) => {
     const data = await OptionsChainService.getUnderlyings();
     res.json({ success: true, data });
@@ -23,6 +23,7 @@ router.get(
 
 router.get(
   '/expiries',
+  optionalAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const underlying = String(req.query.underlying || '');
     if (!underlying) {
@@ -36,6 +37,7 @@ router.get(
 
 router.get(
   '/chain',
+  optionalAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const underlying = String(req.query.underlying || '');
     const expiry = req.query.expiry ? String(req.query.expiry) : undefined;
@@ -46,7 +48,7 @@ router.get(
     const data = await OptionsChainService.getChain({
       underlying,
       expiry,
-      userId: req.user!.id,
+      userId: req.user?.id,
       includeGreeks: req.query.greeks === '1',
       kind: (['WEEKLY', 'MONTHLY', 'ALL'].includes(String(req.query.kind || '').toUpperCase())
         ? String(req.query.kind).toUpperCase()
@@ -58,6 +60,7 @@ router.get(
 
 router.get(
   '/futures',
+  optionalAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const underlying = String(req.query.underlying || '');
     if (!underlying) {
@@ -71,13 +74,14 @@ router.get(
 
 router.get(
   '/greeks',
+  optionalAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const data = await OptionsChainService.getGreeks({
       underlying: String(req.query.underlying || ''),
       expiry: req.query.expiry ? String(req.query.expiry) : undefined,
       strike: Number(req.query.strike),
       optionType: String(req.query.optionType || 'CE').toUpperCase() as 'CE' | 'PE',
-      userId: req.user!.id
+      userId: req.user?.id
     });
     res.json({ success: true, data });
   })
@@ -85,11 +89,12 @@ router.get(
 
 router.get(
   '/analytics',
+  optionalAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const data = await OptionsChainService.getAnalytics(
       String(req.query.underlying || 'NIFTY'),
       req.query.expiry ? String(req.query.expiry) : undefined,
-      req.user!.id
+      req.user?.id
     );
     res.json({ success: true, data });
   })
@@ -97,6 +102,7 @@ router.get(
 
 router.post(
   '/sync',
+  authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const brokerSource = String(req.body?.brokerSource || 'dhan');
     const data = await InstrumentMasterService.sync(brokerSource);

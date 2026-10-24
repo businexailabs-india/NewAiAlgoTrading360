@@ -3,6 +3,7 @@ import { DatabaseService } from '../services/database.service';
 import { AnalyticsService } from '../services/analytics.service';
 import { asyncHandler, AppError } from '../middleware/error.middleware';
 import { prisma } from '../config/database';
+import { logger } from '../utils/logger';
 
 export const getPortfolios = asyncHandler(async (req: Request, res: Response) => {
   const portfolios = await DatabaseService.getPortfolios(req.user!.id);
@@ -215,77 +216,114 @@ export const getPositions = asyncHandler(async (req: Request, res: Response) => 
   }
 
   if (!positions.length) {
-    const openOrders = await prisma.order.findMany({
-      where: {
-        userId,
-        status: { in: ['PENDING', 'OPEN', 'PLACED', 'PARTIAL', 'TRIGGER_PENDING'] }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100
-    });
-    for (const o of openOrders) {
-      positions.push({
-        id: o.id,
-        symbol: o.symbol,
-        side: o.tradeType,
-        quantity: o.quantity,
-        averagePrice: o.price != null ? Number(o.price) : 0,
-        lastPrice: o.price != null ? Number(o.price) : 0,
-        pnl: 0,
-        product: o.product,
-        status: 'open',
-        isPaper: o.isPaper,
-        agentId: o.agentId,
-        orderId: o.id
+    try {
+      const openOrders = await prisma.order.findMany({
+        where: {
+          userId,
+          status: { in: ['PENDING', 'OPEN', 'PLACED', 'PARTIAL', 'TRIGGER_PENDING'] }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100
       });
+      for (const o of openOrders) {
+        positions.push({
+          id: o.id,
+          symbol: o.symbol,
+          side: o.tradeType,
+          quantity: o.quantity,
+          averagePrice: o.price != null ? Number(o.price) : 0,
+          lastPrice: o.price != null ? Number(o.price) : 0,
+          pnl: 0,
+          product: o.product,
+          status: 'open',
+          isPaper: o.isPaper,
+          agentId: o.agentId,
+          orderId: o.id
+        });
+      }
+      source = openOrders.length ? 'orders' : source;
+    } catch (err) {
+      logger.warn(`Positions open-orders skipped: ${err instanceof Error ? err.message : String(err)}`);
     }
-    source = openOrders.length ? 'orders' : source;
 
-    const holdings = await DatabaseService.getHoldings(userId);
-    for (const h of holdings as Array<Record<string, unknown>>) {
-      const qty = Number(h.quantity ?? 0);
-      if (!qty) continue;
-      positions.push({
-        id: String(h.id || h.symbol),
-        symbol: String(h.symbol || '—'),
-        side: 'BUY',
-        quantity: Math.abs(qty),
-        averagePrice: Number(h.averagePrice ?? h.avgPrice ?? 0),
-        lastPrice: Number(h.currentPrice ?? h.lastPrice ?? h.averagePrice ?? 0),
-        pnl: Number(h.pnl ?? h.unrealizedPnl ?? 0),
-        product: String(h.product || 'CNC'),
-        status: 'open',
-        isPaper: Boolean(h.isPaper),
-        source: 'holding'
-      });
+    try {
+      const holdings = await DatabaseService.getHoldings(userId);
+      for (const h of holdings as Array<Record<string, unknown>>) {
+        const qty = Number(h.quantity ?? 0);
+        if (!qty) continue;
+        positions.push({
+          id: String(h.id || h.symbol),
+          symbol: String(h.symbol || '—'),
+          side: 'BUY',
+          quantity: Math.abs(qty),
+          averagePrice: Number(h.averagePrice ?? h.avgPrice ?? 0),
+          lastPrice: Number(h.currentPrice ?? h.lastPrice ?? h.averagePrice ?? 0),
+          pnl: Number(h.pnl ?? h.unrealizedPnl ?? 0),
+          product: String(h.product || 'CNC'),
+          status: 'open',
+          isPaper: Boolean(h.isPaper),
+          source: 'holding'
+        });
+      }
+      if (holdings?.length && source === 'orders') source = 'mixed';
+      else if (holdings?.length) source = 'holdings';
+    } catch (err) {
+      logger.warn(`Positions holdings skipped: ${err instanceof Error ? err.message : String(err)}`);
     }
-    if (holdings?.length && openOrders.length) source = 'mixed';
-    else if (holdings?.length) source = 'holdings';
+
+    try {
+      const { FnoPositionService } = await import('../services/options/fno-position.service');
+      const fno = await FnoPositionService.list(userId, true);
+      for (const p of fno as Array<Record<string, unknown>>) {
+        const qty = Number(p.quantity ?? p.netQty ?? 0);
+        if (!qty) continue;
+        positions.push({
+          id: String(p.id || p.tradingSymbol || positions.length),
+          symbol: String(p.tradingSymbol || p.symbol || '—'),
+          side: qty >= 0 ? 'BUY' : 'SELL',
+          quantity: Math.abs(qty),
+          averagePrice: Number(p.averagePrice ?? p.avgPrice ?? 0),
+          lastPrice: Number(p.ltp ?? p.lastPrice ?? 0),
+          pnl: Number(p.unrealizedPnl ?? p.pnl ?? 0),
+          product: String(p.product || 'NRML'),
+          status: 'open',
+          isPaper: true,
+          source: 'paper_fno'
+        });
+      }
+      if (fno?.length) source = source === 'orders' || source === 'holdings' || source === 'mixed' ? 'mixed' : 'paper';
+    } catch (err) {
+      logger.warn(`Positions paper F&O skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
-  // Closed-ish: recent completed orders for the Closed tab
-  const closedOrders = await prisma.order.findMany({
-    where: {
-      userId,
-      status: { in: ['COMPLETE', 'FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'] }
-    },
-    orderBy: { updatedAt: 'desc' },
-    take: 50
-  });
-  const closed = closedOrders.map((o) => ({
-    id: `closed-${o.id}`,
-    symbol: o.symbol,
-    side: o.tradeType,
-    quantity: o.quantity,
-    averagePrice: o.price != null ? Number(o.price) : 0,
-    lastPrice: o.price != null ? Number(o.price) : 0,
-    pnl: 0,
-    product: o.product,
-    status: 'closed' as const,
-    isPaper: o.isPaper,
-    agentId: o.agentId,
-    orderId: o.id
-  }));
+  let closed: Array<Record<string, unknown>> = [];
+  try {
+    const closedOrders = await prisma.order.findMany({
+      where: {
+        userId,
+        status: { in: ['COMPLETE', 'FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'] }
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 50
+    });
+    closed = closedOrders.map((o) => ({
+      id: `closed-${o.id}`,
+      symbol: o.symbol,
+      side: o.tradeType,
+      quantity: o.quantity,
+      averagePrice: o.price != null ? Number(o.price) : 0,
+      lastPrice: o.price != null ? Number(o.price) : 0,
+      pnl: 0,
+      product: o.product,
+      status: 'closed' as const,
+      isPaper: o.isPaper,
+      agentId: o.agentId,
+      orderId: o.id
+    }));
+  } catch (err) {
+    logger.warn(`Positions closed-orders skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   res.status(200).json({
     success: true,

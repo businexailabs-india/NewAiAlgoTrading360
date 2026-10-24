@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  Briefcase,
   Calculator,
   FileText,
   Layers,
@@ -16,29 +15,17 @@ import {
   LogOut,
   RefreshCw,
   Shield,
+  Wallet,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/lib/api';
 import { tradingApi } from '@/api/trading';
 import { tradingService } from '@/services/tradingService';
 import { StockChartModal } from '@/components/StockChartModal';
+import { FundTransferModal } from '@/components/algos/FundTransferModal';
 import type { WatchlistItem } from '@/api/watchlist';
 
-type Tab = 'holdings' | 'positions' | 'orders';
-
-type HoldingRow = {
-  id: string;
-  symbol: string;
-  exchange: string;
-  quantity: number;
-  averagePrice: number;
-  lastPrice: number;
-  investedValue: number;
-  currentValue: number;
-  pnl: number;
-  product: string;
-  broker: string;
-};
+type Tab = 'positions' | 'orders';
 
 type PositionRow = {
   id: string;
@@ -163,13 +150,12 @@ const inputSm: CSSProperties = {
   fontSize: 12,
 };
 
-export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }) {
+export function PaperBookPanel({ initialTab = 'positions' }: { initialTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cash, setCash] = useState<number | null>(null);
   const [realizedPnl, setRealizedPnl] = useState(0);
-  const [holdings, setHoldings] = useState<HoldingRow[]>([]);
   const [positions, setPositions] = useState<PositionRow[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [mtmMeta, setMtmMeta] = useState<{ quoteSource?: string; modelMarks?: number } | null>(
@@ -178,6 +164,8 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
   const [busyId, setBusyId] = useState<string | null>(null);
   const [whatIfId, setWhatIfId] = useState<string | null>(null);
   const [whatIfPrice, setWhatIfPrice] = useState('');
+  const [fundOpen, setFundOpen] = useState(false);
+  const [fundMode, setFundMode] = useState<'add' | 'withdraw'>('add');
   const [chartStock, setChartStock] = useState<WatchlistItem | null>(null);
   const [chartTrade, setChartTrade] = useState<{
     instrument_id: string;
@@ -200,9 +188,8 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
     setLoading(true);
     setError(null);
     try {
-      const [acctRes, holdRes, posRes, ordRes] = await Promise.all([
+      const [acctRes, posRes, ordRes] = await Promise.all([
         fetch(`${API_BASE_URL}/paper/account`, { headers: authHeaders() }).then((r) => r.json()),
-        fetch(`${API_BASE_URL}/portfolio/holdings`, { headers: authHeaders() }).then((r) => r.json()),
         fetch(`${API_BASE_URL}/live/positions?isPaper=true`, { headers: authHeaders() }).then((r) =>
           r.json()
         ),
@@ -213,32 +200,6 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
         setCash(Number(acctRes.data.cashBalance ?? 0));
         setRealizedPnl(Number(acctRes.data.realizedPnl ?? 0));
       }
-
-      const rawHoldings = Array.isArray(holdRes?.data) ? holdRes.data : [];
-      const mapped = rawHoldings.map((h: Record<string, unknown>, i: number) => {
-        const broker = String(
-          (h.brokerConnection as { broker?: string } | undefined)?.broker || h.broker || ''
-        ).toLowerCase();
-        return {
-          id: String(h.id || i),
-          symbol: String(h.symbol || '—'),
-          exchange: String(h.exchange || '—'),
-          quantity: Number(h.quantity || 0),
-          averagePrice: Number(h.averagePrice || 0),
-          lastPrice: Number(h.lastPrice || h.currentPrice || 0),
-          investedValue: Number(h.investedValue || 0),
-          currentValue: Number(h.currentValue || 0),
-          pnl: Number(h.pnl || 0),
-          product: String(h.product || 'CNC'),
-          broker: broker || '—',
-        };
-      });
-      const paperOnly = mapped.filter((h) => h.quantity > 0 && h.broker === 'paper');
-      setHoldings(
-        paperOnly.length
-          ? paperOnly
-          : mapped.filter((h) => h.quantity > 0 && /CE$|PE$/i.test(h.symbol))
-      );
 
       const rawPos = Array.isArray(posRes?.data) ? posRes.data : [];
       if (posRes?.meta) {
@@ -300,11 +261,6 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
     return () => window.clearInterval(id);
   }, [load]);
 
-  const holdingsInvested = useMemo(
-    () => holdings.reduce((s, h) => s + h.investedValue, 0),
-    [holdings]
-  );
-  const holdingsMtm = useMemo(() => holdings.reduce((s, h) => s + h.pnl, 0), [holdings]);
   const positionsMtm = useMemo(() => positions.reduce((s, p) => s + p.mtm, 0), [positions]);
 
   const exitPosition = async (p: PositionRow, exitPrice?: number) => {
@@ -441,7 +397,7 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
             Paper Book
           </div>
           <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
-            Simulated holdings, F&amp;O positions, and order fills — no live broker risk
+            Simulated F&amp;O positions and order fills — no live broker risk
           </div>
           {mtmMeta?.quoteSource === 'model' || (mtmMeta?.modelMarks || 0) > 0 ? (
             <div style={{ fontSize: 11, color: '#fcd34d', marginTop: 6 }}>
@@ -453,6 +409,43 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
             </div>
           ) : null}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setFundMode('add');
+            setFundOpen(true);
+          }}
+          style={{
+            ...tabBtn(false),
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            background: '#059669',
+            color: '#fff',
+            border: 'none',
+          }}
+        >
+          <Wallet className="h-3.5 w-3.5" />
+          Add Funds
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setFundMode('withdraw');
+            setFundOpen(true);
+          }}
+          style={{
+            ...tabBtn(false),
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            background: '#be123c',
+            color: '#fff',
+            border: 'none',
+          }}
+        >
+          Withdraw Funds
+        </button>
         <button type="button" onClick={() => void load()} style={tabBtn(false)} disabled={loading}>
           <RefreshCw className="h-3.5 w-3.5" style={{ opacity: loading ? 0.5 : 1 }} />
           {loading ? 'Syncing…' : 'Refresh'}
@@ -467,12 +460,6 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
         }}
       >
         <SummaryCard label="Paper cash" value={cash == null ? '—' : inr(cash, 0)} />
-        <SummaryCard label="Holdings invested" value={inr(holdingsInvested, 0)} />
-        <SummaryCard
-          label="Holdings P&L"
-          value={inr(holdingsMtm)}
-          tone={holdingsMtm >= 0 ? 'up' : 'down'}
-        />
         <SummaryCard
           label="F&O MTM"
           value={inr(positionsMtm)}
@@ -486,10 +473,6 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <button type="button" onClick={() => setTab('holdings')} style={tabBtn(tab === 'holdings')}>
-          <Briefcase className="h-3.5 w-3.5" />
-          Holdings ({holdings.length})
-        </button>
         <button type="button" onClick={() => setTab('positions')} style={tabBtn(tab === 'positions')}>
           <Layers className="h-3.5 w-3.5" />
           Positions ({positions.length})
@@ -513,26 +496,6 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
           {error}
         </div>
       ) : null}
-
-      {tab === 'holdings' && (
-        <BookTable
-          empty="No paper holdings yet. Place a paper Buy from Trading Terminal."
-          loading={loading}
-          headers={['Symbol', 'Exch', 'Qty', 'Avg', 'LTP', 'Invested', 'P&L', 'Product']}
-          rows={holdings.map((h) => [
-            h.symbol,
-            h.exchange,
-            String(h.quantity),
-            inr(h.averagePrice),
-            inr(h.lastPrice),
-            inr(h.investedValue, 0),
-            <span key={`${h.id}-pnl`} style={{ color: h.pnl >= 0 ? '#34d399' : '#f87171' }}>
-              {inr(h.pnl)}
-            </span>,
-            h.product,
-          ])}
-        />
-      )}
 
       {tab === 'positions' && (
         <PositionsTable
@@ -580,6 +543,13 @@ export function PaperBookPanel({ initialTab = 'holdings' }: { initialTab?: Tab }
           }}
         />
       ) : null}
+
+      <FundTransferModal
+        open={fundOpen}
+        initialMode={fundMode}
+        onClose={() => setFundOpen(false)}
+        onDone={() => void load()}
+      />
     </div>
   );
 }

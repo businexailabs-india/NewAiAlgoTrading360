@@ -5,13 +5,22 @@ import {
 } from './instrument-adapter';
 import { logger } from '../../../utils/logger';
 import { isIndexFoUnderlying, normalizeDhanUnderlying } from '../../../libs/trading/fo-index-catalog';
+import { isCommodityFoUnderlying } from '../../../libs/trading/fo-commodity-catalog';
 
 /** Public Dhan scrip master — strikes/expiries/lots come only from this feed. */
 const DHAN_SCRIP_MASTER_URL =
   process.env.DHAN_SCRIP_MASTER_URL ||
   'https://images.dhan.co/api-data/api-scrip-master.csv';
 
-const FO_INSTRUMENTS = new Set(['OPTIDX', 'OPTSTK', 'FUTIDX', 'FUTSTK']);
+const FO_INSTRUMENTS = new Set([
+  'OPTIDX',
+  'OPTSTK',
+  'FUTIDX',
+  'FUTSTK',
+  'FUTCOM',
+  'OPTFUT',
+  'OPTCOM'
+]);
 
 function parseCsvLine(line: string): string[] {
   const out: string[] = [];
@@ -113,8 +122,13 @@ export class DhanInstrumentAdapter implements BrokerInstrumentAdapter {
       }
 
       const exchRaw = get(iExch).toUpperCase();
-      const exchange = exchRaw.includes('BSE') || exchRaw === 'B' ? 'BSE' : 'NSE';
-      const segment = exchange === 'BSE' ? 'BFO' : 'NFO';
+      const exchange: 'NSE' | 'BSE' | 'MCX' =
+        exchRaw.includes('MCX') || exchRaw === 'M' || exchRaw === 'X'
+          ? 'MCX'
+          : exchRaw.includes('BSE') || exchRaw === 'B'
+            ? 'BSE'
+            : 'NSE';
+      const segment = exchange === 'BSE' ? 'BFO' : exchange === 'MCX' ? 'MCX' : 'NFO';
 
       const tradingSymbol = get(iTs);
       const token = get(iTok);
@@ -168,8 +182,15 @@ export class DhanInstrumentAdapter implements BrokerInstrumentAdapter {
       const lotSize = Math.max(1, Math.floor(Number(get(iLot)) || 1));
       const freezeQty = Number(get(iFreeze));
       const tickSize = Number(get(iTick));
-      const instrumentKind: 'INDEX' | 'STOCK' =
-        instrumentName.includes('IDX') || isIndexFoUnderlying(underlying) ? 'INDEX' : 'STOCK';
+      const instrumentKind: 'INDEX' | 'STOCK' | 'COMMODITY' =
+        instrumentName.includes('COM') ||
+        instrumentName === 'OPTFUT' ||
+        exchange === 'MCX' ||
+        isCommodityFoUnderlying(underlying)
+          ? 'COMMODITY'
+          : instrumentName.includes('IDX') || isIndexFoUnderlying(underlying)
+            ? 'INDEX'
+            : 'STOCK';
 
       rows.push({
         exchange,

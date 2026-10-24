@@ -158,7 +158,7 @@ export function PremiumCard({
     <section
       style={{
         borderRadius: tradeos.radius,
-        background: 'linear-gradient(180deg, rgba(18,26,43,0.95), rgba(11,18,32,0.98))',
+        background: tradeos.navySoft,
         border: `1px solid ${tradeos.cardBorder}`,
         boxShadow: tradeos.shadow,
         padding: 18,
@@ -458,7 +458,7 @@ export function CopyWebhookBox({ label, value }: { label: string; value: string 
           alignItems: 'center',
           padding: 10,
           borderRadius: 12,
-          background: 'rgba(2,6,23,0.7)',
+          background: tradeos.card,
           border: `1px solid ${tradeos.cardBorder}`
         }}
       >

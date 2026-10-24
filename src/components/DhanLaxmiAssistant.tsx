@@ -7,6 +7,8 @@ import {
   dhanlaxmiService
 } from '../services/dhanlaxmiService';
 import { useWindowStack } from '../contexts/WindowStackContext';
+import { TOP_CHROME_H } from './TopBar';
+import { MARKET_TICKER_H } from './algos/MarketTickerBar';
 
 type Turn = {
   role: 'user' | 'assistant';
@@ -26,8 +28,8 @@ const MIN_W = 340;
 const MIN_H = 380;
 const DEFAULT_W = 420;
 const DEFAULT_H = 560;
-/** Clear top menu + ticker/profile. */
-const TOP_OFFSET = 112;
+/** Clear top menu + index ticker + MCX commodity ticker. */
+const TOP_OFFSET = TOP_CHROME_H + MARKET_TICKER_H + 8;
 const EDGE_GAP = 20;
 
 export function DhanLaxmiAssistant({

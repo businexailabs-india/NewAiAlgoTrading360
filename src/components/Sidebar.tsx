@@ -13,21 +13,21 @@ import {
   Zap,
   LogOut,
   Shield,
-  Eye,
   LineChart,
   CandlestickChart,
   ScanSearch,
   FileText,
   Bell,
-  Link2,
   Lock,
-  Store,
   Sparkles,
   Activity,
+  Bot,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { TOP_CHROME_H } from './TopBar';
 import { useTradingMode } from '@/contexts/TradingModeContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { chrome } from '@/theme/chrome';
 
 export const SIDEBAR_W = 80;
 
@@ -70,12 +70,16 @@ export function Sidebar({
   onRequestLiveMode,
   onRequestPaperMode,
 }: SidebarProps) {
-  const { liveLocked, mode } = useTradingMode();
+  const { mode } = useTradingMode();
+  const { theme } = useTheme();
+  const light = theme === 'light';
+  const c = chrome(light);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     trade: true,
     advanced: false,
+    'trading-bots': true,
   });
 
   const menuItems: NavEntry[] = useMemo(
@@ -88,7 +92,20 @@ export function Sidebar({
         icon: Zap,
         badge: { text: 'SAFE', color: 'cyan' },
       },
-      { id: 'algo-library', label: 'Algo Library', icon: Layers },
+      {
+        id: 'trading-bots',
+        label: 'TradingBots',
+        icon: Bot,
+        children: [
+          { id: 'tb-dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: { text: 'PAPER', color: 'blue' } },
+          { id: 'tb-option-chain', label: 'Option Chain', icon: Layers },
+          { id: 'tb-positions', label: 'Positions', icon: Briefcase },
+          { id: 'tb-orders', label: 'Orders', icon: FileText },
+          { id: 'tb-journal', label: 'Trade Journal', icon: FileText },
+          { id: 'tb-analytics', label: 'Analytics', icon: LineChart },
+          { id: 'tb-alerts', label: 'Alerts', icon: Bell },
+        ],
+      },
       {
         id: 'trade',
         label: 'Trade',
@@ -99,32 +116,12 @@ export function Sidebar({
           { id: 'trade-orders', label: 'Orders', icon: FileText },
           { id: 'trade-positions', label: 'Positions', icon: Briefcase },
           {
-            id: 'trade-paper-holdings',
-            label: 'Paper Holdings',
-            icon: Briefcase,
-            badge: { text: 'PAPER', color: 'blue' },
-          },
-          {
             id: 'trade-paper-positions',
             label: 'Paper Positions',
             icon: Layers,
             badge: { text: 'PAPER', color: 'blue' },
           },
-          {
-            id: 'trade-live',
-            label: 'Live Trading',
-            icon: Zap,
-            badge: { text: 'LOCKED', color: 'amber' },
-            locked: liveLocked,
-            onLockedClick: () => onSectionChange('live-approval'),
-          },
         ],
-      },
-      {
-        id: 'papertrade-lab',
-        label: 'PaperTrade Lab',
-        icon: Shield,
-        badge: { text: 'SAFE', color: 'blue' },
       },
       {
         id: 'market-analytics',
@@ -132,15 +129,7 @@ export function Sidebar({
         icon: LineChart,
         badge: { text: 'PAPER', color: 'cyan' },
       },
-      {
-        id: 'live-approval',
-        label: 'Live Approval',
-        icon: FileText,
-        badge: { text: 'LOCK', color: 'amber' },
-      },
       { id: 'portfolio', label: 'Portfolio', icon: Briefcase, badge: { text: 'MULTI', color: 'cyan' } },
-      { id: 'riskguard', label: 'RiskGuard', icon: Shield, badge: { text: 'HEALTH', color: 'amber' } },
-      { id: 'watchlist', label: 'Activity', icon: Eye },
       { id: 'settings', label: 'Settings', icon: Settings },
       {
         id: 'advanced',
@@ -149,15 +138,13 @@ export function Sidebar({
         children: [
           { id: 'execution-timeline', label: 'Execution Timeline', icon: Activity },
           { id: 'execution-governance', label: 'Control Room', icon: Shield },
-          { id: 'broker-connections', label: 'BrokerConnect', icon: Link2 },
           { id: 'admin', label: 'Admin', icon: User },
           { id: 'quant-lab', label: 'Quant Lab', icon: BarChart3, badge: { text: 'OPTIONAL', color: 'purple' } },
           { id: 'algo-suitability', label: 'Algo Suitability', icon: Layers },
-          { id: 'risk-center', label: 'Risk Center (legacy)', icon: Shield },
         ],
       },
     ],
-    [liveLocked, onSectionChange]
+    [onSectionChange]
   );
 
   const bottomItems = [
@@ -210,25 +197,37 @@ export function Sidebar({
         type="button"
         onClick={() => clickLeaf(item)}
         className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all ${
-          isActive ? 'text-cyan-200' : 'text-gray-400 hover:text-white'
+          isActive
+            ? light
+              ? 'text-emerald-700'
+              : 'text-cyan-200'
+            : light
+              ? 'text-slate-600 hover:text-slate-900'
+              : 'text-gray-400 hover:text-white'
         } ${nested && isExpanded ? 'ml-2' : ''}`}
         style={
           isActive
             ? {
-                background:
-                  item.id === 'trade-live'
+                background: light
+                  ? item.id === 'trade-live'
+                    ? '#fff7ed'
+                    : '#ecfeff'
+                  : item.id === 'trade-live'
                     ? 'linear-gradient(90deg, rgba(251,146,60,0.25) 0%, rgba(220,38,38,0.15) 100%)'
                     : item.id === 'trade-paper'
                       ? 'linear-gradient(90deg, rgba(56,189,248,0.28) 0%, rgba(14,165,233,0.16) 100%)'
                       : 'linear-gradient(90deg, rgba(34,211,238,0.28) 0%, rgba(16,185,129,0.18) 100%)',
-                border:
-                  item.id === 'trade-live'
+                border: light
+                  ? item.id === 'trade-live'
+                    ? '1px solid #fdba74'
+                    : '1px solid #99f6e4'
+                  : item.id === 'trade-live'
                     ? '1px solid rgba(251,146,60,0.5)'
                     : '1px solid rgba(34,211,238,0.45)',
               }
             : {
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.06)',
+                background: light ? '#ffffff' : 'rgba(255,255,255,0.03)',
+                border: light ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.06)',
               }
         }
       >
@@ -251,7 +250,7 @@ export function Sidebar({
           )}
         </AnimatePresence>
         {!isExpanded && (
-          <div className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
+          <div className={`pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg border px-3 py-2 text-sm opacity-0 transition-opacity group-hover:opacity-100 ${light ? 'border-slate-200 bg-white text-slate-800 shadow-md' : 'border-gray-700 bg-gray-800 text-white'}`}>
             {item.label}
             {item.locked ? ' (locked)' : ''}
           </div>
@@ -266,10 +265,9 @@ export function Sidebar({
       style={{
         top: TOP_CHROME_H,
         height: `calc(100vh - ${TOP_CHROME_H}px)`,
-        background:
-          'linear-gradient(180deg, rgba(2,6,23,1) 0%, rgba(8,47,73,0.98) 35%, rgba(6,78,59,0.35) 100%)',
-        borderRight: '1px solid rgba(34,211,238,0.35)',
-        boxShadow: '8px 0 28px rgba(0,0,0,0.45)',
+        background: c.barBg,
+        borderRight: `1px solid ${c.barBorder}`,
+        boxShadow: light ? '4px 0 16px rgba(15,23,42,0.06)' : '8px 0 28px rgba(0,0,0,0.45)',
         backdropFilter: 'blur(18px)',
       }}
       initial={{ width: SIDEBAR_W }}
@@ -282,14 +280,14 @@ export function Sidebar({
         if (!isPinned) setIsExpanded(false);
       }}
     >
-      <div className="flex items-center justify-center border-b border-cyan-500/20 px-2 py-2" style={{ minHeight: 40 }}>
+      <div className={`flex items-center justify-center px-2 py-2 ${light ? 'border-b border-slate-200' : 'border-b border-cyan-500/20'}`} style={{ minHeight: 40 }}>
         <button
           type="button"
           onClick={() => {
             setIsPinned((p) => !p);
             setIsExpanded((e) => (!isPinned ? true : e));
           }}
-          className="flex h-8 w-full items-center justify-center rounded-lg text-slate-400 hover:text-cyan-300"
+          className={`flex h-8 w-full items-center justify-center rounded-lg ${light ? 'text-slate-500 hover:text-slate-800' : 'text-slate-400 hover:text-cyan-300'}`}
           title={isPinned ? 'Unpin' : 'Pin'}
         >
           {isExpanded ? (
@@ -321,11 +319,23 @@ export function Sidebar({
                   setOpenGroups((g) => ({ ...g, [item.id]: !g[item.id] }));
                 }}
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm ${
-                  childActive ? 'text-cyan-200' : 'text-slate-400 hover:text-white'
+                  childActive
+                    ? light
+                      ? 'text-emerald-700'
+                      : 'text-cyan-200'
+                    : light
+                      ? 'text-slate-600 hover:text-slate-900'
+                      : 'text-slate-400 hover:text-white'
                 }`}
                 style={{
-                  background: childActive ? 'rgba(34,211,238,0.12)' : 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.06)',
+                  background: childActive
+                    ? light
+                      ? '#ecfeff'
+                      : 'rgba(34,211,238,0.12)'
+                    : light
+                      ? '#ffffff'
+                      : 'rgba(255,255,255,0.03)',
+                  border: light ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.06)',
                 }}
               >
                 <Icon className="h-4 w-4 shrink-0" />
@@ -344,7 +354,7 @@ export function Sidebar({
         })}
       </div>
 
-      <div className="space-y-2 border-t border-cyan-500/20 bg-slate-950/55 px-2.5 py-3">
+      <div className={`space-y-2 px-2.5 py-3 ${light ? 'border-t border-slate-200 bg-slate-50' : 'border-t border-cyan-500/20 bg-slate-950/55'}`}>
         {bottomItems.map((item) => renderLeaf(item as NavLeaf))}
         {onLogout ? (
           <button
@@ -358,17 +368,20 @@ export function Sidebar({
         ) : null}
       </div>
 
-      <div className="border-t border-cyan-500/20 p-2.5">
+      <div className={`p-2.5 ${light ? 'border-t border-slate-200' : 'border-t border-cyan-500/20'}`}>
         <div
           className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ${isExpanded ? '' : 'justify-center'}`}
-          style={{ background: 'rgba(34,211,238,0.1)', border: '1px solid rgba(34,211,238,0.25)' }}
+          style={{
+            background: light ? '#ecfeff' : 'rgba(34,211,238,0.1)',
+            border: light ? '1px solid #a5f3fc' : '1px solid rgba(34,211,238,0.25)'
+          }}
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 to-emerald-500 text-sm text-white">
             {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}
           </div>
           {isExpanded ? (
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-white">{user?.name || 'Trader'}</div>
+              <div className={`truncate text-sm ${light ? 'text-slate-900' : 'text-white'}`}>{user?.name || 'Trader'}</div>
               <div className="truncate text-[10px] text-slate-400">{user?.email || ''}</div>
             </div>
           ) : null}

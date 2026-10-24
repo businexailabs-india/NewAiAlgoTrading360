@@ -4,6 +4,8 @@ import { DatabaseService } from './database.service';
 import { EncryptionService } from './encryption.service';
 import { AppError } from '../middleware/error.middleware';
 import { calculatePnL } from '../utils/helpers';
+import { FyersService } from './fyers.service';
+import { FyersDirectAdapter } from './fyers-direct.adapter';
 
 export class BrokerService {
   static generateZerodhaChecksum(requestToken: string): string {
@@ -23,6 +25,13 @@ export class BrokerService {
         return `https://api.upstox.com/v2/login/authorization/dialog?client_id=${process.env.UPSTOX_API_KEY}&redirect_uri=${encodeURIComponent(process.env.UPSTOX_REDIRECT_URL || '')}&response_type=code`;
       case 'angelone':
         return `https://smartapi.angelbroking.com/publisher-login?api_key=${process.env.ANGELONE_API_KEY}`;
+      case 'fyers': {
+        const appId = process.env.FYERS_APP_ID || '';
+        const redirect = encodeURIComponent(
+          process.env.FYERS_REDIRECT_URL || 'http://localhost:3001/api/broker/callback?broker=fyers'
+        );
+        return `https://api-t1.fyers.in/api/v3/generate-authcode?client_id=${encodeURIComponent(appId)}&redirect_uri=${redirect}&response_type=code&state=algo360`;
+      }
       default:
         throw new AppError('Unsupported broker', 400);
     }
@@ -64,6 +73,26 @@ export class BrokerService {
           refreshToken: response.data.refresh_token
         };
       }
+      case 'fyers': {
+        if (!params.code) throw new AppError('Authorization code is required', 400);
+        const appId = process.env.FYERS_APP_ID || '';
+        const appSecret = process.env.FYERS_APP_SECRET || '';
+        const appIdHash = crypto.createHash('sha256').update(`${appId}:${appSecret}`).digest('hex');
+        const response = await axios.post(
+          `${(process.env.FYERS_BASE_URL || 'https://api-t1.fyers.in').replace(/\/$/, '')}/api/v3/validate-authcode`,
+          {
+            grant_type: 'authorization_code',
+            appIdHash,
+            code: params.code
+          }
+        );
+        const accessToken = response.data?.access_token || response.data?.data?.access_token;
+        if (!accessToken) throw new AppError('Fyers did not return an access token', 502);
+        return {
+          accessToken,
+          refreshToken: response.data?.refresh_token || response.data?.data?.refresh_token || null
+        };
+      }
       default:
         throw new AppError('Unsupported broker', 400);
     }
@@ -86,6 +115,14 @@ export class BrokerService {
           { headers: { Authorization: `Bearer ${accessToken}` } }
         );
         return response.data.data || [];
+      }
+      case 'fyers': {
+        const adapter = new FyersDirectAdapter({
+          appId: process.env.FYERS_APP_ID || '',
+          accessToken
+        });
+        const raw = await adapter.getHoldings();
+        return Array.isArray(raw?.holdings) ? raw.holdings : Array.isArray(raw?.data) ? raw.data : [];
       }
       default:
         throw new AppError('Unsupported broker', 400);
@@ -129,6 +166,22 @@ export class BrokerService {
           open: q.ohlc?.open,
           high: q.ohlc?.high,
           low: q.ohlc?.low,
+          volume: q.volume
+        }));
+      }
+      case 'fyers': {
+        const map = await FyersService.getQuotes(symbols, {
+          appId: process.env.FYERS_APP_ID || '',
+          accessToken
+        });
+        return [...map.values()].map((q) => ({
+          symbol: q.symbol,
+          price: q.price,
+          change: q.change,
+          changePercent: q.changePercent,
+          open: q.open,
+          high: q.high,
+          low: q.low,
           volume: q.volume
         }));
       }

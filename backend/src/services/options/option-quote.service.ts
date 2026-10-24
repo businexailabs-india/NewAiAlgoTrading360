@@ -2,6 +2,7 @@ import axios from 'axios';
 import { prisma } from '../../config/database';
 import { EncryptionService } from '../encryption.service';
 import { DhanService, DHAN_IDX_IDS, DHAN_NSE_EQ_IDS } from '../dhan.service';
+import { foCommodityUnderlyings } from '../../libs/trading/fo-commodity-catalog';
 import { foDerivativeUnderlyings } from '../../libs/trading/fo-index-catalog';
 import { logger } from '../../utils/logger';
 
@@ -18,7 +19,12 @@ const UNDERLYING_SCRIP: Record<string, { scrip: number; seg: string }> = {
   // Extra aliases
   NIFTY: { scrip: DHAN_IDX_IDS.NIFTY ?? 13, seg: 'IDX_I' },
   BANKNIFTY: { scrip: DHAN_IDX_IDS.BANKNIFTY ?? 25, seg: 'IDX_I' },
-  SENSEX: { scrip: DHAN_IDX_IDS.SENSEX ?? 51, seg: 'IDX_I' }
+  SENSEX: { scrip: DHAN_IDX_IDS.SENSEX ?? 51, seg: 'IDX_I' },
+  ...Object.fromEntries(
+    foCommodityUnderlyings()
+      .filter((x) => x.dhanScripId > 0)
+      .map((x) => [x.symbol, { scrip: x.dhanScripId, seg: 'MCX_COMM' as const }])
+  )
 };
 
 export type DepthQuote = {

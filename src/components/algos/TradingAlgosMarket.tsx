@@ -2,9 +2,11 @@ import { useMemo, useState, type ReactNode } from 'react';
 import type { AlgoCatalogItem, AlgoCategory } from './algosCatalog';
 import { categoryLabel, formatInr, pctColor } from './algosCatalog';
 import { Sparkline } from './Sparkline';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const SUB_TABS: Array<{ id: 'all' | AlgoCategory; label: string }> = [
   { id: 'all', label: 'All Algos' },
+  { id: 'hedged_options', label: 'Hedged Options' },
   { id: 'credit_spread', label: 'Credit Spread' },
   { id: 'option_buying', label: 'Option Buying' },
   { id: 'short_straddle', label: 'Short Straddle' },
@@ -14,12 +16,18 @@ const SUB_TABS: Array<{ id: 'all' | AlgoCategory; label: string }> = [
 export function TradingAlgosMarket({
   items,
   onSelect,
-  showFilters = true
+  showFilters = true,
+  onOpenTradingBots
 }: {
   items: AlgoCatalogItem[];
   onSelect: (algo: AlgoCatalogItem) => void;
   showFilters?: boolean;
+  onOpenTradingBots?: () => void;
 }) {
+  const { theme } = useTheme();
+  const light = theme === 'light';
+  const ink = light ? '#0f172a' : '#e2e8f0';
+  const muted = light ? '#64748b' : '#94a3b8';
   const [sub, setSub] = useState<'all' | AlgoCategory>('all');
   const [capital, setCapital] = useState<string[]>([]);
   const [popularity, setPopularity] = useState<string[]>([]);
@@ -59,11 +67,11 @@ export function TradingAlgosMarket({
             flexShrink: 0,
             borderRadius: 12,
             border: '1px solid rgba(148,163,184,0.2)',
-            background: 'rgba(15,23,42,0.65)',
+            background: light ? '#f8fafc' : 'rgba(15,23,42,0.65)',
             padding: 12
           }}
         >
-          <div style={{ fontWeight: 600, fontSize: 13, color: '#f1f5f9', marginBottom: 12 }}>Find best algos by</div>
+          <div style={{ fontWeight: 600, fontSize: 13, color: ink, marginBottom: 12 }}>Find best algos by</div>
           <FilterGroup title="Capital Required">
             {[
               ['50k', 'Under ₹ 50,000'],
@@ -87,6 +95,28 @@ export function TradingAlgosMarket({
       )}
 
       <div style={{ flex: 1, minWidth: 0 }}>
+        {onOpenTradingBots ? (
+          <button
+            type="button"
+            onClick={onOpenTradingBots}
+            style={{
+              width: '100%',
+              marginBottom: 12,
+              padding: '12px 14px',
+              borderRadius: 12,
+              textAlign: 'left',
+              cursor: 'pointer',
+              border: '1px solid rgba(45,212,191,0.45)',
+              background: 'rgba(45,212,191,0.08)',
+              color: ink
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 13 }}>TradingBots · Support & Resistance Hedging</div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 4 }}>
+              Built-in paper bot: resistance break → bull put · support break → bear call. Open the TradingBots tab.
+            </div>
+          </button>
+        ) : null}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           {SUB_TABS.map((t) => (
             <button
@@ -99,7 +129,7 @@ export function TradingAlgosMarket({
                 fontSize: 12,
                 border: sub === t.id ? '1px solid rgba(52,211,153,0.55)' : '1px solid rgba(148,163,184,0.2)',
                 background: sub === t.id ? 'rgba(16,185,129,0.15)' : 'transparent',
-                color: sub === t.id ? '#6ee7b7' : '#94a3b8',
+                color: sub === t.id ? (light ? '#047857' : '#6ee7b7') : muted,
                 cursor: 'pointer'
               }}
             >
@@ -144,12 +174,12 @@ export function TradingAlgosMarket({
                 background: 'transparent',
                 textAlign: 'left',
                 cursor: 'pointer',
-                color: '#e2e8f0'
+                color: ink
               }}
             >
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{algo.name}</div>
-                <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                <div style={{ fontSize: 11, color: muted }}>
                   {categoryLabel(algo.category)} · {algo.style}
                 </div>
               </div>
@@ -174,7 +204,7 @@ export function TradingAlgosMarket({
 function FilterGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#cbd5e1', marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#334155', marginBottom: 8 }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{children}</div>
     </div>
   );

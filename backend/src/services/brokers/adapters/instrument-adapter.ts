@@ -11,7 +11,7 @@ export type BrokerInstrumentRow = {
   lotSize: number;
   freezeQty: number | null;
   tickSize: number | null;
-  instrumentKind: 'INDEX' | 'STOCK';
+  instrumentKind: 'INDEX' | 'STOCK' | 'COMMODITY';
   name?: string;
   rawMeta?: Record<string, unknown>;
 };

@@ -3,6 +3,7 @@ import { EncryptionService } from './encryption.service';
 import { McpHttpClient } from './mcp-http.client';
 import { capabilityMatrixFromTools, DHAN_CAPABILITY_REGISTRY } from './dhan-capability.registry';
 import { DhanDirectAdapter } from './dhan-direct.adapter';
+import { FyersDirectAdapter } from './fyers-direct.adapter';
 import { DhanMcpAdapter } from './dhan-mcp.adapter';
 import { ExecutionTargetResolver } from './execution-target.resolver';
 import { RiskGateService } from './risk-gate.service';
@@ -450,6 +451,62 @@ export class IntegrationService {
     return sanitizeAccount(conn);
   }
 
+  static async upsertFyersAccount(userId: string, body: {
+    displayName?: string;
+    appId: string;
+    accessToken: string;
+    providerType?: 'DIRECT' | 'MCP';
+    mcpServerConfigId?: string;
+    externalAccountId?: string;
+  }) {
+    if (!body.appId || !body.accessToken) {
+      throw new AppError('appId and accessToken are required', 400);
+    }
+
+    if (body.mcpServerConfigId) {
+      const mcp = await prisma.mcpServerConfig.findFirst({ where: { id: body.mcpServerConfigId, userId } });
+      if (!mcp) throw new AppError('MCP server not found', 404);
+    }
+
+    const existing = await prisma.brokerConnection.findFirst({
+      where: { userId, broker: 'fyers', isActive: true, externalAccountId: body.externalAccountId || body.appId }
+    });
+
+    const data = {
+      displayName: body.displayName || `Fyers ${EncryptionService.maskSecret(body.appId, 4)}`,
+      externalAccountId: body.externalAccountId || body.appId,
+      clientIdEncrypted: EncryptionService.encrypt(body.appId),
+      accessTokenEncrypted: EncryptionService.encrypt(body.accessToken),
+      credentialsEncrypted: EncryptionService.encryptJson({
+        appId: body.appId,
+        clientId: body.appId,
+        accessToken: body.accessToken
+      }),
+      credentialKeyVersion: EncryptionService.currentKeyVersion(),
+      providerType: body.providerType || (body.mcpServerConfigId ? 'MCP' : 'DIRECT'),
+      mcpServerConfigId: body.mcpServerConfigId || null,
+      status: 'PENDING',
+      isEnabled: true,
+      isActive: true,
+      broker: 'fyers'
+    };
+
+    const conn = existing
+      ? await prisma.brokerConnection.update({ where: { id: existing.id }, data })
+      : await prisma.brokerConnection.create({ data: { userId, ...data } });
+
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: existing ? 'FYERS_ACCOUNT_UPDATE' : 'FYERS_ACCOUNT_CREATE',
+        resource: 'broker_connections',
+        details: { id: conn.id, providerType: conn.providerType }
+      }
+    });
+
+    return sanitizeAccount(conn);
+  }
+
   static async validateAccount(userId: string, id: string) {
     const conn = await prisma.brokerConnection.findFirst({
       where: { id, userId },
@@ -491,6 +548,29 @@ export class IntegrationService {
           'portfolio.holdings': ok,
           'orderbook.list': ok
         };
+      } else if (String(conn.broker).toLowerCase() === 'fyers') {
+        const creds = EncryptionService.decryptJson<{ appId?: string; clientId?: string; accessToken: string }>(
+          conn.credentialsEncrypted
+        );
+        const appId =
+          creds?.appId ||
+          creds?.clientId ||
+          (conn.clientIdEncrypted ? EncryptionService.decrypt(conn.clientIdEncrypted) : '') ||
+          process.env.FYERS_APP_ID ||
+          '';
+        const accessToken =
+          creds?.accessToken ||
+          (conn.accessTokenEncrypted ? EncryptionService.decrypt(conn.accessTokenEncrypted) : '');
+        if (!appId || !accessToken) throw new Error('Missing Fyers appId / accessToken');
+        const adapter = new FyersDirectAdapter({ appId, accessToken });
+        const probe = await adapter.probe();
+        ok = probe.ok;
+        error = probe.error;
+        capabilities = {
+          'market.quotes': ok,
+          'portfolio.holdings': ok,
+          'portfolio.funds': ok
+        };
       } else {
         throw new Error(`Unsupported broker for validation: ${conn.broker}`);
       }
@@ -522,13 +602,29 @@ export class IntegrationService {
       include: { mcpServerConfig: true }
     });
     if (!conn) throw new AppError('Account not found', 404);
-    if (conn.broker !== 'dhan') {
-      throw new AppError('Portfolio sync currently supports Dhan accounts', 400);
+    if (conn.broker !== 'dhan' && conn.broker !== 'fyers') {
+      throw new AppError('Portfolio sync currently supports Dhan and Fyers accounts', 400);
     }
 
     let raw: unknown;
     try {
-      if (conn.providerType === 'MCP' && conn.mcpServerConfig) {
+      if (conn.broker === 'fyers') {
+        const creds = EncryptionService.decryptJson<{ appId?: string; clientId?: string; accessToken: string }>(
+          conn.credentialsEncrypted
+        );
+        const appId =
+          creds?.appId ||
+          creds?.clientId ||
+          (conn.clientIdEncrypted ? EncryptionService.decrypt(conn.clientIdEncrypted) : '') ||
+          process.env.FYERS_APP_ID ||
+          '';
+        const accessToken =
+          creds?.accessToken ||
+          (conn.accessTokenEncrypted ? EncryptionService.decrypt(conn.accessTokenEncrypted) : '');
+        if (!appId || !accessToken) throw new AppError('Account credentials missing — re-save Fyers App ID + token', 400);
+        const adapter = new FyersDirectAdapter({ appId, accessToken });
+        raw = await adapter.getHoldings();
+      } else if (conn.providerType === 'MCP' && conn.mcpServerConfig) {
         const headers = EncryptionService.decryptJson<Record<string, string>>(conn.mcpServerConfig.headersEncrypted) || {};
         const auth = EncryptionService.decryptJson<Record<string, string>>(conn.mcpServerConfig.authConfigEncrypted) || {};
         const client = new McpHttpClient({
@@ -561,7 +657,7 @@ export class IntegrationService {
       throw new AppError(code ? `Dhan sync failed (${code}): ${msg}` : `Dhan sync failed: ${msg}`, 502);
     }
 
-    const rows = this.normalizeDhanHoldings(raw);
+    const rows = conn.broker === 'fyers' ? this.normalizeFyersHoldings(raw) : this.normalizeDhanHoldings(raw);
     // Replace prior Dhan holdings for this account so UI matches broker snapshot
     await prisma.holding.deleteMany({ where: { userId, brokerConnectionId: accountId } });
 
@@ -652,6 +748,28 @@ export class IntegrationService {
     return { account, sync };
   }
 
+  static async bootstrapEnvFyersAndSync(userId: string) {
+    const appId = process.env.FYERS_APP_ID || '';
+    const accessToken = process.env.FYERS_ACCESS_TOKEN || '';
+    if (!appId || !accessToken) {
+      throw new AppError('FYERS_APP_ID / FYERS_ACCESS_TOKEN not set in backend .env', 400);
+    }
+    const account = await this.upsertFyersAccount(userId, {
+      displayName: 'Fyers Env Account',
+      appId,
+      accessToken,
+      providerType: 'DIRECT',
+      externalAccountId: appId
+    });
+    let sync: Awaited<ReturnType<typeof IntegrationService.syncAccountPortfolio>> | null = null;
+    try {
+      sync = await this.syncAccountPortfolio(userId, account.id);
+    } catch {
+      /* quotes can work even if holdings sync fails */
+    }
+    return { account, sync };
+  }
+
   private static normalizeDhanHoldings(raw: unknown): Array<{
     symbol: string;
     exchange: string;
@@ -689,6 +807,45 @@ export class IntegrationService {
         isin: h.isin ? String(h.isin) : undefined
       };
     }).filter(h => h.symbol && h.quantity > 0);
+  }
+
+  private static normalizeFyersHoldings(raw: unknown): Array<{
+    symbol: string;
+    exchange: string;
+    quantity: number;
+    averagePrice: number;
+    lastPrice: number;
+    product: string;
+    isin?: string;
+  }> {
+    const list = Array.isArray((raw as { holdings?: unknown })?.holdings)
+      ? (raw as { holdings: unknown[] }).holdings
+      : Array.isArray((raw as { data?: unknown })?.data)
+        ? (raw as { data: unknown[] }).data
+        : Array.isArray(raw)
+          ? raw
+          : [];
+
+    return list.map((item) => {
+      const h = item as Record<string, unknown>;
+      const rawSymbol = String(h.symbol || h.tradingSymbol || h.fyToken || '');
+      const symbol = rawSymbol.includes(':')
+        ? rawSymbol.split(':')[1].replace(/-EQ$/i, '').replace(/-INDEX$/i, '')
+        : rawSymbol.toUpperCase();
+      const qty = Number(h.qty ?? h.quantity ?? h.remainingQuantity ?? 0);
+      const avg = Number(h.costPrice ?? h.avgPrice ?? h.averagePrice ?? 0);
+      const ltp = Number(h.ltp ?? h.lastPrice ?? h.marketVal ?? avg);
+      const exchange = rawSymbol.startsWith('BSE:') ? 'BSE' : 'NSE';
+      return {
+        symbol: symbol.toUpperCase(),
+        exchange,
+        quantity: qty,
+        averagePrice: avg,
+        lastPrice: ltp || avg,
+        product: String(h.holdingType || h.product || 'CNC'),
+        isin: h.isin ? String(h.isin) : undefined
+      };
+    }).filter((h) => h.symbol && h.quantity > 0);
   }
 
   static async setAccountEnabled(userId: string, id: string, enabled: boolean) {

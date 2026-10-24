@@ -47,6 +47,11 @@ export const getIndices = asyncHandler(async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, data: indices });
 });
 
+export const getCommodities = asyncHandler(async (_req: Request, res: Response) => {
+  const commodities = await MarketService.getCommodities();
+  res.status(200).json({ success: true, data: commodities });
+});
+
 export const searchSymbols = asyncHandler(async (req: Request, res: Response) => {
   const query = String(req.query.query ?? req.query.q ?? '');
   const results = MarketService.searchSymbols(query);

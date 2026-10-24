@@ -5,6 +5,8 @@
 
 import { advisoryMarketplaceService, type AdvisoryRecommendation } from '../../services/advisoryMarketplaceService';
 import { tradingService } from '../../services/tradingService';
+import { SEED_BOTS } from '../../modules/trading-bots/seed';
+import type { StrategyKind } from '../../modules/trading-bots/types';
 
 export type AlgoLane = 'trading' | 'investing';
 export type AlgoCategory =
@@ -63,7 +65,8 @@ export interface AlgoCatalogItem {
   avgTradesPerWeek: number;
   recoveryDays: number;
   maxRecoveryDays: number;
-  source: 'advisory' | 'strategy' | 'option' | 'agent' | 'external' | 'demo';
+  source: 'advisory' | 'strategy' | 'option' | 'agent' | 'external' | 'demo' | 'trading_bot';
+  botId?: string;
   recommendationId?: string;
   advisoryId?: string;
   optionId?: string;
@@ -83,6 +86,81 @@ function spark(seed: number, n = 24): number[] {
     out.push(Number(v.toFixed(2)));
   }
   return out;
+}
+
+function botCategory(kind: StrategyKind): AlgoCategory {
+  if (kind === 'sr_hedging' || kind === 'iron_condor') return 'hedged_options';
+  if (kind === 'breakout' || kind === 'trend') return 'option_buying';
+  return 'other';
+}
+
+function botTradeType(kind: StrategyKind): string {
+  if (kind === 'sr_hedging') return 'Bull Put / Bear Call';
+  if (kind === 'iron_condor') return 'Iron Condor';
+  if (kind === 'breakout') return 'Breakout';
+  if (kind === 'trend') return 'Trend';
+  if (kind === 'mean_reversion') return 'Mean Reversion';
+  return 'Custom';
+}
+
+/** Built-in TradingBots listed on Trading Algos. */
+export function tradingBotsCatalog(): AlgoCatalogItem[] {
+  return SEED_BOTS.map((b, i) => {
+    const kind = b.config.strategy;
+    const r1 = Number((b.todayPnl / Math.max(1, b.config.capital / 100)).toFixed(2));
+    const r3 = Number((b.totalPnl / Math.max(1, b.config.capital / 100)).toFixed(2));
+    return {
+      id: `tb-${b.id}`,
+      botId: b.id,
+      name: b.config.name,
+      subtitle: `${botTradeType(kind)} · ${b.config.underlying} · PAPER`,
+      lane: 'trading' as const,
+      category: botCategory(kind),
+      underlying: b.config.underlying,
+      minCapital: b.config.capital,
+      maxCapital: b.config.capital * 4,
+      tags: ['TradingBots', b.config.underlying, botTradeType(kind), 'Paper'],
+      returns1m: r1,
+      returns3m: r3,
+      returns6m: Number((r3 * 1.4).toFixed(2)),
+      returns1y: Number((r3 * 2.1).toFixed(2)),
+      sparkline: spark(i * 17 + 9),
+      deployedCount: 80 + i * 11,
+      trackedCount: 240 + i * 18,
+      style: kind === 'sr_hedging' ? 'Hedged Options' : botTradeType(kind),
+      segment: 'F&O',
+      tradeType: botTradeType(kind),
+      worksIn: 'Index F&O · defined-risk',
+      builtOn: 'NSE',
+      cumulativeReturn: Number((r3 * 1.6).toFixed(2)),
+      cagr: Number((r3 * 0.9).toFixed(2)),
+      avgUpMonth: 4.2,
+      avgDownMonth: -1.8,
+      successRatio: b.winRate,
+      avgProfit: 5.1,
+      avgLoss: -3.4,
+      risk: b.riskLevel === 'HIGH' ? 'High' : b.riskLevel === 'MEDIUM' ? 'Medium' : 'Low',
+      volatility: 18 + i,
+      maxDd: -6.5 - i,
+      riskReward: '1:1.4',
+      winDays: b.winRate,
+      winMonths: Math.min(95, b.winRate + 8),
+      winQuarters: Math.min(100, b.winRate + 18),
+      maxWinStreak: 6,
+      maxLossStreak: 3,
+      sharpe: 1.1 + i * 0.05,
+      sortino: 1.4 + i * 0.05,
+      calmar: 1.6,
+      alpha: 0.8,
+      avgTradesPerWeek: 4,
+      recoveryDays: 8,
+      maxRecoveryDays: 28,
+      source: 'trading_bot' as const,
+      isDemo: false,
+      live: false,
+      metricsSource: 'estimate'
+    } satisfies AlgoCatalogItem;
+  });
 }
 
 function demoCatalog(): AlgoCatalogItem[] {
@@ -622,7 +700,8 @@ export async function loadAlgosCatalog(opts?: {
     /* ignore */
   }
 
-  const merged = [...optionItems, ...advisoryItems, ...strategyItems, ...agentItems, ...externalItems];
+  const bots = tradingBotsCatalog();
+  const merged = [...bots, ...optionItems, ...advisoryItems, ...strategyItems, ...agentItems, ...externalItems];
   // Dedupe by name+source preference (options > advisory > strategy)
   const seen = new Set<string>();
   const unique = merged.filter((item) => {
@@ -632,8 +711,8 @@ export async function loadAlgosCatalog(opts?: {
     return true;
   });
 
-  if (unique.length === 0) {
-    return { items: demoCatalog(), usedDemo: true, liveCount: 0 };
+  if (unique.length === bots.length) {
+    return { items: [...bots, ...demoCatalog()], usedDemo: true, liveCount: 0 };
   }
   return { items: unique, usedDemo: false, liveCount: unique.length };
 }

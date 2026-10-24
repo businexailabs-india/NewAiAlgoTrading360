@@ -55,9 +55,12 @@ class MarketDataService {
   private cache: Map<string, { data: unknown; timestamp: number }> = new Map();
   private cacheTimeout = 5000;
 
-  private async fetchJson<T>(path: string): Promise<T | null> {
+  private async fetchJson<T>(path: string, timeoutMs = 12_000): Promise<T | null> {
     try {
-      const res = await fetch(`${this.apiBaseUrl}${path}`);
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeoutMs);
+      const res = await fetch(`${this.apiBaseUrl}${path}`, { signal: ctrl.signal });
+      clearTimeout(t);
       if (!res.ok) return null;
       const text = await res.text();
       if (!text.trim()) return null;
@@ -74,7 +77,7 @@ class MarketDataService {
     const cached = this.getFromCache<IndexData[]>(cacheKey);
     if (cached) return cached;
 
-    const data = await this.fetchJson<Array<{ name: string; value: number; change: number; changePercent: number; high?: number; low?: number; open?: number; previousClose?: number; timestamp?: string }>>('/market/indices');
+    const data = await this.fetchJson<Array<{ name: string; value: number; change: number; changePercent: number; high?: number; low?: number; open?: number; previousClose?: number; timestamp?: string }>>('/market/indices', 20_000);
     if (data?.length) {
       const indices = data.map(item => ({
         name: item.name,

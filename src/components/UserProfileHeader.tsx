@@ -11,6 +11,7 @@ import {
 } from './ui/dropdown-menu';
 import { Badge } from './ui/badge';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { integrationService, BrokerAccountView } from '../services/integrationService';
 import { portfolioService, PortfolioSummary, PortfolioView } from '../services/portfolioService';
 
@@ -29,6 +30,8 @@ export function UserProfileHeader({
   compact = false
 }: UserProfileHeaderProps) {
   const { user } = useAuth();
+  const { theme } = useTheme();
+  const light = theme === 'light';
   const [portfolios, setPortfolios] = useState<PortfolioView[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [accounts, setAccounts] = useState<BrokerAccountView[]>([]);
@@ -87,9 +90,9 @@ export function UserProfileHeader({
                 gap: 8,
                 padding: '4px 10px',
                 borderRadius: 8,
-                border: '1px solid rgba(148,163,184,0.25)',
-                background: 'rgba(15,23,42,0.65)',
-                color: '#e2e8f0',
+                border: light ? '1px solid #cbd5e1' : '1px solid rgba(148,163,184,0.25)',
+                background: light ? '#ffffff' : 'rgba(15,23,42,0.65)',
+                color: light ? '#0f172a' : '#e2e8f0',
                 cursor: 'pointer',
                 maxWidth: 220
               }}
@@ -163,9 +166,9 @@ export function UserProfileHeader({
             height: 34,
             padding: 0,
             borderRadius: 8,
-            border: '1px solid rgba(148,163,184,0.25)',
-            background: 'rgba(15,23,42,0.5)',
-            color: '#e2e8f0',
+            border: light ? '1px solid #cbd5e1' : '1px solid rgba(148,163,184,0.25)',
+            background: light ? '#ffffff' : 'rgba(15,23,42,0.5)',
+            color: light ? '#0f172a' : '#e2e8f0',
             cursor: 'pointer',
             flexShrink: 0
           }}

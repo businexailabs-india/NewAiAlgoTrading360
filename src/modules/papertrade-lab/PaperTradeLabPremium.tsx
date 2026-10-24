@@ -96,7 +96,7 @@ export function PaperTradeLabPremium({ onNavigate }: { onNavigate?: (s: string) 
             <TradeosButton variant="secondary" onClick={() => toast.message('Kept paper only — wise')}>
               Keep Paper Only
             </TradeosButton>
-            <TradeosButton variant="ghost" onClick={() => onNavigate?.('algo-library')}>
+            <TradeosButton variant="ghost" onClick={() => onNavigate?.('algos')}>
               Improve Rules
             </TradeosButton>
           </div>

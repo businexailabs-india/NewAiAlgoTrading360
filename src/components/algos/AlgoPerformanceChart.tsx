@@ -221,8 +221,8 @@ export function AlgoPerformanceChart({
   const data = useMemo(
     () =>
       buildCandleSeries(
-        sparkline,
-        windowReturn,
+        sparkline || [],
+        Number.isFinite(windowReturn) ? windowReturn : 0,
         windowLabel === '1m' ? 24 : windowLabel === '1y' || windowLabel === 'all' ? 48 : 36,
         tradeSides
       ),

@@ -90,6 +90,7 @@ export class OptionsChainService {
     }
     // Before sync: expose Dhan-aligned catalog so UI can still pick indices
     const { foDerivativeUnderlyings, SPOT_ONLY_INDICES } = await import('../../libs/trading/fo-index-catalog');
+    const { foCommodityUnderlyings } = await import('../../libs/trading/fo-commodity-catalog');
     const catalog = [
       ...foDerivativeUnderlyings().map((x) => ({
         id: `catalog-${x.symbol}`,
@@ -98,6 +99,19 @@ export class OptionsChainService {
         segment: x.exchange === 'BSE' ? 'BFO' : 'NFO',
         name: x.name,
         instrumentKind: 'INDEX' as const,
+        lotSizeHint: x.lot,
+        syncedAt: null as Date | null,
+        brokerSource: 'catalog',
+        strikeStep: x.step,
+        hasDerivatives: true
+      })),
+      ...foCommodityUnderlyings().map((x) => ({
+        id: `catalog-${x.symbol}`,
+        symbol: x.symbol,
+        exchange: x.exchange,
+        segment: 'MCX',
+        name: x.name,
+        instrumentKind: 'COMMODITY' as const,
         lotSizeHint: x.lot,
         syncedAt: null as Date | null,
         brokerSource: 'catalog',
@@ -146,10 +160,12 @@ export class OptionsChainService {
     }
     const { futures } = await InstrumentMasterService.listFutures(sym);
     const meta = getFoIndex(sym);
+    const { getFoCommodity } = await import('../../libs/trading/fo-commodity-catalog');
+    const com = getFoCommodity(sym);
     return {
       underlying: sym,
       lotSize: futures[0]?.lotSize || foLotSize(sym),
-      strikeStep: meta?.step ?? null,
+      strikeStep: com?.step ?? meta?.step ?? null,
       futures: futures.map((f) => ({
         id: f.id,
         tradingSymbol: f.tradingSymbol,
@@ -157,7 +173,7 @@ export class OptionsChainService {
         expiry: f.expiry.toISOString().slice(0, 10),
         lotSize: f.lotSize,
         tickSize: f.tickSize,
-        exchange: f.exchange || meta?.exchange || 'NSE'
+        exchange: f.exchange || com?.exchange || meta?.exchange || 'NSE'
       })),
       available: futures.length > 0,
       providerStatus: futures.length > 0 ? ('ok' as const) : ('unavailable' as const),

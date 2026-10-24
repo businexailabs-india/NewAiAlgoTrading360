@@ -177,21 +177,32 @@ export class InstrumentMasterService {
   }
 
   static async listExpiries(underlying: string, segment?: string) {
-    const u = await prisma.derivativeUnderlying.findFirst({
-      where: {
-        symbol: underlying.toUpperCase(),
-        tradable: true,
-        ...(segment ? { segment } : {})
-      }
-    });
+    const timed = <T,>(p: Promise<T>, ms = 2500) =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error('instrument master timeout')), ms)
+        )
+      ]);
+    const u = await timed(
+      prisma.derivativeUnderlying.findFirst({
+        where: {
+          symbol: underlying.toUpperCase(),
+          tradable: true,
+          ...(segment ? { segment } : {})
+        }
+      })
+    );
     if (!u) return [] as string[];
 
-    const rows = await prisma.derivativeInstrument.findMany({
-      where: { underlyingId: u.id, tradable: true, expiry: { gte: new Date(Date.now() - 86400000) } },
-      select: { expiry: true },
-      distinct: ['expiry'],
-      orderBy: { expiry: 'asc' }
-    });
+    const rows = await timed(
+      prisma.derivativeInstrument.findMany({
+        where: { underlyingId: u.id, tradable: true, expiry: { gte: new Date(Date.now() - 86400000) } },
+        select: { expiry: true },
+        distinct: ['expiry'],
+        orderBy: { expiry: 'asc' }
+      })
+    );
     return rows.map((r) => r.expiry.toISOString().slice(0, 10));
   }
 
@@ -204,7 +215,14 @@ export class InstrumentMasterService {
       '../../libs/trading/fo-index-catalog'
     );
     const sym = underlying.toUpperCase();
-    const masterDates = await this.listExpiries(sym, segment);
+    let masterDates: string[] = [];
+    try {
+      masterDates = await this.listExpiries(sym, segment);
+    } catch (err) {
+      logger.warn(
+        `Instrument master expiries unavailable for ${sym}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
     const calendar =
       masterDates.length > 0
         ? classifyExpiryDates(sym, masterDates)

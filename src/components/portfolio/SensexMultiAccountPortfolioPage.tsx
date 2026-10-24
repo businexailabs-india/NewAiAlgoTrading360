@@ -65,7 +65,6 @@ type TabId =
   | 'orders'
   | 'sensex'
   | 'strategies'
-  | 'risk'
   | 'recon'
   | 'activity';
 
@@ -77,7 +76,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'orders', label: 'Orders' },
   { id: 'sensex', label: 'SENSEX Trading' },
   { id: 'strategies', label: 'Strategies' },
-  { id: 'risk', label: 'Risk' },
   { id: 'recon', label: 'Reconciliation' },
   { id: 'activity', label: 'Activity' },
 ];
@@ -276,11 +274,6 @@ export function SensexMultiAccountPortfolioPage() {
   const strategiesQ = useQuery({
     queryKey: ['portfolio', 'strategies', accountIds],
     queryFn: () => portfolioApi.getStrategyAllocations(accountIds),
-    enabled: accounts.length > 0,
-  });
-  const riskQ = useQuery({
-    queryKey: ['portfolio', 'risk', accountIds],
-    queryFn: () => portfolioApi.getRiskSnapshot(accountIds),
     enabled: accounts.length > 0,
   });
   const reconQ = useQuery({
@@ -1253,76 +1246,6 @@ export function SensexMultiAccountPortfolioPage() {
                   </table>
                 </div>
               </SectionCard>
-            )}
-
-            {tab === 'risk' && (
-              <>
-                <SectionCard
-                  title="Risk centre"
-                  subtitle={riskQ.data ? `As of ${formatTs(riskQ.data.asOf)}` : undefined}
-                  actions={riskQ.data ? <RiskBadge level={riskQ.data.overall} /> : null}
-                >
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    <KpiMini label="Gross" value={money(riskQ.data?.grossExposure ?? 0)} />
-                    <KpiMini label="Net" value={money(riskQ.data?.netExposure ?? 0)} />
-                    <KpiMini label="Margin util %" value={formatPct(riskQ.data?.marginUtilizationPct)} />
-                    <KpiMini label="Concentration %" value={formatPct(riskQ.data?.concentrationPct)} />
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {(riskQ.data?.limits ?? []).map((lim) => {
-                      const pct = lim.limit > 0 ? Math.min(100, (lim.current / lim.limit) * 100) : 0;
-                      const bar =
-                        lim.level === 'CRITICAL' || lim.level === 'TRADING_BLOCKED'
-                          ? 'bg-red-500'
-                          : lim.level === 'WARNING'
-                            ? 'bg-amber-500'
-                            : 'bg-sky-600';
-                      return (
-                        <div key={lim.id}>
-                          <div className="mb-1 flex justify-between text-xs text-slate-600">
-                            <span>{lim.label}</span>
-                            <span style={tabular}>
-                              {lim.unit === 'PCT' || lim.unit === 'OPS' || lim.unit === 'COUNT'
-                                ? `${lim.current} / ${lim.limit} ${lim.unit}`
-                                : `${money(lim.current)} / ${money(lim.limit)}`}
-                            </span>
-                          </div>
-                          <div className="h-2 overflow-hidden rounded bg-slate-100">
-                            <div className={cn('h-full rounded', bar)} style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </SectionCard>
-
-                <SectionCard title="Emergency controls" subtitle="Destructive actions require typed confirmation.">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={btnDanger}
-                      onClick={() =>
-                        setConfirm({ kind: 'kill', scope: 'GLOBAL', targetIds: accountIds })
-                      }
-                    >
-                      Kill Switch (global)
-                    </button>
-                    <button
-                      type="button"
-                      className={btnDanger}
-                      onClick={() =>
-                        setConfirm({
-                          kind: 'kill',
-                          scope: 'ACCOUNT',
-                          targetIds: accountIds.slice(0, 1),
-                        })
-                      }
-                    >
-                      Kill Switch (selected accounts)
-                    </button>
-                  </div>
-                </SectionCard>
-              </>
             )}
 
             {tab === 'recon' && (

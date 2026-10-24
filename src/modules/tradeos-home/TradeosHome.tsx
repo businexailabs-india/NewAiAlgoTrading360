@@ -81,7 +81,7 @@ export function TradeosHome({ onNavigate }: { onNavigate?: NavFn }) {
             {String(reco?.reason || 'Finding a calm fit for your capital and risk…')}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <TradeosButton onClick={() => go('algo-library')}>Use Algo</TradeosButton>
+            <TradeosButton onClick={() => go('algos')}>Use Algo</TradeosButton>
             <TradeosButton variant="secondary" onClick={() => go('papertrade-lab')}>
               Paper Test
             </TradeosButton>

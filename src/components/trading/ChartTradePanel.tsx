@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { toast } from 'sonner';
 import { tradingApi, type ChartPosition, type Instrument } from '@/api/trading';
+import { useTheme } from '@/contexts/ThemeContext';
 
 type Props = {
   symbol: string;
@@ -14,26 +15,28 @@ type Props = {
   onQtyChange?: (qty: number) => void;
 };
 
-const railWrap: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 10,
-  height: '100%',
-  minHeight: 0,
-  padding: 12,
-  borderLeft: '1px solid rgba(56,189,248,0.28)',
-  background: 'linear-gradient(180deg, rgba(8,47,73,0.45) 0%, rgba(2,6,23,0.95) 40%)',
-  color: '#e2e8f0',
-  fontSize: 12,
-  boxSizing: 'border-box',
-};
+function railWrap(light: boolean): CSSProperties {
+  return {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    height: '100%',
+    minHeight: 0,
+    padding: 12,
+    borderLeft: light ? '1px solid #e2e8f0' : '1px solid rgba(56,189,248,0.28)',
+    background: light ? '#ffffff' : 'rgba(2,6,23,0.92)',
+    color: light ? '#0f172a' : '#e2e8f0',
+    fontSize: 12,
+    boxSizing: 'border-box',
+  };
+}
 
 const btn = (bg: string, opts?: { tall?: boolean }): CSSProperties => ({
   padding: opts?.tall ? '10px 12px' : '7px 10px',
   borderRadius: 8,
   border: '1px solid rgba(148,163,184,0.35)',
   background: bg,
-  color: '#f8fafc',
+  color: '#0f172a',
   cursor: 'pointer',
   fontSize: opts?.tall ? 13 : 11,
   fontWeight: opts?.tall ? 700 : 600,
@@ -53,13 +56,33 @@ export function ChartTradePanel({
   qty: controlledQty,
   onQtyChange,
 }: Props) {
-  const [localQty, setLocalQty] = useState(1);
-  const qty = controlledQty ?? localQty;
-  const setQty = (n: number) => {
-    const v = Math.max(1, n);
-    if (onQtyChange) onQtyChange(v);
-    else setLocalQty(v);
+  const { theme } = useTheme();
+  const light = theme === 'light';
+  const fg = light ? '#0f172a' : '#e2e8f0';
+  const muted = light ? '#64748b' : '#94a3b8';
+  const surface = light ? '#ffffff' : 'rgba(2,6,23,0.92)';
+  const cardBg = light ? '#f8fafc' : 'rgba(15,23,42,0.88)';
+  const cardBd = light ? '#e2e8f0' : 'rgba(56,189,248,0.28)';
+  const INDEX_LOT: Record<string, number> = {
+    NIFTY: 65,
+    BANKNIFTY: 30,
+    FINNIFTY: 60,
+    MIDCPNIFTY: 120,
+    SENSEX: 20,
   };
+  const [localLots, setLocalLots] = useState(1);
+  const lots = Math.max(1, Math.floor(controlledQty ?? localLots) || 1);
+  const setLots = (n: number) => {
+    const v = Math.max(1, Math.min(100, Math.floor(n) || 1));
+    if (onQtyChange) onQtyChange(v);
+    else setLocalLots(v);
+  };
+  const und = (instrument?.underlying_symbol || symbol || '').toUpperCase().replace(/\s+/g, '');
+  const lotSize = Math.max(
+    1,
+    Number(instrument?.lot_size) || INDEX_LOT[und] || INDEX_LOT[und.replace(/50$/, '')] || 1
+  );
+  const orderQty = lots * lotSize;
   const [positions, setPositions] = useState<ChartPosition[]>([]);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,7 +100,19 @@ export function ChartTradePanel({
   };
 
   useEffect(() => {
-    void reload().catch(() => setPositions([]));
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      if (!cancelled) setPositions([]);
+    }, 1500);
+    void reload()
+      .catch(() => {
+        if (!cancelled) setPositions([]);
+      })
+      .finally(() => window.clearTimeout(t));
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
   }, [symbol, instrument?.instrument_id]);
 
   const runAction = async (
@@ -95,7 +130,7 @@ export function ChartTradePanel({
         symbol,
         side:
           action === 'SELL' || action.startsWith('EXIT') || action === 'REDUCE_QTY' ? 'SELL' : 'BUY',
-        quantity: action === 'EXIT_FULL' ? Math.max(1, positions[0]?.quantity || qty) : qty,
+        quantity: action === 'EXIT_FULL' ? Math.max(1, positions[0]?.quantity || orderQty) : orderQty,
         order_type: 'MARKET',
         price,
         mode: 'PAPER',
@@ -111,7 +146,7 @@ export function ChartTradePanel({
       const body = {
         instrument_id: instrument?.instrument_id,
         symbol,
-        quantity: qty,
+        quantity: orderQty,
         order_type: 'MARKET',
         price,
         mode: 'PAPER',
@@ -139,10 +174,10 @@ export function ChartTradePanel({
 
   if (variant === 'rail') {
     return (
-      <aside style={railWrap} aria-label="Paper order ticket">
+      <aside style={railWrap(light)} aria-label="Paper order ticket">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <div>
-            <div style={{ fontWeight: 700, color: '#7dd3fc', fontSize: 13 }}>Order ticket</div>
+            <div style={{ fontWeight: 700, color: '#0369a1', fontSize: 13 }}>ORDER TICKET</div>
             <div style={{ color: '#64748b', fontSize: 10 }}>Paper · Live locked</div>
           </div>
           <span
@@ -165,42 +200,47 @@ export function ChartTradePanel({
           </div>
         ) : null}
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, color: '#94a3b8' }}>
-          Quantity
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, color: muted }}>
+          LOTS
           <input
             type="number"
             min={1}
-            value={qty}
+            max={100}
+            step={1}
+            value={lots}
             disabled={blockedIndex || busy}
-            onChange={(e) => setQty(Number(e.target.value) || 1)}
+            onChange={(e) => setLots(Number(e.target.value) || 1)}
             style={{
               width: '100%',
               padding: '8px 10px',
               borderRadius: 8,
-              border: '1px solid #334155',
-              background: '#020617',
-              color: '#e2e8f0',
+              border: light ? '1px solid #cbd5e1' : '1px solid rgba(148,163,184,0.35)',
+              background: surface,
+              color: fg,
               boxSizing: 'border-box',
             }}
           />
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1' }}>
+            1 LOT = {lotSize.toLocaleString('en-IN')} · ORDER {orderQty.toLocaleString('en-IN')} UNITS
+          </span>
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <button
             type="button"
-            style={btn('rgba(16,185,129,0.4)', { tall: true })}
+            style={{ ...btn('#d1fae5', { tall: true }), color: '#047857', border: '1px solid #6ee7b7' }}
             disabled={busy || blockedIndex}
             onClick={() => void runAction('BUY')}
           >
-            Buy
+            BUY
           </button>
           <button
             type="button"
-            style={btn('rgba(248,113,113,0.4)', { tall: true })}
+            style={{ ...btn('#fee2e2', { tall: true }), color: '#b91c1c', border: '1px solid #fca5a5' }}
             disabled={busy || blockedIndex}
             onClick={() => void runAction('SELL')}
           >
-            Sell
+            SELL
           </button>
         </div>
 
@@ -213,8 +253,8 @@ export function ChartTradePanel({
               style={{
                 padding: 8,
                 borderRadius: 8,
-                background: 'rgba(15,23,42,0.9)',
-                border: '1px solid #334155',
+                background: cardBg,
+                border: `1px solid ${cardBd}`,
                 marginBottom: 8,
                 fontSize: 11,
               }}
@@ -233,7 +273,7 @@ export function ChartTradePanel({
               Reduce
             </button>
             <button type="button" style={btn('rgba(244,63,94,0.3)')} disabled={busy || blockedIndex} onClick={() => void runAction('EXIT_QTY')}>
-              Exit qty
+              Exit lots
             </button>
             <button type="button" style={btn('rgba(127,29,29,0.55)')} disabled={busy || blockedIndex} onClick={() => void runAction('EXIT_FULL')}>
               Exit all
@@ -261,15 +301,15 @@ export function ChartTradePanel({
         marginTop: 10,
         padding: 12,
         borderRadius: 10,
-        border: '1px solid rgba(56,189,248,0.35)',
-        background: 'rgba(2,6,23,0.75)',
-        color: '#e2e8f0',
+        border: light ? '1px solid #e2e8f0' : '1px solid rgba(56,189,248,0.35)',
+        background: surface,
+        color: fg,
         fontSize: 12,
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontWeight: 700, color: '#7dd3fc' }}>Chart Trade · Paper default</div>
+          <div style={{ fontWeight: 700, color: '#0369a1' }}>CHART TRADE · PAPER DEFAULT</div>
           <div style={{ color: '#94a3b8' }}>Live locked — Preview → RMS → OMS only</div>
         </div>
         <span style={{ color: '#fde68a', fontSize: 11 }}>LIVE LOCKED</span>
@@ -281,21 +321,22 @@ export function ChartTradePanel({
       ) : null}
       <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <label>
-          Qty{' '}
+          Lots{' '}
           <input
             type="number"
             min={1}
-            value={qty}
+            max={100}
+            value={lots}
             disabled={blockedIndex || busy}
-            onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+            onChange={(e) => setLots(Math.max(1, Number(e.target.value) || 1))}
             style={{
               width: 72,
               marginLeft: 4,
               padding: 4,
               borderRadius: 6,
-              border: '1px solid #334155',
-              background: '#020617',
-              color: '#e2e8f0',
+              border: light ? '1px solid #cbd5e1' : '1px solid rgba(148,163,184,0.35)',
+              background: surface,
+              color: fg,
             }}
           />
         </label>
@@ -306,13 +347,13 @@ export function ChartTradePanel({
           Sell
         </button>
         <button type="button" style={btn('rgba(56,189,248,0.28)')} disabled={busy || blockedIndex} onClick={() => void runAction('ADD_QTY')}>
-          Add Qty
+          Add lots
         </button>
         <button type="button" style={btn('rgba(251,191,36,0.28)')} disabled={busy || blockedIndex} onClick={() => void runAction('REDUCE_QTY')}>
-          Reduce Qty
+          Reduce lots
         </button>
         <button type="button" style={btn('rgba(244,63,94,0.3)')} disabled={busy || blockedIndex} onClick={() => void runAction('EXIT_QTY')}>
-          Exit Qty
+          Exit lots
         </button>
         <button type="button" style={btn('rgba(127,29,29,0.55)')} disabled={busy || blockedIndex} onClick={() => void runAction('EXIT_FULL')}>
           Exit Full

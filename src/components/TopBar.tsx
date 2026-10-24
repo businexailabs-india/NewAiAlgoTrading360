@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CandlestickChart, ChevronDown, Eye, LayoutDashboard, Sparkles } from 'lucide-react';
+import { CandlestickChart, ChevronDown, LayoutDashboard, Moon, Sparkles, Sun, Wallet } from 'lucide-react';
 import { ALGOS_TABS, useAlgosNav } from '../contexts/AlgosNavContext';
 import { useTradingMode } from '../contexts/TradingModeContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { chrome } from '../theme/chrome';
+import { FundTransferModal } from './algos/FundTransferModal';
 
 /** Algos / brand top menu height. */
 export const TOP_MENU_H = 56;
@@ -20,10 +23,8 @@ const TRADE_DESTINATIONS: TradeDest[] = [
   { id: 'basket-orders', label: 'Basket Orders', hint: 'Multi-leg paper baskets' },
   { id: 'trade-orders', label: 'Orders', hint: 'Order desk' },
   { id: 'trade-positions', label: 'Positions', hint: 'Open book' },
-  { id: 'trade-paper-holdings', label: 'Paper Holdings', hint: 'Simulated holdings' },
   { id: 'trade-paper-positions', label: 'Paper Positions', hint: 'F&O paper book' },
   { id: 'portfolio', label: 'Portfolio', hint: 'SENSEX · multi-account' },
-  { id: 'trade-live', label: 'Live Trading', hint: 'Requires live unlock' },
 ];
 
 interface TopBarProps {
@@ -45,13 +46,17 @@ export function TopBar({
 }: TopBarProps) {
   const { tab, setTab } = useAlgosNav();
   const { mode, liveLocked } = useTradingMode();
+  const { theme, setTheme } = useTheme();
+  const light = theme === 'light';
+  const c = chrome(light);
   const [tradeOpen, setTradeOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const tradeBtnRef = useRef<HTMLButtonElement>(null);
   const tradeMenuRef = useRef<HTMLDivElement>(null);
-  const watchlistActive = activeSection === 'watchlist';
   const isLive = mode === 'live';
   const tradeActive = TRADE_DESTINATIONS.some((d) => d.id === activeSection);
+  const [fundOpen, setFundOpen] = useState(false);
+  const [fundMode, setFundMode] = useState<'add' | 'withdraw'>('add');
 
   const updateMenuPos = useCallback(() => {
     const btn = tradeBtnRef.current;
@@ -132,9 +137,9 @@ export function TopBar({
               overflowY: 'auto',
               padding: 6,
               borderRadius: 10,
-              border: '1px solid rgba(56,189,248,0.45)',
-              background: 'rgba(15,23,42,0.99)',
-              boxShadow: '0 16px 40px rgba(0,0,0,0.65)',
+              border: `1px solid ${c.barBorder}`,
+              background: c.menuBg,
+              boxShadow: c.menuShadow,
               zIndex: 10050,
             }}
           >
@@ -170,7 +175,7 @@ export function TopBar({
                     borderRadius: 8,
                     border: active ? '1px solid rgba(56,189,248,0.45)' : '1px solid transparent',
                     background: active ? 'rgba(14,165,233,0.15)' : 'transparent',
-                    color: '#e2e8f0',
+                    color: c.fg,
                     cursor: 'pointer',
                   }}
                 >
@@ -200,11 +205,9 @@ export function TopBar({
         zIndex: 500,
         display: 'flex',
         flexDirection: 'column',
-        background:
-          'linear-gradient(180deg, rgba(8,47,73,0.98) 0%, rgba(15,23,42,0.99) 55%, rgba(2,6,23,1) 100%)',
-        borderBottom: '1px solid rgba(34,211,238,0.35)',
-        boxShadow:
-          '0 10px 28px rgba(0,0,0,0.45), inset 0 -1px 0 rgba(34,211,238,0.2), 0 0 24px rgba(34,211,238,0.12)',
+        background: c.barBg,
+        borderBottom: `1px solid ${c.barBorder}`,
+        boxShadow: c.shadow,
         backdropFilter: 'blur(18px)',
         overflow: 'visible',
       }}
@@ -248,7 +251,7 @@ export function TopBar({
               fontSize: 14,
               fontWeight: 650,
               letterSpacing: '0.02em',
-              color: '#ecfeff',
+              color: c.fg,
               whiteSpace: 'nowrap',
             }}
           >
@@ -283,14 +286,19 @@ export function TopBar({
           aria-label="Algos sections"
         >
           {ALGOS_TABS.map((t) => {
-            const active = tab === t.id;
+            const sectionForTab =
+              t.id === 'terminal' ? 'trading-terminal' : 'algos';
+            const active =
+              t.id === 'terminal'
+                ? activeSection === sectionForTab
+                : activeSection === 'algos' && tab === t.id;
             return (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => {
                   setTab(t.id);
-                  onNavigateAlgos?.();
+                  onSectionChange(sectionForTab);
                 }}
                 style={{
                   flexShrink: 0,
@@ -298,9 +306,9 @@ export function TopBar({
                   fontSize: 13,
                   fontWeight: active ? 600 : 500,
                   borderRadius: 8,
-                  border: active ? '1px solid rgba(52,211,153,0.55)' : '1px solid transparent',
-                  background: active ? 'rgba(16,185,129,0.18)' : 'transparent',
-                  color: active ? '#6ee7b7' : '#e2e8f0',
+                  border: active ? `1px solid ${c.tabOnBd}` : '1px solid transparent',
+                  background: active ? c.tabOnBg : 'transparent',
+                  color: active ? c.tabOnFg : c.tabOffFg,
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                 }}
@@ -309,6 +317,32 @@ export function TopBar({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => {
+              setFundMode('add');
+              setFundOpen(true);
+            }}
+            title="Add funds"
+            style={{
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '7px 14px',
+              fontSize: 13,
+              fontWeight: 500,
+              borderRadius: 8,
+              border: '1px solid transparent',
+              background: 'transparent',
+              color: c.tabOffFg,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Wallet style={{ height: 14, width: 14 }} />
+            Add Funds
+          </button>
         </nav>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -335,13 +369,13 @@ export function TopBar({
               borderRadius: 999,
               border:
                 tradeActive || tradeOpen
-                  ? '1px solid rgba(56,189,248,0.7)'
-                  : '1px solid rgba(148,163,184,0.35)',
+                  ? '1px solid #0284c7'
+                  : `1px solid ${c.pillBd}`,
               background:
                 tradeActive || tradeOpen
-                  ? 'rgba(14,165,233,0.22)'
-                  : 'rgba(15,23,42,0.75)',
-              color: tradeActive || tradeOpen ? '#7dd3fc' : '#e2e8f0',
+                  ? light ? '#e0f2fe' : 'rgba(14,165,233,0.22)'
+                  : c.pillBg,
+              color: tradeActive || tradeOpen ? (light ? '#0369a1' : '#7dd3fc') : c.pillFg,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
             }}
@@ -393,10 +427,10 @@ export function TopBar({
           </button>
           <button
             type="button"
-            onClick={() => onSectionChange('watchlist')}
-            title="Stock Watchlist"
-            aria-label="Open Stock Watchlist"
-            aria-current={watchlistActive ? 'page' : undefined}
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            aria-pressed={theme === 'dark'}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -406,22 +440,25 @@ export function TopBar({
               minWidth: 34,
               padding: '0 12px',
               borderRadius: 999,
-              border: watchlistActive
-                ? '1px solid rgba(34,211,238,0.7)'
-                : '1px solid rgba(148,163,184,0.35)',
-              background: watchlistActive
-                ? 'linear-gradient(180deg, rgba(8,47,73,0.98) 0%, rgba(14,116,144,0.45) 100%)'
-                : 'rgba(15,23,42,0.75)',
-              color: watchlistActive ? '#a5f3fc' : '#cbd5e1',
+              border:
+                theme === 'dark'
+                  ? '1px solid rgba(148,163,184,0.45)'
+                  : '1px solid rgba(251,191,36,0.55)',
+              background:
+                theme === 'dark' ? 'rgba(15,23,42,0.9)' : 'rgba(69,26,3,0.35)',
+              color: theme === 'dark' ? '#e2e8f0' : '#fde68a',
               fontSize: 12,
               fontWeight: 600,
               whiteSpace: 'nowrap',
-              cursor: 'pointer',
-              boxShadow: watchlistActive ? '0 0 14px rgba(34,211,238,0.28)' : 'none',
+              cursor: 'pointer'
             }}
           >
-            <Eye style={{ height: 15, width: 15 }} />
-            <span className="hidden sm:inline">Watchlist</span>
+            {theme === 'dark' ? (
+              <Sun style={{ height: 15, width: 15 }} />
+            ) : (
+              <Moon style={{ height: 15, width: 15 }} />
+            )}
+            <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
           </button>
           {onOpenAdvisory && (
             <button
@@ -436,10 +473,9 @@ export function TopBar({
                 height: 34,
                 padding: '0 12px',
                 borderRadius: 999,
-                border: '1px solid rgba(34,211,238,0.45)',
-                background:
-                  'linear-gradient(180deg, rgba(8,47,73,0.95) 0%, rgba(15,23,42,0.98) 100%)',
-                color: '#a5f3fc',
+                border: light ? '1px solid #67e8f9' : '1px solid rgba(34,211,238,0.45)',
+                background: light ? '#ecfeff' : 'linear-gradient(180deg, rgba(8,47,73,0.95) 0%, rgba(15,23,42,0.98) 100%)',
+                color: light ? '#0e7490' : '#a5f3fc',
                 fontSize: 12,
                 fontWeight: 600,
                 whiteSpace: 'nowrap',
@@ -455,6 +491,11 @@ export function TopBar({
         </div>
       </div>
       {menu}
+      <FundTransferModal
+        open={fundOpen}
+        initialMode={fundMode}
+        onClose={() => setFundOpen(false)}
+      />
       <span
         style={{
           pointerEvents: 'none',
@@ -463,8 +504,9 @@ export function TopBar({
           right: 0,
           bottom: 0,
           height: 2,
-          background:
-            'linear-gradient(90deg, transparent 0%, rgba(34,211,238,0.85) 35%, rgba(52,211,153,0.7) 65%, transparent 100%)',
+          background: light
+            ? 'linear-gradient(90deg, transparent 0%, #67e8f9 35%, #34d399 65%, transparent 100%)'
+            : 'linear-gradient(90deg, transparent 0%, rgba(34,211,238,0.85) 35%, rgba(52,211,153,0.7) 65%, transparent 100%)',
         }}
       />
     </header>

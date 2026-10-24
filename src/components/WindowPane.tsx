@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useWindowStack, WindowPaneEntry } from '../contexts/WindowStackContext';
 import { TOP_CHROME_H } from './TopBar';
 import { MARKET_TICKER_H } from './algos/MarketTickerBar';
+import { useTheme } from '../contexts/ThemeContext';
 
 function statusMeta(status: WindowPaneEntry['status']) {
   if (status === 'minimized') {
@@ -40,6 +41,8 @@ const paneShell = {
 
 export function WindowPane() {
   const { paneEntries, restoreWindow } = useWindowStack();
+  const { theme } = useTheme();
+  const light = theme === 'light';
   // Collapsed by default so main windows can use full width; expand when needed.
   const [collapsed, setCollapsed] = useState(true);
 
@@ -59,14 +62,14 @@ export function WindowPane() {
   if (collapsed) {
     return (
       <aside
-        className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/90 py-3 shadow-[0_0_24px_rgba(34,211,238,0.15)] backdrop-blur-xl"
+        className={`flex flex-col items-center gap-3 rounded-2xl border py-3 ${light ? 'border-slate-200 bg-white shadow-md' : 'border-white/10 bg-slate-950/90 shadow-[0_0_24px_rgba(34,211,238,0.15)] backdrop-blur-xl'}`}
         style={{ ...paneShell, width: WINDOW_PANE_COLLAPSED_W }}
       >
         <button
           type="button"
           title="Expand window pane"
           onClick={() => setCollapsed(false)}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20"
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border ${light ? 'border-cyan-200 bg-cyan-50 text-cyan-700 hover:bg-cyan-100' : 'border-cyan-300/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20'}`}
         >
           <PanelRightOpen className="h-4 w-4" />
         </button>
@@ -97,19 +100,20 @@ export function WindowPane() {
 
   return (
     <aside
-      className="flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90 shadow-[0_0_28px_rgba(34,211,238,0.18)] backdrop-blur-xl"
+        className={`flex flex-col overflow-hidden rounded-2xl border ${light ? 'border-slate-200 bg-white shadow-md' : 'border-white/10 bg-slate-950/90 shadow-[0_0_28px_rgba(34,211,238,0.18)] backdrop-blur-xl'}`}
       style={{ ...paneShell, width: WINDOW_PANE_W }}
     >
       <header
-        className="flex items-center justify-between gap-2 border-b border-cyan-300/25 px-3 py-3"
+        className={`flex items-center justify-between gap-2 border-b px-3 py-3 ${light ? 'border-slate-200' : 'border-cyan-300/25'}`}
         style={{
-          background:
-            'linear-gradient(90deg, rgba(8,47,73,0.96) 0%, rgba(15,23,42,0.98) 55%, rgba(6,78,59,0.45) 100%)',
-          boxShadow: 'inset 0 -1px 0 rgba(34,211,238,0.16)'
+          background: light
+            ? '#ffffff'
+            : 'linear-gradient(90deg, rgba(8,47,73,0.96) 0%, rgba(15,23,42,0.98) 55%, rgba(6,78,59,0.45) 100%)',
+          boxShadow: light ? 'none' : 'inset 0 -1px 0 rgba(34,211,238,0.16)'
         }}
       >
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
+          <div className={`flex items-center gap-2 text-sm font-semibold ${light ? 'text-slate-900' : 'text-white'}`}>
             <LayoutGrid className="h-4 w-4 text-cyan-300" />
             Window Pane
           </div>

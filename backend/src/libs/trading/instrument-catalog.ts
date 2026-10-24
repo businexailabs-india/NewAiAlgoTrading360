@@ -1,3 +1,4 @@
+import { foCommodityUnderlyings } from './fo-commodity-catalog';
 import { foDerivativeUnderlyings } from './fo-index-catalog';
 
 export type InstrumentType =
@@ -7,6 +8,9 @@ export type InstrumentType =
   | 'INDEX_OPTION'
   | 'STOCK_FUTURE'
   | 'STOCK_OPTION'
+  | 'COMMODITY'
+  | 'COMMODITY_FUTURE'
+  | 'COMMODITY_OPTION'
   | 'ETF';
 
 export interface CatalogInstrument {
@@ -454,6 +458,37 @@ export const SEED_INSTRUMENTS: Omit<CatalogInstrument, 'instrument_id'>[] = [
     broker_symbol: 'MIDCPNIFTY-ATM-PE',
     trading_status: 'OPEN'
   },
+  ...foCommodityUnderlyings().flatMap((c) => [
+    {
+      symbol: c.symbol,
+      display_name: c.name,
+      exchange: 'MCX' as const,
+      segment: 'MCX',
+      asset_class: 'COMMODITY',
+      instrument_type: 'COMMODITY' as const,
+      tradable: false,
+      direct_trading_allowed: false,
+      lot_size: 1,
+      tick_size: c.tick,
+      trading_status: 'OPEN'
+    },
+    {
+      symbol: c.symbol,
+      display_name: `${c.name} Current Month Future`,
+      exchange: 'MCX' as const,
+      segment: 'MCX',
+      asset_class: 'DERIVATIVE',
+      instrument_type: 'COMMODITY_FUTURE' as const,
+      tradable: true,
+      direct_trading_allowed: true,
+      lot_size: c.lot,
+      tick_size: c.tick,
+      expiry: 'CURRENT',
+      underlying_symbol: c.symbol,
+      broker_symbol: `${c.symbol}-FUT`,
+      trading_status: 'OPEN'
+    }
+  ]),
   {
     symbol: 'NIFTYBEES',
     display_name: 'Nippon India ETF Nifty BeES',
@@ -525,11 +560,18 @@ export function productForInstrument(instrumentType: InstrumentType, product?: s
   return 'NRML';
 }
 
-const FO_UNDERLYINGS = foDerivativeUnderlyings().map((x) => ({
-  symbol: x.symbol,
-  lot: x.lot,
-  step: x.step
-}));
+const FO_UNDERLYINGS = [
+  ...foDerivativeUnderlyings().map((x) => ({
+    symbol: x.symbol,
+    lot: x.lot,
+    step: x.step
+  })),
+  ...foCommodityUnderlyings().map((x) => ({
+    symbol: x.symbol,
+    lot: x.lot,
+    step: x.step
+  }))
+];
 
 /** Parse compact F&O symbols: NIFTY24400CE, BANKNIFTY52000PE, NIFTYFUT */
 export function parseFoContractSymbol(symbol: string): {

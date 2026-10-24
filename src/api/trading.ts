@@ -8,8 +8,28 @@ function headers(): HeadersInit {
   };
 }
 
-async function json<T>(res: Response): Promise<T> {
-  const body = await res.json();
+async function ensureGuestToken(): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/local-guest`, { method: 'POST' });
+    const json = await res.json().catch(() => ({}));
+    const token = json?.data?.accessToken;
+    if (res.ok && token) {
+      localStorage.setItem('authToken', token);
+      if (json.data.refreshToken) localStorage.setItem('refreshToken', json.data.refreshToken);
+      if (json.data.user) localStorage.setItem('user', JSON.stringify(json.data.user));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+async function json<T>(res: Response, retry?: () => Promise<Response>): Promise<T> {
+  const body = await res.json().catch(() => ({}));
+  if ((res.status === 401 || res.status === 403) && retry && /token/i.test(String(body.message || ''))) {
+    await ensureGuestToken();
+    const again = await retry();
+    return json<T>(again);
+  }
   if (!res.ok) throw new Error(body.message || 'Request failed');
   return body.data as T;
 }
@@ -33,11 +53,14 @@ export type Instrument = {
   trading_status: string;
 };
 
+function getJson<T>(path: string) {
+  const run = () => fetch(`${API_BASE_URL}${path}`, { headers: headers() });
+  return run().then((r) => json<T>(r, run));
+}
+
 export const tradingApi = {
   searchInstruments(query: string) {
-    return fetch(`${API_BASE_URL}/instruments/search?query=${encodeURIComponent(query)}`, {
-      headers: headers()
-    }).then((r) => json<Instrument[]>(r));
+    return getJson<Instrument[]>(`/instruments/search?query=${encodeURIComponent(query)}`);
   },
 
   getInstrument(id: string) {
@@ -231,19 +254,16 @@ export const tradingApi = {
   },
 
   getOptionExpiries(underlying: string) {
-    return fetch(
-      `${API_BASE_URL}/options/expiries?underlying=${encodeURIComponent(underlying)}`,
-      { headers: headers() }
-    ).then((r) => json<OptionExpiryCalendar>(r));
+    return getJson<OptionExpiryCalendar>(
+      `/options/expiries?underlying=${encodeURIComponent(underlying)}`
+    );
   },
 
   getOptionsChain(params: { underlying: string; expiry?: string; kind?: 'WEEKLY' | 'MONTHLY' | 'ALL' }) {
     const q = new URLSearchParams({ underlying: params.underlying });
     if (params.expiry) q.set('expiry', params.expiry);
     if (params.kind) q.set('kind', params.kind);
-    return fetch(`${API_BASE_URL}/options/chain?${q}`, { headers: headers() }).then((r) =>
-      json<OptionsChainPayload>(r)
-    );
+    return getJson<OptionsChainPayload>(`/options/chain?${q}`);
   }
 };
 

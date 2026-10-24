@@ -21,7 +21,7 @@ class FyersMCPProvider(Phase2BrokerProvider):
     country = "IN"
     symbol_style = "plain"
     auth_flow: ClassVar[AuthFlowType] = AUTH_FLOW
-    env_credential_keys: ClassVar[list[str]] = ["FYERS_APP_ID", "FYERS_APP_SECRET", "FYERS_ACCESS_TOKEN_OPTIONAL"]
+    env_credential_keys: ClassVar[list[str]] = ["FYERS_APP_ID", "FYERS_ACCESS_TOKEN"]
     env_base_url_key: ClassVar[str] = "FYERS_BASE_URL"
     env_allow_live_key: ClassVar[str] = "FYERS_ALLOW_LIVE_HTTP"
     error_map: ClassVar[dict[str, ProviderErrorCode]] = ERROR_MAP

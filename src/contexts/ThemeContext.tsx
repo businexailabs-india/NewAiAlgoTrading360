@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 
 interface ThemeSettings {
   theme: 'dark' | 'light';
@@ -15,29 +15,61 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [chartColorScheme, setChartColorScheme] = useState<'green-red' | 'blue-orange' | 'purple-yellow'>('green-red');
+const SETTINGS_KEY = 'smarttrade_settings_v2';
+const LEGACY_SETTINGS_KEY = 'smarttrade_settings';
 
-  // Load theme from settings on mount
-  useEffect(() => {
-    try {
-      const settings = localStorage.getItem('smarttrade_settings');
-      if (settings) {
-        const parsed = JSON.parse(settings);
-        if (parsed.appearance?.theme) {
-          setTheme(parsed.appearance.theme);
-        }
-        if (parsed.appearance?.chartColorScheme) {
-          setChartColorScheme(parsed.appearance.chartColorScheme);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading theme settings:', error);
+function readStoredAppearance(): Partial<ThemeSettings> {
+  try {
+    for (const key of [SETTINGS_KEY, LEGACY_SETTINGS_KEY]) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      const appearance = parsed?.appearance || {};
+      return {
+        theme: appearance.theme === 'dark' || appearance.theme === 'light' ? appearance.theme : undefined,
+        chartColorScheme:
+          appearance.chartColorScheme === 'blue-orange' ||
+          appearance.chartColorScheme === 'purple-yellow' ||
+          appearance.chartColorScheme === 'green-red'
+            ? appearance.chartColorScheme
+            : undefined
+      };
     }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function persistAppearance(patch: Partial<ThemeSettings>) {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    parsed.appearance = { ...(parsed.appearance || {}), ...patch };
+    parsed.lastUpdated = new Date().toISOString();
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(parsed));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const stored = readStoredAppearance();
+  const [theme, setThemeState] = useState<'dark' | 'light'>(stored.theme || 'light');
+  const [chartColorScheme, setChartColorSchemeState] = useState<
+    'green-red' | 'blue-orange' | 'purple-yellow'
+  >(stored.chartColorScheme || 'green-red');
+
+  const setTheme = useCallback((next: 'dark' | 'light') => {
+    setThemeState(next);
+    persistAppearance({ theme: next });
   }, []);
 
-  // Apply theme to document
+  const setChartColorScheme = useCallback((scheme: 'green-red' | 'blue-orange' | 'purple-yellow') => {
+    setChartColorSchemeState(scheme);
+    persistAppearance({ chartColorScheme: scheme });
+  }, []);
+
   useEffect(() => {
     if (theme === 'light') {
       document.documentElement.classList.add('light');
@@ -46,9 +78,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       document.documentElement.classList.add('dark');
       document.documentElement.classList.remove('light');
     }
+    document.documentElement.style.colorScheme = theme;
   }, [theme]);
 
-  // Get chart colors based on scheme
   const getChartColors = () => {
     switch (chartColorScheme) {
       case 'blue-orange':
@@ -69,11 +101,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     getChartColors
   };
 
-  return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

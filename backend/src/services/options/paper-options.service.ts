@@ -60,6 +60,32 @@ export class PaperOptionsService {
     return updated;
   }
 
+  static async withdraw(userId: string, amount: number) {
+    if (!(amount > 0)) throw new AppError('Withdraw amount must be positive', 400);
+    const acct = await this.getOrCreateAccount(userId);
+    const free = acct.cashBalance - (acct.reservedMargin || 0);
+    if (amount > free) {
+      throw new AppError('Insufficient paper cash to withdraw', 400, {
+        details: { available: free, requested: amount }
+      });
+    }
+    const next = acct.cashBalance - amount;
+    const updated = await prisma.paperAccount.update({
+      where: { id: acct.id },
+      data: { cashBalance: next }
+    });
+    await prisma.paperLedgerEntry.create({
+      data: {
+        paperAccountId: acct.id,
+        kind: 'WITHDRAW',
+        amount: -amount,
+        balanceAfter: next,
+        note: 'Virtual capital withdrawal'
+      }
+    });
+    return updated;
+  }
+
   static async reset(userId: string, capital = DEFAULT_CAPITAL) {
     const acct = await this.getOrCreateAccount(userId);
     const updated = await prisma.paperAccount.update({

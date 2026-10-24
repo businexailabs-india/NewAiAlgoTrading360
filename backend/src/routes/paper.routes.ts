@@ -26,6 +26,15 @@ router.post(
 );
 
 router.post(
+  '/account/withdraw',
+  asyncHandler(async (req: Request, res: Response) => {
+    const amount = Number(req.body?.amount);
+    const data = await PaperOptionsService.withdraw(req.user!.id, amount);
+    res.json({ success: true, data });
+  })
+);
+
+router.post(
   '/account/reset',
   asyncHandler(async (req: Request, res: Response) => {
     const capital = req.body?.capital != null ? Number(req.body.capital) : undefined;

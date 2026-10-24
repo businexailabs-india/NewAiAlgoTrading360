@@ -672,7 +672,7 @@ export function SettingsPanel() {
                   >
                     <Sun className="w-6 h-6 text-yellow-400 mb-2" />
                     <div className="text-white">Light Mode</div>
-                    <div className="text-xs text-gray-400">{theme === 'light' ? 'Active' : 'Coming soon'}</div>
+                    <div className="text-xs text-gray-400">{theme === 'light' ? 'Active' : 'Click to activate'}</div>
                   </button>
                 </div>
               </div>

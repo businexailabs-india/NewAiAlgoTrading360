@@ -8,6 +8,7 @@ import { advisoryMarketplaceService } from '../../services/advisoryMarketplaceSe
 import { tradingService } from '../../services/tradingService';
 import { portfolioService } from '../../services/portfolioService';
 import { integrationService } from '../../services/integrationService';
+import { useTheme } from '../../contexts/ThemeContext';
 
 type DetailTab = 'performance' | 'best_worst' | 'past_trades' | 'about' | 'config';
 
@@ -53,12 +54,20 @@ const defaultAgentForm = (): AgentConfigForm => ({
 export function AlgoDetailView({
   algo,
   onBack,
-  onDeployed
+  onDeployed,
+  onOpenTradingBots
 }: {
   algo: AlgoCatalogItem;
   onBack: () => void;
   onDeployed?: (msg: string) => void;
+  onOpenTradingBots?: () => void;
 }) {
+  const { theme } = useTheme();
+  const light = theme === 'light';
+  const ink = light ? '#0f172a' : '#f8fafc';
+  const muted = light ? '#475569' : '#94a3b8';
+  const cardBg = light ? '#f8fafc' : 'rgba(15,23,42,0.7)';
+  const cardBd = light ? '#e2e8f0' : 'rgba(34,211,238,0.22)';
   const isAgent = algo.source === 'agent' && Boolean(algo.agentId);
   const [tab, setTab] = useState<DetailTab>(isAgent ? 'config' : 'performance');
   const [tf, setTf] = useState<'1m' | '3m' | '6m' | '1y' | 'all'>('3m');
@@ -512,7 +521,7 @@ export function AlgoDetailView({
           gap: 6,
           background: 'transparent',
           border: 'none',
-          color: '#94a3b8',
+          color: muted,
           cursor: 'pointer',
           fontSize: 12
         }}
@@ -528,12 +537,12 @@ export function AlgoDetailView({
           flexWrap: 'wrap',
           padding: 14,
           borderRadius: 12,
-          border: '1px solid rgba(34,211,238,0.22)',
-          background: 'rgba(15,23,42,0.7)'
+          border: `1px solid ${cardBd}`,
+          background: cardBg
         }}
       >
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>{algo.name}</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: ink }}>{algo.name}</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
             {algo.live && (
               <span
@@ -549,7 +558,7 @@ export function AlgoDetailView({
                 Live
               </span>
             )}
-            {algo.tags.map((t) => (
+            {(algo.tags || []).map((t) => (
               <span
                 key={t}
                 style={{
@@ -557,26 +566,47 @@ export function AlgoDetailView({
                   padding: '2px 8px',
                   borderRadius: 999,
                   border: '1px solid rgba(148,163,184,0.3)',
-                  color: '#cbd5e1'
+                  color: light ? '#334155' : '#cbd5e1'
                 }}
               >
                 {t}
               </span>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 20, marginTop: 12, fontSize: 12, color: '#94a3b8' }}>
+          <div style={{ display: 'flex', gap: 20, marginTop: 12, fontSize: 12, color: muted }}>
             <span>
-              Min. Amount <strong style={{ color: '#e2e8f0' }}>{formatInr(algo.minCapital)}</strong>
+              Min. Amount <strong style={{ color: ink }}>{formatInr(algo.minCapital || 0)}</strong>
             </span>
             <span>
-              Max. Amount <strong style={{ color: '#e2e8f0' }}>{formatInr(algo.maxCapital)}</strong>
+              Max. Amount <strong style={{ color: ink }}>{formatInr(algo.maxCapital || 0)}</strong>
             </span>
             <span>
-              Source <strong style={{ color: '#e2e8f0' }}>{algo.source}</strong>
+              Source <strong style={{ color: ink }}>{algo.source}</strong>
             </span>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          {algo.source === 'trading_bot' && onOpenTradingBots ? (
+            <button
+              type="button"
+              onClick={onOpenTradingBots}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '10px 16px',
+                borderRadius: 10,
+                border: 'none',
+                background: 'linear-gradient(135deg, #0d9488 0%, #2563eb 100%)',
+                color: '#fff',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <Rocket className="h-4 w-4" />
+              Open in TradingBots
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={deploy}
@@ -986,23 +1016,23 @@ export function AlgoDetailView({
                   borderRadius: 8,
                   border: tf === id ? '1px solid rgba(52,211,153,0.5)' : '1px solid rgba(148,163,184,0.2)',
                   background: tf === id ? 'rgba(16,185,129,0.15)' : 'transparent',
-                  color: '#e2e8f0',
+                  color: ink,
                   fontSize: 12,
                   cursor: 'pointer'
                 }}
               >
                 {id}{' '}
-                <span style={{ color: pctColor(ret), fontWeight: 600 }}>
-                  {ret >= 0 ? '+' : ''}
-                  {ret.toFixed(1)}%
+                <span style={{ color: pctColor(Number(ret) || 0), fontWeight: 600 }}>
+                  {(Number(ret) || 0) >= 0 ? '+' : ''}
+                  {(Number(ret) || 0).toFixed(1)}%
                 </span>
               </button>
             ))}
           </div>
 
           <AlgoPerformanceChart
-            sparkline={algo.sparkline}
-            windowReturn={tfRet}
+            sparkline={algo.sparkline || []}
+            windowReturn={Number(tfRet) || 0}
             windowLabel={tf}
             liveNote={liveMetrics ? 'Updated from paper/backtest' : 'Catalog / live series'}
             tradeSides={tradeSides}
@@ -1017,14 +1047,14 @@ export function AlgoDetailView({
           <div className="neon-card" style={{ padding: 14, borderRadius: 12 }}>
             <div style={{ fontWeight: 600, color: '#6ee7b7', marginBottom: 8 }}>Best month</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: pctColor(algo.avgUpMonth) }}>
-              +{algo.avgUpMonth.toFixed(2)}%
+              +{(Number(algo.avgUpMonth) || 0).toFixed(2)}%
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>Avg up-month return</div>
           </div>
           <div className="neon-card" style={{ padding: 14, borderRadius: 12 }}>
             <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 8 }}>Worst month</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: pctColor(algo.avgDownMonth) }}>
-              {algo.avgDownMonth.toFixed(2)}%
+              {(Number(algo.avgDownMonth) || 0).toFixed(2)}%
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>Avg down-month return</div>
           </div>

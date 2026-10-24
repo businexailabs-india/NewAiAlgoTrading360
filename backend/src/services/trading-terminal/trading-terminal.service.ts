@@ -22,6 +22,7 @@ import {
   type OrderPreviewRequest
 } from '../../libs/trading/order-ticket';
 import { hasPermission, roleFromUserRole, permissionForInstrumentType, type TradePermission } from '../../libs/trading/permissions';
+import { MarketService } from '../market.service';
 
 async function audit(
   userId: string,
@@ -69,26 +70,97 @@ export class TradingTerminalService {
     }
   }
 
-  static async searchInstruments(query: string, limit = 20): Promise<CatalogInstrument[]> {
-    await this.ensureCatalogSeeded();
-    await this.syncMarketSearchHits(query);
-    const q = (query || '').trim();
-    const rows = await prisma.tradeInstrument.findMany({
-      where: q
-        ? {
-            OR: [
-              { symbol: { contains: q, mode: 'insensitive' } },
-              { displayName: { contains: q, mode: 'insensitive' } },
-              { underlyingSymbol: { contains: q, mode: 'insensitive' } },
-              { brokerSymbol: { contains: q, mode: 'insensitive' } }
-            ]
-          }
-        : undefined,
-      take: Math.min(50, Math.max(limit, 20)),
-      orderBy: [{ instrumentType: 'asc' }, { symbol: 'asc' }]
+  static catalogFromMarketQuery(query: string, limit = 20): CatalogInstrument[] {
+    const hits = MarketService.searchSymbols(query).slice(0, Math.min(50, Math.max(limit, 20)));
+    return hits.map((hit) => {
+      const symbol = String(hit.symbol || '')
+        .trim()
+        .toUpperCase();
+      const exchangeRaw = String(hit.exchange || 'NSE').toUpperCase();
+      const isIndex = exchangeRaw === 'INDEX';
+      const isNfo = exchangeRaw === 'NFO';
+      const isMcx = exchangeRaw === 'MCX';
+      const fo = parseFoContractSymbol(symbol);
+      let instrumentType: InstrumentType = 'STOCK';
+      let direct = true;
+      let assetClass = 'EQUITY';
+      if (isMcx && !(fo?.strike || fo?.optionType || fo?.isFuture || /FUT$/i.test(symbol))) {
+        instrumentType = 'COMMODITY';
+        direct = false;
+        assetClass = 'COMMODITY';
+      } else if (isMcx || (fo && isMcx)) {
+        instrumentType = fo?.isFuture || /FUT/i.test(symbol) ? 'COMMODITY_FUTURE' : 'COMMODITY_OPTION';
+        assetClass = 'DERIVATIVE';
+      } else if (isIndex && !(fo?.strike || fo?.optionType || fo?.isFuture)) {
+        instrumentType = 'INDEX';
+        direct = false;
+        assetClass = 'INDEX';
+      } else if (isNfo || fo?.optionType || fo?.isFuture || /[-_]?(CE|PE)$/i.test(symbol)) {
+        instrumentType = fo?.isFuture || /FUT/i.test(symbol) ? 'INDEX_FUTURE' : 'INDEX_OPTION';
+        assetClass = 'DERIVATIVE';
+      }
+      const optionType = fo?.optionType || (/CE$/i.test(symbol) ? 'CE' : /PE$/i.test(symbol) ? 'PE' : null);
+      const strike = fo?.strike ?? null;
+      const underlyingSymbol =
+        fo?.underlying ||
+        (isIndex || isNfo || isMcx ? symbol.replace(/(\d{3,6})?(CE|PE|FUT)$/i, '') || symbol : null);
+      const lotSize = fo?.lotSize || (instrumentType.includes('OPTION') || instrumentType.includes('FUTURE') ? 25 : 1);
+      return {
+        instrument_id: `mkt-${exchangeRaw}-${symbol}`,
+        symbol,
+        display_name:
+          strike && optionType ? `${underlyingSymbol} ${strike} ${optionType}` : String(hit.name || symbol),
+        exchange: isMcx ? 'MCX' : isIndex || isNfo ? 'NSE' : exchangeRaw,
+        segment: isMcx ? 'MCX' : isIndex ? 'IDX' : isNfo ? 'NFO' : 'EQ',
+        asset_class: assetClass,
+        instrument_type: instrumentType,
+        tradable: true,
+        direct_trading_allowed: direct,
+        lot_size: lotSize,
+        tick_size: 0.05,
+        expiry: null,
+        strike,
+        option_type: optionType,
+        underlying_symbol: underlyingSymbol,
+        broker_symbol: symbol,
+        provider_id: null,
+        trading_status: 'OPEN'
+      } satisfies CatalogInstrument;
     });
-    const repaired = await Promise.all(rows.map((r) => this.repairFoInstrument(r)));
-    return repaired.map(mapDbInstrument);
+  }
+
+  static async searchInstruments(query: string, limit = 20): Promise<CatalogInstrument[]> {
+    const q = (query || '').trim();
+    const fallback = () => this.catalogFromMarketQuery(q, limit);
+    try {
+      await Promise.race([
+        this.ensureCatalogSeeded(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('catalog seed timeout')), 1500))
+      ]).catch(() => undefined);
+      void this.syncMarketSearchHits(q).catch(() => undefined);
+      const rows = await Promise.race([
+        prisma.tradeInstrument.findMany({
+          where: q
+            ? {
+                OR: [
+                  { symbol: { contains: q, mode: 'insensitive' } },
+                  { displayName: { contains: q, mode: 'insensitive' } },
+                  { underlyingSymbol: { contains: q, mode: 'insensitive' } },
+                  { brokerSymbol: { contains: q, mode: 'insensitive' } }
+                ]
+              }
+            : undefined,
+          take: Math.min(50, Math.max(limit, 20)),
+          orderBy: [{ instrumentType: 'asc' }, { symbol: 'asc' }]
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('instrument search timeout')), 2000))
+      ]);
+      const repaired = await Promise.all(rows.map((r) => this.repairFoInstrument(r).catch(() => r)));
+      const mapped = repaired.map(mapDbInstrument);
+      return mapped.length ? mapped : fallback();
+    } catch {
+      return fallback();
+    }
   }
 
   /** Pull market-search hits into trade_instruments so terminal search is not limited to the tiny seed. */
@@ -105,13 +177,21 @@ export class TradingTerminalService {
       const exchangeRaw = String(hit.exchange || 'NSE').toUpperCase();
       const isIndex = exchangeRaw === 'INDEX';
       const isNfo = exchangeRaw === 'NFO';
-      const exchange = isIndex || isNfo ? 'NSE' : exchangeRaw;
-      const segment = isIndex ? 'IDX' : isNfo ? 'NFO' : 'EQ';
+      const isMcx = exchangeRaw === 'MCX';
+      const exchange = isMcx ? 'MCX' : isIndex || isNfo ? 'NSE' : exchangeRaw;
+      const segment = isMcx ? 'MCX' : isIndex ? 'IDX' : isNfo ? 'NFO' : 'EQ';
       const fo = parseFoContractSymbol(symbol);
       let instrumentType: InstrumentType = 'STOCK';
       let direct = true;
       let assetClass = 'EQUITY';
-      if (isIndex && !(fo?.strike || fo?.optionType || fo?.isFuture)) {
+      if (isMcx && !(fo?.strike || fo?.optionType || fo?.isFuture || /FUT$/i.test(symbol))) {
+        instrumentType = 'COMMODITY';
+        direct = false;
+        assetClass = 'COMMODITY';
+      } else if (isMcx) {
+        instrumentType = fo?.isFuture || /FUT/i.test(symbol) ? 'COMMODITY_FUTURE' : 'COMMODITY_OPTION';
+        assetClass = 'DERIVATIVE';
+      } else if (isIndex && !(fo?.strike || fo?.optionType || fo?.isFuture)) {
         instrumentType = 'INDEX';
         direct = false;
         assetClass = 'INDEX';
@@ -127,7 +207,7 @@ export class TradingTerminalService {
       const strike = fo?.strike ?? null;
       const underlyingSymbol =
         fo?.underlying ||
-        (isIndex || isNfo ? symbol.replace(/(\d{3,6})?(CE|PE|FUT)$/i, '') || symbol : null);
+        (isIndex || isNfo || isMcx ? symbol.replace(/(\d{3,6})?(CE|PE|FUT)$/i, '') || symbol : null);
       const lotSize = fo?.lotSize || (instrumentType.includes('OPTION') || instrumentType.includes('FUTURE') ? 25 : 1);
       const displayName =
         strike && optionType
@@ -809,12 +889,23 @@ export class TradingTerminalService {
   }
 
   static async listBaskets(userId: string) {
-    const rows = await prisma.basketOrder.findMany({
+    let rows: Array<{
+      id: string;
+      basketName: string;
+      createdAt: Date;
+      legs?: unknown[];
+      [key: string]: unknown;
+    }> = [];
+    try {
+      rows = (await prisma.basketOrder.findMany({
       where: { userId },
       include: { legs: true },
       orderBy: { createdAt: 'desc' },
       take: 50
-    });
+    })) as typeof rows;
+    } catch {
+      return [];
+    }
     // Normalize for FE (camel + snake) so basket chips always render
     return rows.map((b) => ({
       ...b,
@@ -899,7 +990,21 @@ export class TradingTerminalService {
     }
     let instrument: CatalogInstrument | null = null;
     if (leg.instrument_id) instrument = await this.getInstrument(leg.instrument_id);
-    const instrumentType = instrument?.instrument_type || 'STOCK';
+    const sym = String(instrument?.symbol || leg.symbol || '').toUpperCase();
+    let instrumentType = instrument?.instrument_type || 'STOCK';
+    if (/FUT$/i.test(sym) || instrumentType.includes('FUTURE')) {
+      instrumentType = /NIFTY|SENSEX|BANKEX/.test(sym)
+        ? 'INDEX_FUTURE'
+        : instrumentType.includes('COMMODITY') || instrument?.exchange === 'MCX'
+          ? 'COMMODITY_FUTURE'
+          : 'STOCK_FUTURE';
+    } else if (/\d+(CE|PE)$/i.test(sym) || instrumentType.includes('OPTION')) {
+      instrumentType = /NIFTY|SENSEX|BANKEX/.test(sym)
+        ? 'INDEX_OPTION'
+        : instrumentType.includes('COMMODITY') || instrument?.exchange === 'MCX'
+          ? 'COMMODITY_OPTION'
+          : 'STOCK_OPTION';
+    }
     if (instrumentType === 'INDEX' && !instrument?.direct_trading_allowed) {
       throw new AppError('Index spot cannot be a basket leg — choose futures/options', 400);
     }

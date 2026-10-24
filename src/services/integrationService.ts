@@ -176,6 +176,21 @@ export const integrationService = {
     return json(res);
   },
 
+  async upsertFyersAccount(body: {
+    displayName?: string;
+    appId: string;
+    accessToken: string;
+    providerType?: 'DIRECT' | 'MCP';
+    mcpServerConfigId?: string;
+  }): Promise<BrokerAccountView> {
+    const res = await fetch(`${API_BASE_URL}/integrations/accounts/fyers`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body)
+    });
+    return json(res);
+  },
+
   async validateAccount(id: string) {
     const res = await fetch(`${API_BASE_URL}/integrations/accounts/${id}/validate`, {
       method: 'POST',
@@ -209,6 +224,17 @@ export const integrationService = {
 
   async bootstrapEnvDhan(): Promise<{ account: BrokerAccountView; sync: { holdingsCount: number; totalCurrent: number } }> {
     const res = await fetch(`${API_BASE_URL}/integrations/accounts/dhan/bootstrap-env`, {
+      method: 'POST',
+      headers: headers()
+    });
+    return json(res);
+  },
+
+  async bootstrapEnvFyers(): Promise<{
+    account: BrokerAccountView;
+    sync: { holdingsCount: number; totalCurrent: number } | null;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/integrations/accounts/fyers/bootstrap-env`, {
       method: 'POST',
       headers: headers()
     });

@@ -4,8 +4,23 @@ build/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+!.env.*.example
 *.log
 .DS_Store
+Thumbs.db
+
+# Secrets / credentials (never commit)
+*.pem
+*.p12
+*.pfx
+credentials.json
+secrets.json
+id_rsa
+id_ed25519
+*.key
+!*.example.key
 
 # Historical market data (large files — regenerate with npm run collect-data)
 backend/data/historical/*.json
@@ -30,3 +45,12 @@ backend/bifrost/config.db
 # Python
 __pycache__/
 *.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Coverage / caches
+coverage/
+.nyc_output/
+.cache/

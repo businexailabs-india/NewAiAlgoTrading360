@@ -66,7 +66,7 @@ export const sanitizeString = (input: string): string => {
 };
 
 export const validateBroker = (broker: string): boolean => {
-  const validBrokers = ['zerodha', 'upstox', 'angelone'];
+  const validBrokers = ['zerodha', 'upstox', 'angelone', 'dhan', 'fyers', 'paper'];
   return validBrokers.includes(broker.toLowerCase());
 };
 

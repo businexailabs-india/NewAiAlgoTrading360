@@ -11,6 +11,7 @@ interface ModuleWindowProps {
   cascadeIndex?: number;
   /** Pin above other Mac windows (still below TopBar / Algos menu). */
   alwaysOnTop?: boolean;
+  light?: boolean;
 }
 
 /** Shared Mac-window chrome for every dashboard module — full-width main column. */
@@ -22,7 +23,8 @@ export function ModuleWindow({
   children,
   className,
   cascadeIndex = 0,
-  alwaysOnTop = false
+  alwaysOnTop = false,
+  light
 }: ModuleWindowProps) {
   return (
     <MacWindow
@@ -40,8 +42,12 @@ export function ModuleWindow({
       fitMain
       reopenLabel={`Open ${title}`}
       alwaysOnTop={alwaysOnTop}
+      light={light}
     >
-      <div className="h-full min-h-0 w-full max-w-none p-4" style={{ boxSizing: 'border-box' }}>
+      <div
+        className="h-full min-h-0 w-full max-w-none p-4"
+        style={{ boxSizing: 'border-box', background: light ? '#ffffff' : undefined }}
+      >
         {children}
       </div>
     </MacWindow>

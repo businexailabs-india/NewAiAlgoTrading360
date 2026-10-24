@@ -11,7 +11,8 @@ import {
   Sparkles,
   TrendingUp,
   Zap,
-  Eye
+  Eye,
+  Bot
 } from 'lucide-react';
 import { TopBar, TOP_CHROME_H } from './components/TopBar';
 import { AlgosWorkspace } from './components/algos/AlgosWorkspace';
@@ -46,8 +47,6 @@ import { PaperBookPanel } from './components/trading/PaperBookPanel';
 import { SensexMultiAccountPortfolioPage } from './components/portfolio';
 import { LiveOptionsTerminal } from './components/options/LiveOptionsTerminal';
 import { StrategyBuilder } from './components/options/StrategyBuilder';
-import { RiskCenterPanel } from './components/options/RiskCenterPanel';
-import { RiskControlRoomPanel } from './components/risk/RiskControlRoomPanel';
 import { QuantLabPlaceholder } from './components/tradingview/QuantLabPlaceholder';
 import { QuantConnectDashboard } from './components/QuantConnectDashboard';
 import { TradingTerminalPanel } from './modules/trading-terminal/TradingTerminalPanel';
@@ -55,13 +54,13 @@ import { ExecutionControlRoomPanel } from './modules/execution-governance/Execut
 import { TradeosHome } from './modules/tradeos-home/TradeosHome';
 import { DhanLaxmiPremium } from './modules/dhanlaxmi-assistant/DhanLaxmiPremium';
 import { TradingViewConnectPremium } from './modules/tradingview-connect/TradingViewConnectPremium';
-import { AlgoLibraryPremium } from './modules/algo-library/AlgoLibraryPremium';
 import { AlgoSuitabilityPremium } from './modules/algo-suitability/AlgoSuitabilityPremium';
 import { PaperTradeLabPremium } from './modules/papertrade-lab/PaperTradeLabPremium';
 import { MarketAnalyticsShell } from './modules/market-analytics/MarketAnalyticsShell';
 import { LiveApprovalPremium } from './modules/live-approval/LiveApprovalPremium';
 import { RiskGuardPremium } from './modules/riskguard/RiskGuardPremium';
 import { ExecutionTimelinePremium } from './modules/execution-timeline/ExecutionTimelinePremium';
+import { TradingBotsShell } from './modules/trading-bots/TradingBotsShell';
 import { OptionsAnalyticsPanel } from './components/options/OptionsAnalyticsPanel';
 import { TradeJournalPanel } from './components/options/TradeJournalPanel';
 import { ModuleWindow } from './components/ui/ModuleWindow';
@@ -69,12 +68,12 @@ import { WindowPane } from './components/WindowPane';
 import { useWindowStack } from './contexts/WindowStackContext';
 import { useAuth } from './contexts/AuthContext';
 import { useTradingMode, type TradingMode } from './contexts/TradingModeContext';
+import { useTheme } from './contexts/ThemeContext';
 
 /** Window ids owned by each left-menu section — restored on menu click. */
 const SECTION_WINDOWS: Record<string, string[]> = {
   dashboard: ['tradeos-home'],
   dhanlaxmi: ['dhanlaxmi-premium'],
-  'algo-library': ['algo-library'],
   'algo-suitability': ['algo-suitability'],
   'papertrade-lab': ['papertrade-lab'],
   'market-analytics': ['market-analytics'],
@@ -110,12 +109,9 @@ const SECTION_WINDOWS: Record<string, string[]> = {
   'trade-live': ['live-options-terminal'],
   'trade-orders': ['trading-tabs'],
   'trade-positions': ['trading-tabs'],
-  'trade-paper-holdings': ['paper-book'],
   'trade-paper-positions': ['paper-book'],
   'trade-holdings': ['portfolio-header'],
   alerts: ['alerts-automation'],
-  'broker-connections': ['broker-connections'],
-  'risk-center': ['risk-center'],
   reports: ['tax-analytics'],
   'tax-reports': ['tax-analytics'],
   anomalies: ['anomalies'],
@@ -125,7 +121,8 @@ const SECTION_WINDOWS: Record<string, string[]> = {
   profile: ['profile'],
   admin: ['admin'],
   predictions: ['predictions'],
-  'auto-trading': ['auto-trading']
+  'auto-trading': ['auto-trading'],
+  'trading-bots': ['trading-bots']
 };
 
 /** Always mounted above section content — must be closed when leaving their sections. */
@@ -138,6 +135,7 @@ function Win({
   icon,
   cascadeIndex,
   alwaysOnTop,
+  light,
   children
 }: {
   id: string;
@@ -146,8 +144,10 @@ function Win({
   icon?: ReactNode;
   cascadeIndex?: number;
   alwaysOnTop?: boolean;
+  light?: boolean;
   children: ReactNode;
 }) {
+  const { theme } = useTheme();
   return (
     <ModuleWindow
       id={id}
@@ -156,6 +156,7 @@ function Win({
       icon={icon}
       cascadeIndex={cascadeIndex}
       alwaysOnTop={alwaysOnTop}
+      light={light ?? theme === 'light'}
     >
       {children}
     </ModuleWindow>
@@ -165,6 +166,8 @@ function Win({
 export default function App() {
   const { user, logout } = useAuth();
   const { mode } = useTradingMode();
+  const { theme } = useTheme();
+  const lightUi = theme === 'light';
   const { restoreWindow, closeWindow } = useWindowStack();
   const [autoExecute, setAutoExecute] = useState(false);
   const [selectedBroker, setSelectedBroker] = useState('');
@@ -203,7 +206,25 @@ export default function App() {
   };
 
   const handleSectionChange = (section: string) => {
-    const windowIds = SECTION_WINDOWS[section] || SECTION_WINDOWS.dashboard;
+    if (section === 'risk-center' || section === 'broker-connections' || section === 'algo-library')
+      section = 'dashboard';
+    if (
+      section === 'tb-risk' ||
+      section === 'tb-brokers' ||
+      section === 'tb-signals' ||
+      section === 'tb-create' ||
+      section === 'tb-my-bots' ||
+      section === 'tb-backtest' ||
+      section === 'tb-marketplace' ||
+      section === 'tb-config'
+    )
+      section = 'tb-dashboard';
+    if (section === 'strategies-backtest') section = 'dashboard';
+    if (section === 'trade-paper-holdings') section = 'trade-paper-positions';
+    const windowIds =
+      section === 'trading-bots' || section.startsWith('tb-')
+        ? ['trading-bots']
+        : SECTION_WINDOWS[section] || SECTION_WINDOWS.dashboard;
     const keep = new Set(windowIds);
 
     // Overlay cards sit above section content — dismiss when leaving their home sections.
@@ -233,13 +254,6 @@ export default function App() {
         return (
           <Win id="dhanlaxmi-premium" title="DhanLaxmi" subtitle="Explain · draft · approve — never execute" cascadeIndex={1}>
             <DhanLaxmiPremium />
-          </Win>
-        );
-
-      case 'algo-library':
-        return (
-          <Win id="algo-library" title="Algo Library" subtitle="Calm strategies · paper first" cascadeIndex={1}>
-            <AlgoLibraryPremium onNavigate={go} />
           </Win>
         );
 
@@ -309,8 +323,9 @@ export default function App() {
             id="algos-workspace"
             title="Algos Live"
             subtitle="Marketplace · My Algos · Positions · Orders"
-            icon={<Rocket className="h-4 w-4 text-emerald-300" />}
+            icon={<Rocket className={`h-4 w-4 ${lightUi ? 'text-emerald-600' : 'text-emerald-300'}`} />}
             cascadeIndex={1}
+            light={lightUi}
           >
             <AlgosWorkspace embedded />
           </Win>
@@ -535,8 +550,9 @@ export default function App() {
           <Win
             id="trading-terminal"
             title="Trading Terminal"
-            subtitle="Buy/Sell · Index derivatives · Chart qty · Paper default"
+            subtitle="BUY/SELL · INDEX DERIVATIVES · CHART QTY · PAPER DEFAULT"
             cascadeIndex={1}
+            light={lightUi}
           >
             <TradingTerminalPanel />
           </Win>
@@ -547,7 +563,7 @@ export default function App() {
           <Win
             id="basket-orders"
             title="Basket Orders"
-            subtitle="Multi-leg paper baskets · RMS preview · OMS submit"
+            subtitle="Pick future or options · paper execute"
             cascadeIndex={1}
           >
             <TradingTerminalPanel initialTab="basket" />
@@ -589,18 +605,6 @@ export default function App() {
         );
 
       case 'trade-paper-holdings':
-        return (
-          <Win
-            id="paper-book"
-            title="Paper Holdings"
-            subtitle="Simulated book · cash · fills · no live risk"
-            icon={<Briefcase className="h-4 w-4 text-sky-300" />}
-            cascadeIndex={1}
-          >
-            <PaperBookPanel initialTab="holdings" />
-          </Win>
-        );
-
       case 'trade-paper-positions':
         return (
           <Win
@@ -694,23 +698,6 @@ export default function App() {
           </Win>
         );
 
-      case 'broker-connections':
-        return (
-          <Win id="broker-connections" title="Broker Connections" cascadeIndex={1}>
-            <SettingsPanel />
-          </Win>
-        );
-
-      case 'risk-center':
-        return (
-          <Win id="risk-center" title="Risk Center" subtitle="F&O preflight · 1L Control Room · events" cascadeIndex={1}>
-            <div className="space-y-4">
-              <RiskControlRoomPanel />
-              <RiskCenterPanel />
-            </div>
-          </Win>
-        );
-
       case 'reports':
         return (
           <Win id="tax-analytics" title="Reports" cascadeIndex={1}>
@@ -719,6 +706,19 @@ export default function App() {
         );
 
       default:
+        if (activeSection === 'trading-bots' || activeSection.startsWith('tb-')) {
+          return (
+            <Win
+              id="trading-bots"
+              title="TradingBots"
+              subtitle="Paper first · defined-risk hedges · kill switch"
+              icon={<Bot className="h-4 w-4 text-cyan-300" />}
+              cascadeIndex={1}
+            >
+              <TradingBotsShell section={activeSection} onSection={go} />
+            </Win>
+          );
+        }
         return (
           <Win id="tradeos-home" title="TradeOS Home" subtitle="Protected · Paper first · Approval required" cascadeIndex={1}>
             <TradeosHome onNavigate={go} />
@@ -729,7 +729,11 @@ export default function App() {
 
   return (
     <div
-      className="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-gray-100"
+      className={
+        lightUi
+          ? 'bg-white text-slate-900'
+          : 'bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-gray-100'
+      }
       style={{ height: '100vh', overflow: 'hidden' }}
     >
       <Sidebar
@@ -746,13 +750,7 @@ export default function App() {
         onSectionChange={handleSectionChange}
         onRequestModeSwitch={() => openModeSwitch(mode === 'live' ? 'paper' : 'live')}
         onNavigateAlgos={() => {
-          if (activeSection !== 'dashboard' && activeSection !== 'algos') {
-            handleSectionChange('dashboard');
-          } else {
-            restoreWindow(
-              activeSection === 'algos' ? 'algos-workspace' : 'algos-workspace-home'
-            );
-          }
+          handleSectionChange('algos');
         }}
         onOpenAdvisory={() => {
           // Open advisory on its section so other nav options can dismiss it cleanly.
@@ -835,7 +833,7 @@ export default function App() {
         open={modeModal.open}
         target={modeModal.target}
         onClose={closeModeSwitch}
-        onNeedBrokers={() => handleSectionChange('broker-connections')}
+        onNeedBrokers={closeModeSwitch}
       />
     </div>
   );

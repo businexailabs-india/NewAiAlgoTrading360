@@ -1,3 +1,5 @@
+import { getFoCommodity } from './fo-commodity-catalog';
+
 /**
  * Index F&O underlyings aligned to Dhan scrip-master (OPTIDX / FUTIDX).
  * Lots & strike steps are taken from live Dhan CSV — update when NSE/BSE revises.
@@ -166,16 +168,20 @@ export function getFoIndex(symbol: string): FoIndexMeta | undefined {
 
 /** True when the index lists weekly OPTIDX on Dhan (Nifty / Sensex only today). */
 export function hasWeeklyExpiries(underlying: string): boolean {
+  if (getFoCommodity(underlying)) return false;
   const mode = getFoIndex(underlying)?.expiryMode;
   if (!mode) return true;
   return mode === 'WEEKLY_AND_MONTHLY';
 }
 
 export function isMonthlyOnlyUnderlying(underlying: string): boolean {
+  if (getFoCommodity(underlying)) return true;
   return getFoIndex(underlying)?.expiryMode === 'MONTHLY_ONLY';
 }
 
 export function foStrikeStep(underlying: string, spot?: number): number {
+  const com = getFoCommodity(underlying);
+  if (com) return com.step;
   const meta = getFoIndex(underlying);
   if (meta) return meta.step;
   const s = spot ?? 0;
@@ -186,7 +192,7 @@ export function foStrikeStep(underlying: string, spot?: number): number {
 }
 
 export function foLotSize(underlying: string, fallback = 65): number {
-  return getFoIndex(underlying)?.lot ?? fallback;
+  return getFoCommodity(underlying)?.lot ?? getFoIndex(underlying)?.lot ?? fallback;
 }
 
 export function foDerivativeUnderlyings(): FoIndexMeta[] {

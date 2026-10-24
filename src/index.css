@@ -4172,6 +4172,92 @@ html {
   }
 }
 
+:root,
+html.dark {
+  --to-navy: #0b1220;
+  --to-navy-soft: #121a2b;
+  --to-card: rgba(255, 255, 255, 0.04);
+  --to-card-border: rgba(148, 163, 184, 0.18);
+  --to-text: #f8fafc;
+  --to-muted: #94a3b8;
+  --to-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+}
+
+html.light {
+  --to-navy: #ffffff;
+  --to-navy-soft: #f8fafc;
+  --to-card: #ffffff;
+  --to-card-border: #e2e8f0;
+  --to-text: #0f172a;
+  --to-muted: #64748b;
+  --to-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  color-scheme: light;
+  background: #ffffff;
+}
+
+html.light .neon-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.light .neon-card-inner {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: none;
+}
+
+html.light .bg-gray-950,
+html.light .bg-gray-900,
+html.light .bg-slate-950,
+html.light .bg-slate-900 {
+  background-color: #ffffff;
+}
+
+html.light .bg-gray-800,
+html.light .bg-slate-800 {
+  background-color: #f8fafc;
+}
+
+html.light .border-gray-700,
+html.light .border-slate-700,
+html.light .border-white\/10 {
+  border-color: #e2e8f0;
+}
+
+html.light .text-gray-100,
+html.light .text-slate-100 {
+  color: #0f172a;
+}
+
+html.light .text-gray-300,
+html.light .text-slate-300 {
+  color: #475569;
+}
+
+html.light .text-gray-400,
+html.light .text-slate-400 {
+  color: #64748b;
+}
+
+html.light .main-desktop-scroll,
+html.light .mac-window-scroll {
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+html.light .main-desktop-scroll::-webkit-scrollbar-track,
+html.light .mac-window-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+html.light .main-desktop-scroll::-webkit-scrollbar-thumb,
+html.light .mac-window-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-color: #f1f5f9;
+}
+
 /* Soft white-glass cards with neon edge — dark dashboard surfaces */
 .neon-card {
   background:

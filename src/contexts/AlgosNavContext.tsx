@@ -8,15 +8,23 @@ import {
   type ReactNode
 } from 'react';
 
-export type AlgosTab = 'home' | 'trading' | 'investing' | 'my' | 'positions' | 'orders';
+export type AlgosTab =
+  | 'home'
+  | 'trading'
+  | 'investing'
+  | 'my'
+  | 'bots'
+  | 'terminal'
+  | 'positions'
+  | 'orders';
 
 export const ALGOS_TABS: Array<{ id: AlgosTab; label: string }> = [
   { id: 'home', label: 'Home' },
   { id: 'trading', label: 'Trading Algos' },
-  { id: 'investing', label: 'Investing Algos' },
   { id: 'my', label: 'My Algos' },
-  { id: 'positions', label: 'Positions' },
-  { id: 'orders', label: 'Orders' }
+  { id: 'bots', label: 'TradingBots' },
+  { id: 'terminal', label: 'Trading Terminal' },
+  { id: 'positions', label: 'Positions' }
 ];
 
 /** Fixed height of the Algos menu strip under the top bar (tabs + profile). */

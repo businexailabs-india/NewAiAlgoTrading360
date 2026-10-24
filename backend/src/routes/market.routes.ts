@@ -4,6 +4,7 @@ import {
   getQuotes,
   getHistoricalData,
   getIndices,
+  getCommodities,
   searchSymbols,
   getMarketStatus,
   getTopGainers,
@@ -21,6 +22,7 @@ const router = Router();
 // Public routes (no authentication required)
 router.get('/status', getMarketStatus);
 router.get('/indices', getIndices);
+router.get('/commodities', getCommodities);
 router.get('/search', searchSymbols);
 router.get('/gainers', getTopGainers);
 router.get('/losers', getTopLosers);

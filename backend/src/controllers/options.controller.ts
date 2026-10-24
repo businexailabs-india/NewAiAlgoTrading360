@@ -4,7 +4,7 @@ import { asyncHandler } from '../middleware/error.middleware';
 
 export const getOptionsChain = asyncHandler(async (req: Request, res: Response) => {
   const underlying = req.params.symbol;
-  const chain = await OptionsService.getOptionsChain(underlying, req.user!.id);
+  const chain = await OptionsService.getOptionsChain(underlying, req.user?.id);
   res.json({ success: true, data: chain });
 });
 

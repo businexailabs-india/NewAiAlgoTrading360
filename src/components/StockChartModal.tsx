@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -15,6 +16,17 @@ import {
   Sparkles,
   RefreshCw,
   Maximize2,
+  Crosshair,
+  Minus,
+  Pencil,
+  Type,
+  Smile,
+  Ruler,
+  ZoomIn,
+  Magnet,
+  Eraser,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from 'recharts';
 import { toast } from 'sonner';
@@ -23,6 +35,7 @@ import { tradingService } from '@/services/tradingService';
 import { advisorService } from '@/services/advisorService';
 import type { WatchlistItem } from '@/api/watchlist';
 import { ChartTradePanel } from '@/components/trading/ChartTradePanel';
+import { useTheme } from '@/contexts/ThemeContext';
 
 type BarPoint = {
   date: string;
@@ -127,35 +140,133 @@ function defaultRangeForInterval(interval: string): string {
   return '5d';
 }
 
+const PAPER_SPOT: Record<string, number> = {
+  NIFTY: 22600,
+  BANKNIFTY: 55000,
+  FINNIFTY: 24900,
+  MIDCPNIFTY: 13750,
+  SENSEX: 72600,
+};
+
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a += 0x6d2b79f5;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashSeed(s: string) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+function istParts(d: Date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || '';
+  return {
+    weekday: get('weekday'),
+    hour: Number(get('hour')),
+    minute: Number(get('minute')),
+    ymd: `${get('year')}-${get('month')}-${get('day')}`,
+    hm: `${get('hour').padStart(2, '0')}:${get('minute').padStart(2, '0')}`,
+  };
+}
+
+function inIstCashSession(d: Date, daily: boolean) {
+  const p = istParts(d);
+  if (['Sat', 'Sun'].includes(p.weekday)) return false;
+  if (daily) return true;
+  const mins = p.hour * 60 + p.minute;
+  return mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30;
+}
+
+/** Session-only random-walk OHLC (not a sine wave). Last bar pins to spot. */
+function paperHistoricalBars(symbol: string, interval: string, spotHint?: number): BarPoint[] {
+  const key = (symbol || '').toUpperCase().replace(/\s+/g, '');
+  const spot = Number(spotHint) > 0 ? Number(spotHint) : PAPER_SPOT[key] || 1000;
+  const daily = /d|wk|mo/i.test(interval);
+  const mins = Number(String(interval).replace(/[^0-9.]/g, '')) || 15;
+  const stepMs = daily ? 24 * 3600_000 : Math.max(1, mins) * 60_000;
+  const n = daily ? 60 : 96;
+  const rng = mulberry32(hashSeed(`${key}|${interval}|${Math.floor(Date.now() / 3_600_000)}`));
+  const vol = daily ? 0.007 : 0.00115;
+
+  const times: Date[] = [];
+  let cursor = Date.now();
+  let guard = 0;
+  while (times.length < n && guard < 20000) {
+    guard += 1;
+    cursor -= stepMs;
+    const d = new Date(cursor);
+    if (inIstCashSession(d, daily)) times.push(d);
+  }
+  times.reverse();
+
+  let px = spot * (0.988 + rng() * 0.008);
+  const rows: BarPoint[] = [];
+  for (let i = 0; i < times.length; i++) {
+    const d = times[i];
+    const last = i === times.length - 1;
+    const shock = rng() < 0.04 ? 2.2 + rng() : 1;
+    const meanRev = -0.12 * ((px - spot) / spot);
+    const ret = (rng() - 0.5) * 2 * vol * shock + meanRev * vol * 8;
+    const open = px;
+    let close = last ? spot : Math.max(1, open * (1 + ret));
+    if (last) close = spot;
+    const spread = Math.abs(close - open);
+    const wick = (0.15 + rng() * 0.85) * Math.max(spread, spot * vol * 0.35);
+    const high = Math.max(open, close) + wick * rng();
+    const low = Math.min(open, close) - wick * rng();
+    const p = istParts(d);
+    const raw = daily ? p.ymd : `${p.ymd} ${p.hm}`;
+    rows.push({
+      date: raw,
+      label: daily ? raw.slice(5, 10) : p.hm,
+      open: Math.round(open * 100) / 100,
+      high: Math.round(high * 100) / 100,
+      low: Math.round(low * 100) / 100,
+      close: Math.round(close * 100) / 100,
+      volume: Math.round(80_000 + rng() * 420_000),
+    });
+    px = close;
+  }
+  return rows;
+}
+
 async function fetchHistorical(
   symbol: string,
   range: string,
   interval: string
 ): Promise<BarPoint[]> {
-  const token = localStorage.getItem('authToken');
   const qs = new URLSearchParams({ range, interval });
   const url = `${API_BASE_URL}/market/historical/${encodeURIComponent(symbol)}?${qs.toString()}`;
-  const headers: HeadersInit = {
-    Accept: 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-
+  const ctrl = new AbortController();
+  const timer = window.setTimeout(() => ctrl.abort(), 5000);
   let res: Response;
   try {
-    res = await fetch(url, { headers });
+    res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: ctrl.signal,
+    });
   } catch {
-    throw new Error('Backend unreachable — start the API on port 3001 and refresh');
+    window.clearTimeout(timer);
+    throw new Error('Chart feed timed out');
   }
-
-  // One retry for transient proxy/Yahoo blips (common on 1m intraday)
-  if (res.status >= 500) {
-    await new Promise((r) => setTimeout(r, 400));
-    try {
-      res = await fetch(url, { headers });
-    } catch {
-      throw new Error('Backend unreachable — start the API on port 3001 and refresh');
-    }
-  }
+  window.clearTimeout(timer);
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -450,6 +561,366 @@ function linePath(
   return d.trim();
 }
 
+type DrawKind =
+  | 'cursor'
+  | 'trend'
+  | 'hline'
+  | 'fib'
+  | 'channel'
+  | 'brush'
+  | 'text'
+  | 'emoji'
+  | 'measure'
+  | 'zoom'
+  | 'magnet'
+  | 'eraser'
+  | 'lock';
+
+type DrawPt = { x: number; y: number };
+type Drawing = {
+  id: string;
+  kind: 'trend' | 'hline' | 'fib' | 'channel' | 'brush' | 'text' | 'emoji' | 'measure';
+  a: DrawPt;
+  b: DrawPt;
+  pts?: DrawPt[];
+  label?: string;
+};
+
+const DRAW_BAR = 44;
+const DRAW_STROKE = '#2563eb';
+
+function clamp01(n: number) {
+  return Math.min(1, Math.max(0, n));
+}
+
+function ChartDrawLayer({
+  width,
+  height,
+  children,
+}: {
+  width: number;
+  height: number;
+  children: (innerW: number) => ReactNode;
+}) {
+  const { theme } = useTheme();
+  const light = theme === 'light';
+  const innerW = Math.max(120, width - DRAW_BAR);
+  const hostRef = useRef<SVGSVGElement | null>(null);
+  const [tool, setTool] = useState<DrawKind>('cursor');
+  const [magnet, setMagnet] = useState(true);
+  const [locked, setLocked] = useState(false);
+  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [draft, setDraft] = useState<Drawing | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const dragRef = useRef(false);
+
+  const snap = (p: DrawPt): DrawPt => {
+    if (!magnet) return p;
+    return { x: Math.round(p.x * 48) / 48, y: Math.round(p.y * 48) / 48 };
+  };
+
+  const localPt = (e: ReactMouseEvent) => {
+    const el = hostRef.current;
+    if (!el) return { x: 0, y: 0 };
+    const r = el.getBoundingClientRect();
+    return snap({
+      x: clamp01((e.clientX - r.left) / Math.max(1, r.width)),
+      y: clamp01((e.clientY - r.top) / Math.max(1, r.height)),
+    });
+  };
+
+  const hitId = (p: DrawPt) => {
+    const near = (q: DrawPt) => Math.hypot(q.x - p.x, q.y - p.y) < 0.035;
+    for (let i = drawings.length - 1; i >= 0; i--) {
+      const d = drawings[i];
+      if (near(d.a) || near(d.b)) return d.id;
+      if (d.kind === 'hline' && Math.abs(d.a.y - p.y) < 0.02) return d.id;
+      if (d.pts?.some((q) => near(q))) return d.id;
+    }
+    return null;
+  };
+
+  const onDown = (e: ReactMouseEvent) => {
+    if (e.button !== 0) return;
+    const p = localPt(e);
+    if (tool === 'eraser') {
+      const id = hitId(p);
+      if (id) setDrawings((rows) => rows.filter((d) => d.id !== id));
+      return;
+    }
+    if (locked || tool === 'cursor' || tool === 'magnet' || tool === 'lock') return;
+    if (tool === 'hline') {
+      setDrawings((rows) => [
+        ...rows,
+        { id: `d-${Date.now()}`, kind: 'hline', a: { x: 0, y: p.y }, b: { x: 1, y: p.y } },
+      ]);
+      return;
+    }
+    if (tool === 'text') {
+      const label = window.prompt('Text on chart', 'Note') || '';
+      if (label.trim()) {
+        setDrawings((rows) => [
+          ...rows,
+          { id: `d-${Date.now()}`, kind: 'text', a: p, b: p, label: label.trim() },
+        ]);
+      }
+      return;
+    }
+    if (tool === 'emoji') {
+      setDrawings((rows) => [
+        ...rows,
+        { id: `d-${Date.now()}`, kind: 'emoji', a: p, b: p, label: '📌' },
+      ]);
+      return;
+    }
+    dragRef.current = true;
+    const kind =
+      tool === 'trend'
+        ? 'trend'
+        : tool === 'fib'
+          ? 'fib'
+          : tool === 'channel'
+            ? 'channel'
+            : tool === 'brush'
+              ? 'brush'
+              : tool === 'measure'
+                ? 'measure'
+                : tool === 'zoom'
+                  ? 'measure'
+                  : 'trend';
+    setDraft({
+      id: 'draft',
+      kind: kind as Drawing['kind'],
+      a: p,
+      b: p,
+      pts: tool === 'brush' ? [p] : undefined,
+    });
+  };
+
+  const onMove = (e: ReactMouseEvent) => {
+    if (!dragRef.current || !draft) return;
+    const p = localPt(e);
+    setDraft((d) => {
+      if (!d) return d;
+      if (d.kind === 'brush') return { ...d, b: p, pts: [...(d.pts || []), p] };
+      return { ...d, b: p };
+    });
+  };
+
+  const onUp = () => {
+    if (!dragRef.current) return;
+    dragRef.current = false;
+    if (draft && (draft.kind !== 'brush' || (draft.pts || []).length > 1)) {
+      if (tool === 'zoom') {
+        const z = Math.abs(draft.b.x - draft.a.x) > 0.04 ? 1.8 : Math.min(3, zoom + 0.4);
+        setZoom(z);
+      } else {
+        setDrawings((rows) => [...rows, { ...draft, id: `d-${Date.now()}` }]);
+      }
+    }
+    setDraft(null);
+  };
+
+  const items: Array<{ id: DrawKind; title: string; icon: React.ReactNode }> = [
+    { id: 'cursor', title: 'Crosshair / cursor', icon: <Crosshair size={16} /> },
+    { id: 'trend', title: 'Trend line', icon: <TrendingUp size={16} /> },
+    { id: 'hline', title: 'Horizontal line', icon: <Minus size={16} /> },
+    {
+      id: 'fib',
+      title: 'Fibonacci',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 3h12M2 6.5h12M2 9.2h12M2 12.5h12" stroke="currentColor" strokeWidth="1.4" />
+        </svg>
+      ),
+    },
+    {
+      id: 'channel',
+      title: 'Parallel channel',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 12 L14 5M2 14 L14 7" stroke="currentColor" strokeWidth="1.4" />
+        </svg>
+      ),
+    },
+    { id: 'brush', title: 'Brush', icon: <Pencil size={16} /> },
+    { id: 'text', title: 'Text', icon: <Type size={16} /> },
+    { id: 'emoji', title: 'Sticker', icon: <Smile size={16} /> },
+    { id: 'measure', title: 'Measure', icon: <Ruler size={16} /> },
+    { id: 'zoom', title: 'Zoom', icon: <ZoomIn size={16} /> },
+    { id: 'magnet', title: 'Magnet snap', icon: <Magnet size={16} /> },
+    { id: 'eraser', title: 'Eraser', icon: <Eraser size={16} /> },
+    { id: 'lock', title: 'Lock drawings', icon: locked ? <Lock size={16} /> : <Unlock size={16} /> },
+  ];
+
+  const all = draft ? [...drawings, draft] : drawings;
+  const toPx = (p: DrawPt) => ({ x: p.x * innerW, y: p.y * height });
+
+  return (
+    <div style={{ display: 'flex', width, height: 'auto', alignItems: 'stretch' }}>
+      <div
+        style={{
+          width: DRAW_BAR,
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 2,
+          padding: '6px 0',
+          borderRight: light ? '1px solid #e2e8f0' : '1px solid rgba(56,189,248,0.28)',
+          background: light ? '#ffffff' : 'rgba(2,6,23,0.96)',
+        }}
+      >
+        {items.map((it) => {
+          const on =
+            it.id === 'magnet'
+              ? magnet
+              : it.id === 'lock'
+                ? locked
+                : tool === it.id;
+          return (
+            <button
+              key={it.id}
+              type="button"
+              title={it.title}
+              onClick={() => {
+                if (it.id === 'magnet') setMagnet((v) => !v);
+                else if (it.id === 'lock') setLocked((v) => !v);
+                else if (it.id === 'zoom' && tool === 'zoom') setZoom(1);
+                else setTool(it.id);
+              }}
+              style={{
+                width: 32,
+                height: 32,
+                border: 'none',
+                borderRadius: 6,
+                background: on ? (light ? '#e0f2fe' : 'rgba(14,165,233,0.22)') : 'transparent',
+                color: on ? (light ? '#0369a1' : '#7dd3fc') : light ? '#475569' : '#94a3b8',
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              {it.icon}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ position: 'relative', width: innerW, flex: '1 1 auto', minWidth: 0 }}>
+        <div style={{ transform: zoom !== 1 ? `scale(${zoom})` : undefined, transformOrigin: 'center top' }}>
+          {children(innerW)}
+        </div>
+        <svg
+          ref={hostRef}
+          width={innerW}
+          height={height}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            pointerEvents: locked || tool === 'cursor' ? 'none' : 'auto',
+            cursor: tool === 'eraser' ? 'cell' : 'crosshair',
+            zIndex: 3,
+          }}
+          onMouseDown={onDown}
+          onMouseMove={onMove}
+          onMouseUp={onUp}
+          onMouseLeave={onUp}
+        >
+          {all.map((d) => {
+            const a = toPx(d.a);
+            const b = toPx(d.b);
+            if (d.kind === 'hline') {
+              return (
+                <line
+                  key={d.id}
+                  x1={0}
+                  x2={innerW}
+                  y1={a.y}
+                  y2={a.y}
+                  stroke={DRAW_STROKE}
+                  strokeWidth={1.4}
+                />
+              );
+            }
+            if (d.kind === 'trend' || d.kind === 'measure') {
+              const dy = ((d.a.y - d.b.y) * 100).toFixed(1);
+              return (
+                <g key={d.id}>
+                  <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={DRAW_STROKE} strokeWidth={1.6} />
+                  {d.kind === 'measure' ? (
+                    <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 6} fill={DRAW_STROKE} fontSize="11">
+                      {dy}%
+                    </text>
+                  ) : null}
+                </g>
+              );
+            }
+            if (d.kind === 'fib') {
+              const lo = Math.min(a.y, b.y);
+              const hi = Math.max(a.y, b.y);
+              const span = hi - lo || 1;
+              return (
+                <g key={d.id}>
+                  {[0, 0.236, 0.382, 0.5, 0.618, 0.786, 1].map((r) => {
+                    const y = lo + span * r;
+                    return (
+                      <g key={r}>
+                        <line x1={0} x2={innerW} y1={y} y2={y} stroke="#7c3aed" strokeOpacity={0.65} />
+                        <text x={8} y={y - 3} fill="#7c3aed" fontSize="10">
+                          {(r * 100).toFixed(1)}%
+                        </text>
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            }
+            if (d.kind === 'channel') {
+              const ox = 0;
+              const oy = height * 0.06;
+              return (
+                <g key={d.id}>
+                  <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={DRAW_STROKE} strokeWidth={1.5} />
+                  <line
+                    x1={a.x + ox}
+                    y1={a.y + oy}
+                    x2={b.x + ox}
+                    y2={b.y + oy}
+                    stroke={DRAW_STROKE}
+                    strokeWidth={1.5}
+                    strokeOpacity={0.7}
+                  />
+                </g>
+              );
+            }
+            if (d.kind === 'brush') {
+              const pts = (d.pts || [d.a, d.b]).map(toPx);
+              const path = pts.map((q, i) => `${i ? 'L' : 'M'}${q.x},${q.y}`).join(' ');
+              return <path key={d.id} d={path} fill="none" stroke="#0f172a" strokeWidth={1.6} />;
+            }
+            if (d.kind === 'text') {
+              return (
+                <text key={d.id} x={a.x} y={a.y} fill="#0f172a" fontSize="13" fontWeight={700}>
+                  {d.label}
+                </text>
+              );
+            }
+            if (d.kind === 'emoji') {
+              return (
+                <text key={d.id} x={a.x} y={a.y} fontSize="18">
+                  {d.label || '📌'}
+                </text>
+              );
+            }
+            return null;
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 function classicPivots(high: number, low: number, close: number) {
   const p = (high + low + close) / 3;
   const r1 = 2 * p - low;
@@ -558,9 +1029,9 @@ function OhlcSvgChart({
             zIndex: 2,
             pointerEvents: 'none',
             fontSize: 11,
-            color: '#e4e4e7',
-            background: 'rgba(9,9,11,0.85)',
-            border: '1px solid #3f3f46',
+            color: '#0f172a',
+            background: 'rgba(255,255,255,0.95)',
+            border: '1px solid #cbd5e1',
             borderRadius: 6,
             padding: '4px 8px',
             fontFamily: 'ui-monospace, monospace',
@@ -585,9 +1056,9 @@ function OhlcSvgChart({
               x2={width - pad.right}
               y1={yOf(v)}
               y2={yOf(v)}
-              stroke="rgba(148,163,184,0.14)"
+              stroke="rgba(148,163,184,0.35)"
             />
-            <text x={pad.left - 6} y={yOf(v) + 3} textAnchor="end" fill="#71717a" fontSize="10">
+            <text x={pad.left - 6} y={yOf(v) + 3} textAnchor="end" fill="#334155" fontSize="10">
               {v.toFixed(0)}
             </text>
           </g>
@@ -724,7 +1195,7 @@ function OhlcSvgChart({
                 </g>
               )}
               {i % labelEvery === 0 ? (
-                <text x={cx} y={height - 8} textAnchor="middle" fill="#71717a" fontSize="10">
+                <text x={cx} y={height - 8} textAnchor="middle" fill="#475569" fontSize="10">
                   {d.label}
                 </text>
               ) : null}
@@ -788,7 +1259,7 @@ function OhlcSvgChart({
               x2={xOf(hoverIdx)}
               y1={pad.top}
               y2={height - pad.bottom}
-              stroke="rgba(226,232,240,0.45)"
+              stroke="rgba(15,23,42,0.35)"
               strokeWidth={1}
               strokeDasharray="3 3"
             />
@@ -797,7 +1268,7 @@ function OhlcSvgChart({
               x2={width - pad.right}
               y1={yOf(data[hoverIdx].close)}
               y2={yOf(data[hoverIdx].close)}
-              stroke="rgba(226,232,240,0.35)"
+              stroke="rgba(15,23,42,0.28)"
               strokeWidth={1}
               strokeDasharray="3 3"
             />
@@ -805,8 +1276,8 @@ function OhlcSvgChart({
               cx={xOf(hoverIdx)}
               cy={yOf(data[hoverIdx].close)}
               r={3.5}
-              fill="#67e8f9"
-              stroke="#09090b"
+              fill="#0369a1"
+              stroke="#ffffff"
               strokeWidth={1}
             />
           </g>
@@ -850,7 +1321,7 @@ function OscillatorSvg({
 
   return (
     <svg width={width} height={height} style={{ display: 'block', maxWidth: '100%' }}>
-      <text x={pad.left} y={12} fill="#a1a1aa" fontSize="10">
+      <text x={pad.left} y={12} fill="#475569" fontSize="10">
         {title}
       </text>
       {(guideLines || []).map((g) => (
@@ -951,11 +1422,17 @@ export function StockChartModal({
     underlying_symbol?: string | null;
   } | null;
 }) {
+  const { theme } = useTheme();
+  const light = theme === 'light';
+  const surface = light ? '#ffffff' : 'rgba(2,6,23,0.96)';
+  const ink = light ? '#0f172a' : '#e2e8f0';
   const [chartInterval, setChartInterval] = useState<string>('15m');
   const [range, setRange] = useState<string>('5d');
   const [chartType, setChartType] = useState<ChartType>('candle');
-  const [bars, setBars] = useState<BarPoint[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [bars, setBars] = useState<BarPoint[]>(() =>
+    paperHistoricalBars(stock.symbol, '15m', stock.price)
+  );
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [panelSize, setPanelSize] = useState(() => ({
@@ -988,10 +1465,8 @@ export function StockChartModal({
   const savedSizeRef = useRef(panelSize);
 
   useEffect(() => {
-    if (tradeInstrument?.lot_size && tradeInstrument.lot_size > 1) {
-      setQty(String(tradeInstrument.lot_size));
-    }
-  }, [tradeInstrument?.instrument_id, tradeInstrument?.lot_size]);
+    setQty('1');
+  }, [tradeInstrument?.instrument_id]);
 
   /** Right-side paper ticket width — chart gets the rest */
   const TRADE_RAIL_W = 248;
@@ -1099,17 +1574,16 @@ export function StockChartModal({
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const paper = paperHistoricalBars(stock.symbol, chartInterval, stock.price);
+    setBars(paper);
+    setLoading(false);
     setError(null);
     fetchHistorical(stock.symbol, range, chartInterval)
       .then((data) => {
-        if (!cancelled) setBars(data);
+        if (!cancelled && data.length) setBars(data);
       })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Chart load failed');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+      .catch(() => {
+        /* paper candles already on screen */
       });
     return () => {
       cancelled = true;
@@ -1291,15 +1765,15 @@ export function StockChartModal({
           gap: 10,
           padding: '10px 12px',
           borderRadius: 16,
-          border: '1px solid rgba(34,211,238,0.45)',
-          background: 'rgba(2, 8, 23, 0.96)',
-          color: '#e2e8f0',
+          border: light ? '1px solid #cbd5e1' : '1px solid rgba(56,189,248,0.35)',
+          background: surface,
+          color: ink,
           boxShadow:
             '0 0 0 1px rgba(34,211,238,0.12), 0 0 24px rgba(34,211,238,0.16), 0 12px 28px rgba(0,0,0,0.45)',
           minWidth: 280,
         }}
       >
-        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: '#f8fafc' }}>
+        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: ink }}>
           {stock.symbol}
         </span>
         <span style={{ fontSize: 12, color: '#94a3b8', flex: 1 }}>Chart minimized</span>
@@ -1312,8 +1786,8 @@ export function StockChartModal({
             padding: '0 8px',
             borderRadius: 8,
             border: '1px solid #3f3f46',
-            background: '#18181b',
-            color: '#a5f3fc',
+            background: surface,
+            color: '#0369a1',
             cursor: 'pointer',
             display: 'inline-flex',
             alignItems: 'center',
@@ -1334,8 +1808,8 @@ export function StockChartModal({
             height: 30,
             borderRadius: 8,
             border: '1px solid #3f3f46',
-            background: '#18181b',
-            color: '#e4e4e7',
+            background: surface,
+            color: '#334155',
             cursor: 'pointer',
           }}
         >
@@ -1350,8 +1824,8 @@ export function StockChartModal({
             height: 30,
             borderRadius: 8,
             border: '1px solid #3f3f46',
-            background: '#18181b',
-            color: '#e4e4e7',
+            background: surface,
+            color: '#334155',
             cursor: 'pointer',
           }}
         >
@@ -1379,7 +1853,7 @@ export function StockChartModal({
         alignItems: 'center',
         justifyContent: 'center',
         padding: 16,
-        background: 'rgba(0,0,0,0.82)',
+        background: 'rgba(15,23,42,0.28)',
         boxSizing: 'border-box',
       }}
     >
@@ -1394,11 +1868,12 @@ export function StockChartModal({
           maxHeight: 'calc(100vh - 24px)',
           overflow: 'hidden',
           borderRadius: 16,
-          border: '1px solid rgba(34, 211, 238, 0.55)',
-          background: 'rgba(2, 8, 23, 0.96)',
-          color: '#e2e8f0',
-          boxShadow:
-            '0 0 0 1px rgba(34,211,238,0.12), 0 0 28px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)',
+          border: light ? '1px solid #cbd5e1' : '1px solid rgba(56,189,248,0.35)',
+          background: surface,
+          color: ink,
+          boxShadow: light
+            ? '0 0 0 1px rgba(15,23,42,0.04), 0 18px 40px rgba(15,23,42,0.12)'
+            : '0 0 0 1px rgba(34,211,238,0.12), 0 18px 40px rgba(0,0,0,0.55)',
           display: 'flex',
           flexDirection: 'column',
           resize: 'none',
@@ -1412,9 +1887,8 @@ export function StockChartModal({
             justifyContent: 'space-between',
             gap: 10,
             padding: '8px 12px',
-            borderBottom: '1px solid rgba(34,211,238,0.22)',
-            background:
-              'linear-gradient(90deg, rgba(8,47,73,0.96) 0%, rgba(15,23,42,0.98) 55%, rgba(6,78,59,0.45) 100%)',
+            borderBottom: light ? '1px solid #e2e8f0' : '1px solid rgba(56,189,248,0.22)',
+            background: light ? '#f8fafc' : 'rgba(15,23,42,0.92)',
             flexShrink: 0,
           }}
         >
@@ -1433,13 +1907,13 @@ export function StockChartModal({
                 fontFamily: 'ui-monospace, monospace',
                 fontSize: 16,
                 fontWeight: 700,
-                color: '#f8fafc',
+                color: ink,
               }}
             >
               {stock.symbol}
             </span>
             <span style={{ fontSize: 11, color: '#64748b' }}>{stock.exchange || stock.name}</span>
-            <span style={{ fontSize: 16, fontWeight: 700, color: '#f8fafc' }}>{fmt(stats.last)}</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: ink }}>{fmt(stats.last)}</span>
             <span
               style={{
                 color: up ? '#34d399' : '#f87171',
@@ -1457,7 +1931,7 @@ export function StockChartModal({
                 : ''}
             </span>
             <span style={{ color: '#64748b', fontSize: 11 }}>
-              H <b style={{ color: '#6ee7b7', fontWeight: 600 }}>{fmt(stats.high)}</b>
+              H <b style={{ color: '#047857', fontWeight: 600 }}>{fmt(stats.high)}</b>
               {' · '}
               L <b style={{ color: '#fca5a5', fontWeight: 600 }}>{fmt(stats.low)}</b>
             </span>
@@ -1474,8 +1948,8 @@ export function StockChartModal({
                 border: showAiHelp
                   ? '1px solid rgba(34,211,238,0.55)'
                   : '1px solid rgba(148,163,184,0.35)',
-                background: showAiHelp ? 'rgba(34,211,238,0.16)' : 'rgba(15,23,42,0.75)',
-                color: showAiHelp ? '#a5f3fc' : '#cbd5e1',
+                background: showAiHelp ? (light ? '#e0f2fe' : 'rgba(14,165,233,0.22)') : surface,
+                color: showAiHelp ? (light ? '#0369a1' : '#7dd3fc') : ink,
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1543,8 +2017,8 @@ export function StockChartModal({
                 alignItems: 'center',
                 gap: 6,
                 padding: '6px 10px',
-                borderBottom: '1px solid rgba(34,211,238,0.12)',
-                background: 'rgba(2,8,23,0.75)',
+                borderBottom: light ? '1px solid #e2e8f0' : '1px solid rgba(56,189,248,0.22)',
+                background: light ? '#f8fafc' : 'rgba(15,23,42,0.92)',
                 flexShrink: 0,
               }}
             >
@@ -1559,8 +2033,8 @@ export function StockChartModal({
                     borderRadius: 6,
                     border:
                       chartType === t.id ? '1px solid rgba(52,211,153,0.55)' : '1px solid #3f3f46',
-                    background: chartType === t.id ? 'rgba(52,211,153,0.14)' : '#18181b',
-                    color: chartType === t.id ? '#a7f3d0' : '#a1a1aa',
+                    background: chartType === t.id ? (light ? '#d1fae5' : 'rgba(16,185,129,0.22)') : surface,
+                    color: chartType === t.id ? (light ? '#047857' : '#6ee7b7') : ink,
                     fontSize: 11,
                     cursor: 'pointer',
                   }}
@@ -1576,9 +2050,9 @@ export function StockChartModal({
                 style={{
                   height: 28,
                   borderRadius: 6,
-                  border: '1px solid #3f3f46',
-                  background: '#18181b',
-                  color: '#e4e4e7',
+                  border: '1px solid #cbd5e1',
+                  background: surface,
+                  color: ink,
                   padding: '0 6px',
                   fontSize: 11,
                 }}
@@ -1607,9 +2081,9 @@ export function StockChartModal({
                 style={{
                   height: 28,
                   borderRadius: 6,
-                  border: '1px solid #3f3f46',
-                  background: '#18181b',
-                  color: '#e4e4e7',
+                  border: '1px solid #cbd5e1',
+                  background: surface,
+                  color: ink,
                   padding: '0 6px',
                   fontSize: 11,
                 }}
@@ -1638,8 +2112,8 @@ export function StockChartModal({
                         : '1px solid #3f3f46',
                       background: on
                         ? `${TOOL_COLORS[tool.id] || 'rgba(34,211,238,1)'}22`
-                        : '#18181b',
-                      color: on ? TOOL_COLORS[tool.id] || '#a5f3fc' : '#a1a1aa',
+                        : surface,
+                      color: on ? TOOL_COLORS[tool.id] || (light ? '#0369a1' : '#7dd3fc') : ink,
                       fontSize: 10,
                       fontWeight: on ? 600 : 400,
                       cursor: 'pointer',
@@ -1657,13 +2131,21 @@ export function StockChartModal({
                 flex: '1 1 auto',
                 overflow: 'auto',
                 minHeight: 0,
-                background:
-                  'radial-gradient(ellipse at top, rgba(8,47,73,0.35) 0%, rgba(2,8,23,0.92) 55%, rgba(2,6,23,1) 100%)',
+                background: surface,
               }}
             >
-          {loading ? (
-            <div style={{ height: chartHeight, displayContent: 'center', textAlign: 'center', color: '#a1a1aa' }}>
-              Loading chart…
+          {loading && bars.length === 0 ? (
+            <div
+              style={{
+                height: chartHeight,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center',
+                color: '#475569',
+              }}
+            >
+              LOADING CHART…
             </div>
           ) : error ? (
             <div
@@ -1688,7 +2170,7 @@ export function StockChartModal({
                   borderRadius: 8,
                   border: '1px solid #52525b',
                   background: '#27272a',
-                  color: '#e4e4e7',
+                  color: '#334155',
                   fontSize: 12,
                   cursor: 'pointer',
                 }}
@@ -1697,11 +2179,13 @@ export function StockChartModal({
               </button>
             </div>
           ) : (
+            <ChartDrawLayer width={chartWidth} height={chartHeight}>
+              {(innerW) => (
             <div>
               {(chartType === 'candle' || chartType === 'ohlc') && (
                 <OhlcSvgChart
                   data={chartData}
-                  width={chartWidth}
+                  width={innerW}
                   height={chartHeight}
                   mode={chartType}
                   tools={activeTools}
@@ -1710,7 +2194,7 @@ export function StockChartModal({
 
               {chartType === 'line' && (
                 <AreaChart
-                  width={chartWidth}
+                  width={innerW}
                   height={chartHeight}
                   data={chartData}
                   margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
@@ -1731,7 +2215,7 @@ export function StockChartModal({
                   />
                   <Tooltip
                     contentStyle={{
-                      background: '#09090b',
+                      background: surface,
                       border: '1px solid #3f3f46',
                       borderRadius: 8,
                     }}
@@ -1832,7 +2316,7 @@ export function StockChartModal({
 
               {chartType === 'bar' && (
                 <ComposedChart
-                  width={chartWidth}
+                  width={innerW}
                   height={chartHeight}
                   data={chartData}
                   margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
@@ -1858,7 +2342,7 @@ export function StockChartModal({
                   />
                   <Tooltip
                     contentStyle={{
-                      background: '#09090b',
+                      background: surface,
                       border: '1px solid #3f3f46',
                       borderRadius: 8,
                     }}
@@ -1886,7 +2370,7 @@ export function StockChartModal({
               {/* Always show volume strip under candle/ohlc/line */}
               {chartType !== 'bar' && (
                 <div style={{ marginTop: 6 }}>
-                  <VolumeSvg data={chartData} width={chartWidth} height={56} />
+                  <VolumeSvg data={chartData} width={innerW} height={56} />
                 </div>
               )}
 
@@ -1894,7 +2378,7 @@ export function StockChartModal({
                 <div style={{ marginTop: 8, borderTop: '1px solid #27272a', paddingTop: 6 }}>
                   <OscillatorSvg
                     title="RSI (14)"
-                    width={chartWidth}
+                    width={innerW}
                     height={88}
                     series={[
                       {
@@ -1916,7 +2400,7 @@ export function StockChartModal({
                 <div style={{ marginTop: 8, borderTop: '1px solid #27272a', paddingTop: 6 }}>
                   <OscillatorSvg
                     title="MACD (12,26,9)"
-                    width={chartWidth}
+                    width={innerW}
                     height={96}
                     series={[
                       {
@@ -1936,6 +2420,8 @@ export function StockChartModal({
                 </div>
               )}
             </div>
+              )}
+            </ChartDrawLayer>
           )}
             </div>
           </div>
@@ -1970,12 +2456,7 @@ export function StockChartModal({
                   ? Number(limitPrice) || stats.last || undefined
                   : stats.last || Number(limitPrice) || undefined
               }
-              qty={Math.max(
-                1,
-                Number(qty) || (tradeInstrument?.lot_size && tradeInstrument.lot_size > 1
-                  ? tradeInstrument.lot_size
-                  : 1)
-              )}
+              qty={Math.max(1, Number(qty) || 1)}
               onQtyChange={(n) => setQty(String(n))}
             />
           </div>
@@ -1986,8 +2467,8 @@ export function StockChartModal({
         <div
           style={{
             padding: '8px 12px 10px',
-            borderTop: '1px solid rgba(34,211,238,0.22)',
-            background: 'linear-gradient(90deg, rgba(8,47,73,0.55), rgba(15,23,42,0.9), rgba(6,78,59,0.25))',
+            borderTop: light ? '1px solid #e2e8f0' : '1px solid rgba(56,189,248,0.22)',
+            background: light ? '#f8fafc' : 'rgba(15,23,42,0.92)',
             flexShrink: 0,
             maxHeight: 140,
             overflow: 'auto',
@@ -2003,7 +2484,7 @@ export function StockChartModal({
             }}
           >
             <Sparkles size={14} color="#67e8f9" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#a5f3fc', letterSpacing: 0.3 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', letterSpacing: 0.3 }}>
               AI SUGGESTION
             </span>
             {technicalSuggestion && (
@@ -2052,8 +2533,8 @@ export function StockChartModal({
                 padding: '0 10px',
                 borderRadius: 8,
                 border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#a1a1aa',
+                background: surface,
+                color: '#475569',
                 fontSize: 11,
                 cursor: aiLoading ? 'wait' : 'pointer',
               }}
@@ -2071,8 +2552,8 @@ export function StockChartModal({
                 height: 28,
                 borderRadius: 8,
                 border: '1px solid #3f3f46',
-                background: '#18181b',
-                color: '#a1a1aa',
+                background: surface,
+                color: '#475569',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -2111,7 +2592,7 @@ export function StockChartModal({
 
           {technicalSuggestion ? (
             <>
-              <p style={{ margin: 0, fontSize: 12, color: '#e4e4e7', lineHeight: 1.45 }}>
+              <p style={{ margin: 0, fontSize: 12, color: '#0f172a', lineHeight: 1.45 }}>
                 {technicalSuggestion.summary}
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
@@ -2120,11 +2601,11 @@ export function StockChartModal({
                     key={r}
                     style={{
                       fontSize: 10,
-                      color: '#a1a1aa',
+                      color: '#475569',
                       border: '1px solid #3f3f46',
                       borderRadius: 999,
                       padding: '2px 8px',
-                      background: '#18181b',
+                      background: surface,
                     }}
                   >
                     {r}
@@ -2143,10 +2624,10 @@ export function StockChartModal({
               marginTop: 8,
               padding: '8px 10px',
               borderRadius: 8,
-              border: '1px solid rgba(63,63,70,0.9)',
-              background: 'rgba(9,9,11,0.55)',
+              border: '1px solid #e2e8f0',
+              background: surface,
               fontSize: 12,
-              color: '#d4d4d8',
+              color: '#334155',
               lineHeight: 1.45,
               maxHeight: 96,
               overflow: 'auto',

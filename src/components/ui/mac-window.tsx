@@ -10,6 +10,9 @@ import {
 } from 'react';
 import { flushSync } from 'react-dom';
 import { useWindowStack } from '../../contexts/WindowStackContext';
+import { useTheme } from '../../contexts/ThemeContext';
+import { TOP_CHROME_H } from '../TopBar';
+import { MARKET_TICKER_H } from '../algos/MarketTickerBar';
 
 type WindowMode = 'inline' | 'floating' | 'maximized';
 type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -32,6 +35,8 @@ interface MacWindowProps {
   windowId?: string;
   /** Keep above other Mac windows (below TopBar / Algos menu). */
   alwaysOnTop?: boolean;
+  /** White window body (My Algos / Algos Live). */
+  light?: boolean;
   /**
    * Keep window in the main desktop column (full width, no float-away).
    * Default true when defaultMode is inline. DhanLaxmi stays separate (always floating).
@@ -39,8 +44,8 @@ interface MacWindowProps {
   fitMain?: boolean;
 }
 
-/** Top menu + market ticker / profile strip. */
-const TOP_BAR_H = 104;
+/** Top menu + index ticker + MCX commodity ticker. */
+const TOP_BAR_H = TOP_CHROME_H + MARKET_TICKER_H;
 const SIDEBAR_W = 80;
 
 export function MacWindow({
@@ -60,8 +65,11 @@ export function MacWindow({
   initialPosition,
   windowId,
   alwaysOnTop = false,
-  fitMain
+  fitMain,
+  light: lightProp
 }: MacWindowProps) {
+  const { theme } = useTheme();
+  const light = lightProp ?? theme === 'light';
   const reactId = useId();
   const id = windowId || reactId;
   const lockMain = fitMain ?? defaultMode === 'inline';
@@ -356,7 +364,8 @@ export function MacWindow({
           bottom: 16,
           zIndex,
           width: 'auto',
-          height: 'auto'
+          height: 'auto',
+          ...(light ? { background: '#ffffff', border: '1px solid #cbd5e1' } : {})
         }
       : mode === 'floating'
         ? {
@@ -384,12 +393,18 @@ export function MacWindow({
             marginLeft: 0,
             marginRight: 0,
             ...(lockMain
-              ? {
-                  border: '1px solid rgba(34, 211, 238, 0.55)',
-                  boxShadow:
-                    '0 0 0 1px rgba(34,211,238,0.12), 0 0 28px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)',
-                  background: 'rgba(2, 8, 23, 0.96)'
-                }
+              ? light
+                ? {
+                    border: '1px solid #cbd5e1',
+                    boxShadow: '0 10px 28px rgba(15, 23, 42, 0.12)',
+                    background: '#ffffff'
+                  }
+                : {
+                    border: '1px solid rgba(34, 211, 238, 0.55)',
+                    boxShadow:
+                      '0 0 0 1px rgba(34,211,238,0.12), 0 0 28px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)',
+                    background: 'rgba(2, 8, 23, 0.96)'
+                  }
               : {})
           };
 
@@ -414,7 +429,7 @@ export function MacWindow({
       data-reopen-label={reopenLabel || title}
       style={style}
       onPointerDownCapture={bringToFront}
-      className={`${floating ? 'fixed' : 'relative'} neon-card overflow-hidden rounded-2xl ${className}`}
+      className={`${floating ? 'fixed' : 'relative'} ${light ? '' : 'neon-card'} overflow-hidden rounded-2xl ${className}`}
     >
       <div
         onPointerDown={startDrag}
@@ -431,11 +446,14 @@ export function MacWindow({
           flexShrink: 0,
           userSelect: 'none',
           padding: '12px 16px',
-          borderBottom: '1px solid rgba(34,211,238,0.25)',
+          borderBottom: light ? '1px solid #e2e8f0' : '1px solid rgba(34,211,238,0.25)',
           cursor: mode === 'maximized' || lockMain ? 'default' : 'move',
-          background:
-            'linear-gradient(90deg, rgba(8,47,73,0.96) 0%, rgba(15,23,42,0.98) 45%, rgba(6,78,59,0.55) 100%)',
-          boxShadow: 'inset 0 -1px 0 rgba(34,211,238,0.18), 0 8px 18px rgba(0,0,0,0.25)'
+          background: light
+            ? '#ffffff'
+            : 'linear-gradient(90deg, rgba(8,47,73,0.96) 0%, rgba(15,23,42,0.98) 45%, rgba(6,78,59,0.55) 100%)',
+          boxShadow: light
+            ? 'none'
+            : 'inset 0 -1px 0 rgba(34,211,238,0.18), 0 8px 18px rgba(0,0,0,0.25)'
         }}
       >
         {/* Title block — left */}
@@ -450,8 +468,17 @@ export function MacWindow({
         >
           {icon}
           <div style={{ minWidth: 0 }}>
-            <div className="truncate text-sm font-semibold text-white">{title}</div>
-            {subtitle && <div className="truncate text-[11px] text-slate-400">{subtitle}</div>}
+            <div
+              className="truncate text-sm font-semibold"
+              style={{ color: light ? '#0f172a' : '#ffffff' }}
+            >
+              {title}
+            </div>
+            {subtitle && (
+              <div className="truncate text-[11px]" style={{ color: light ? '#64748b' : '#94a3b8' }}>
+                {subtitle}
+              </div>
+            )}
           </div>
         </div>
 

@@ -64,6 +64,11 @@ export const upsertDhanAccount = asyncHandler(async (req: Request, res: Response
   res.status(201).json({ success: true, data });
 });
 
+export const upsertFyersAccount = asyncHandler(async (req: Request, res: Response) => {
+  const data = await IntegrationService.upsertFyersAccount(req.user!.id, req.body);
+  res.status(201).json({ success: true, data });
+});
+
 export const validateAccount = asyncHandler(async (req: Request, res: Response) => {
   const data = await IntegrationService.validateAccount(req.user!.id, req.params.id);
   res.json({ success: true, data });
@@ -82,6 +87,11 @@ export const syncAccountPortfolio = asyncHandler(async (req: Request, res: Respo
 export const bootstrapEnvDhan = asyncHandler(async (req: Request, res: Response) => {
   const data = await IntegrationService.bootstrapEnvDhanAndSync(req.user!.id);
   res.json({ success: true, message: 'Dhan account connected from env and portfolio synced', data });
+});
+
+export const bootstrapEnvFyers = asyncHandler(async (req: Request, res: Response) => {
+  const data = await IntegrationService.bootstrapEnvFyersAndSync(req.user!.id);
+  res.json({ success: true, message: 'Fyers account connected from env', data });
 });
 
 export const getExecutionContext = asyncHandler(async (req: Request, res: Response) => {

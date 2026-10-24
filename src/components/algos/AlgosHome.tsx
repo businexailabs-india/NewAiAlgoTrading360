@@ -17,11 +17,12 @@ import { portfolioService } from '../../services/portfolioService';
 import { FundTransferModal } from './FundTransferModal';
 
 const DISCOVER = [
-  { id: 'equity_swing', label: 'Equity Swing', icon: TrendingUp, tab: 'investing' as const },
-  { id: 'equity_long', label: 'Equity Long Term', icon: BarChart3, tab: 'investing' as const },
+  { id: 'equity_swing', label: 'Equity Swing', icon: TrendingUp, tab: 'trading' as const },
+  { id: 'equity_long', label: 'Equity Long Term', icon: BarChart3, tab: 'trading' as const },
   { id: 'option_buy', label: 'Options Buying', icon: Activity, tab: 'trading' as const },
   { id: 'option_sell', label: 'Options Selling', icon: LineChart, tab: 'trading' as const },
   { id: 'hedged', label: 'Hedged Options', icon: Shield, tab: 'trading' as const },
+  { id: 'tradingbots', label: 'TradingBots', icon: Shield, tab: 'bots' as const },
   { id: 'all', label: 'All Algos', icon: Layers, tab: 'trading' as const }
 ];
 
@@ -103,8 +104,7 @@ export function AlgosHome({
             {(
               [
                 ['home', 'All', items.length],
-                ['trading', 'Trading Algos', items.filter((i) => i.lane === 'trading').length],
-                ['investing', 'Investing Algos', items.filter((i) => i.lane === 'investing').length]
+                ['trading', 'Trading Algos', items.filter((i) => i.lane === 'trading').length]
               ] as const
             ).map(([tab, label, count]) => (
               <button

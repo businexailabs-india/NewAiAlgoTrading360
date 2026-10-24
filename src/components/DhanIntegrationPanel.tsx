@@ -44,6 +44,11 @@ export function DhanIntegrationPanel() {
     }>;
   } | null>(null);
   const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
+  const [fyersForm, setFyersForm] = useState({
+    displayName: 'Fyers Primary',
+    appId: '',
+    accessToken: ''
+  });
   const [dhanForm, setDhanForm] = useState({
     displayName: 'Dhan Primary',
     clientId: '',
@@ -205,6 +210,49 @@ export function DhanIntegrationPanel() {
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Account save failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveFyers = async () => {
+    setBusy(true);
+    try {
+      const account = await integrationService.upsertFyersAccount({
+        displayName: fyersForm.displayName,
+        appId: fyersForm.appId,
+        accessToken: fyersForm.accessToken,
+        providerType: 'DIRECT'
+      });
+      setMsg('Fyers account saved (encrypted in DB)');
+      setFyersForm((f) => ({ ...f, accessToken: '', appId: '' }));
+      await load();
+      try {
+        const sync = await integrationService.syncAccountPortfolio(account.id);
+        setMsg(`Fyers saved · synced ${sync.holdingsCount} holdings`);
+      } catch (syncErr) {
+        setError(syncErr instanceof Error ? syncErr.message : 'Saved, but portfolio sync failed');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Fyers save failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const bootstrapEnvFyers = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await integrationService.bootstrapEnvFyers();
+      setMsg(
+        result.sync
+          ? `Fyers imported from .env · synced ${result.sync.holdingsCount} holdings`
+          : 'Fyers imported from .env (quotes enabled; holdings sync skipped)'
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Fyers env bootstrap failed');
     } finally {
       setBusy(false);
     }
@@ -459,6 +507,24 @@ export function DhanIntegrationPanel() {
             <Button variant="secondary" onClick={bootstrapEnv} disabled={busy}>Import from .env & Sync</Button>
           </div>
           <p className="text-xs text-gray-500">Portfolio UI only shows DB holdings — sync pulls live Dhan positions into the app.</p>
+
+          <div className="pt-4 mt-4 border-t border-white/10 space-y-3">
+            <h3 className="text-white flex items-center gap-2"><Shield className="w-4 h-4" /> Fyers Accounts</h3>
+            <p className="text-xs text-gray-400">
+              App ID + access token from{' '}
+              <a className="text-cyan-300 underline" href="https://myapi.fyers.in/" target="_blank" rel="noreferrer">
+                myapi.fyers.in
+              </a>
+              . Set FYERS_APP_ID / FYERS_ACCESS_TOKEN in backend .env for index LTP without login.
+            </p>
+            <Input placeholder="Display name" value={fyersForm.displayName} onChange={(e) => setFyersForm({ ...fyersForm, displayName: e.target.value })} />
+            <Input placeholder="Fyers App ID (client_id)" value={fyersForm.appId} onChange={(e) => setFyersForm({ ...fyersForm, appId: e.target.value })} />
+            <Input placeholder="Access token" type="password" value={fyersForm.accessToken} onChange={(e) => setFyersForm({ ...fyersForm, accessToken: e.target.value })} />
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={saveFyers} disabled={busy || !fyersForm.appId || !fyersForm.accessToken}>Save Fyers</Button>
+              <Button variant="secondary" onClick={bootstrapEnvFyers} disabled={busy}>Import Fyers from .env</Button>
+            </div>
+          </div>
 
           <div className="space-y-2 mt-4">
             {accounts.length === 0 && <p className="text-gray-400 text-sm">No broker accounts</p>}

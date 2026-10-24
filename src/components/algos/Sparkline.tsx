@@ -9,7 +9,7 @@ export function Sparkline({
   width?: number;
   height?: number;
 }) {
-  if (!data.length) return null;
+  if (!data?.length) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
   const span = max - min || 1;

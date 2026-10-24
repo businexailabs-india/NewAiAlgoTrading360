@@ -49,32 +49,52 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
     name: string; value: number; change: number; changePercent: number;
     high?: number; low?: number; open?: number; previousClose?: number; timestamp?: string;
   }>): IndexData[] =>
-    data.map(item => ({
-      name: item.name,
-      value: item.value,
-      change: item.change,
-      changePercent: item.changePercent,
-      high: item.high ?? null,
-      low: item.low ?? null,
-      open: item.open ?? null,
-      previousClose: item.previousClose ?? null,
-      timestamp: item.timestamp ? new Date(item.timestamp) : new Date()
-    }));
+    data.map(item => {
+      let change = Number(item.change) || 0;
+      let changePercent = Number(item.changePercent) || 0;
+      const prev = Number(item.previousClose);
+      const value = Number(item.value);
+      if (Math.abs(changePercent) < 0.001 && prev > 0 && value > 0 && Math.abs(value - prev) > 0.05) {
+        change = value - prev;
+        changePercent = (change / prev) * 100;
+      }
+      return {
+        name: item.name,
+        value,
+        change,
+        changePercent,
+        high: item.high ?? null,
+        low: item.low ?? null,
+        open: item.open ?? null,
+        previousClose: item.previousClose ?? null,
+        timestamp: item.timestamp ? new Date(item.timestamp) : new Date()
+      };
+    });
 
-  const fetchMarketData = useCallback(async () => {
+  const fetchIndices = useCallback(async () => {
     try {
-      setError(null);
-      const [nseIndices, bseIndices, gainers, losers, smallCaps, sectors, breadth] = await Promise.all([
-        marketDataService.fetchNSEIndices(),
-        marketDataService.fetchBSEIndices(),
+      const nseIndices = await marketDataService.fetchNSEIndices();
+      if (nseIndices.length) {
+        setIndices(nseIndices);
+        setLastUpdated(new Date());
+        setError(null);
+      }
+    } catch (err) {
+      console.error('Error fetching indices:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const fetchMarketExtras = useCallback(async () => {
+    try {
+      const [gainers, losers, smallCaps, sectors, breadth] = await Promise.all([
         marketDataService.fetchTopGainers(10),
         marketDataService.fetchTopLosers(10),
         marketDataService.fetchSmallCapStocks(),
         marketDataService.fetchSectorPerformance(),
         marketDataService.fetchMarketBreadth()
       ]);
-
-      setIndices([...nseIndices, ...bseIndices]);
       setTopGainers(gainers);
       setTopLosers(losers);
       setSmallCapStocks(smallCaps);
@@ -82,25 +102,27 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
       setMarketBreadth(breadth);
       setLastUpdated(new Date());
     } catch (err) {
-      console.error('Error fetching market data:', err);
-      setError('Failed to fetch market data');
-    } finally {
-      setIsLoading(false);
+      console.error('Error fetching market extras:', err);
     }
   }, []);
 
   useEffect(() => {
-    fetchMarketData();
-    const interval = setInterval(fetchMarketData, POLL_MS);
-    return () => clearInterval(interval);
-  }, [fetchMarketData]);
+    void fetchIndices();
+    void fetchMarketExtras();
+    const indexTimer = setInterval(() => void fetchIndices(), POLL_MS);
+    const extraTimer = setInterval(() => void fetchMarketExtras(), POLL_MS * 2);
+    return () => {
+      clearInterval(indexTimer);
+      clearInterval(extraTimer);
+    };
+  }, [fetchIndices, fetchMarketExtras]);
 
   useEffect(() => {
     liveMarketSocket.subscribe(INDEX_CHANNELS);
 
     const unsubs = [
       liveMarketSocket.onIndices((data) => {
-        if (Array.isArray(data)) {
+        if (Array.isArray(data) && data.length) {
           setIndices(mapIndices(data as Array<{
             name: string; value: number; change: number; changePercent: number;
             high?: number; low?: number; open?: number; previousClose?: number; timestamp?: string;
@@ -174,8 +196,12 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
 
   const refreshData = useCallback(async () => {
     setIsLoading(true);
-    await fetchMarketData();
-  }, [fetchMarketData]);
+    try {
+      await Promise.all([fetchIndices(), fetchMarketExtras()]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fetchIndices, fetchMarketExtras]);
 
   return (
     <MarketDataContext.Provider
