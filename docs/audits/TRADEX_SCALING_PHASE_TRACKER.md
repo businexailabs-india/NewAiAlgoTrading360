@@ -6,7 +6,7 @@ A phase is complete only with passing tests + verified push. **No commit exists 
 | Phase | Module | Implementation | Tests | Commit SHA | Remote Push | Status |
 |---|---|---|---|---|---|---|
 | 0 | Workspace/architecture audit | 4 docs written (this set) | n/a (read-only inspection; commands in CURRENT_STATE) | — | — | IMPLEMENTED_TESTED (docs only, uncommitted) |
-| 1 | Multi-tenant identity | algo-bots API: HMAC verify (replay/skew/delimiter-injection safe), DB-resolved RBAC (5 roles), tenant-scoped routes, role management. NOT done: OIDC, MFA, sessions/revocation, subscriptions/preferences tables | `services/algo-bots-service`: 48 passed; `libs/tradex-bots`: 123 passed; ruff clean | — | — | IN_PROGRESS (uncommitted) |
+| 1 | Multi-tenant identity | algo-bots API: HMAC verify (replay/skew/delimiter-injection safe), DB-resolved RBAC (5 roles), tenant-scoped routes, role management. NOT done: OIDC, MFA, sessions/revocation, subscriptions/preferences tables | `services/algo-bots-service`: 48 passed; `libs/tradex-bots`: 123 passed; ruff clean | 639dc99 | origin/feature/tradex-million-user-scaling (verified via `git ls-remote`) | IN_PROGRESS (pushed; phase incomplete: no OIDC/MFA/sessions) |
 | 2 | Distributed strategy engine | in-process six bots exist; no distribution | 123 lib tests (single process) | — | — | NOT_STARTED (distributed part) |
 | 3 | Market-data fabric | not started | — | — | — | NOT_STARTED |
 | 4 | Kafka event architecture | not started | — | — | — | NOT_STARTED |
