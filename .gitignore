@@ -54,3 +54,14 @@ venv/
 coverage/
 .nyc_output/
 .cache/
+
+# Python build/test artefacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# Local runtime data (never commit)
+algo_bots.db*
+reports_out/
+prof.out

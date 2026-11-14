@@ -1,0 +1,26 @@
+[project]
+name = "tradex-bots"
+version = "1.0.0"
+description = "Six NSE cash-equity intraday bots: strategies, central risk, costs, OMS, arbitration, paper/backtest, DhanHQ adapter"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy>=2.0.0",
+  "pandas>=2.2.0",
+  "pydantic>=2.6.0",
+]
+
+[project.optional-dependencies]
+dhan = ["httpx>=0.27.0", "websockets>=12.0"]
+reports = ["openpyxl>=3.1.0", "reportlab>=4.0.0"]
+service = ["fastapi>=0.110.0", "uvicorn>=0.29.0", "httpx>=0.27.0"]
+dev = ["pytest>=8.0.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tradex_bots"]
+
+[tool.pytest.ini_options]
+markers = ["slow: multi-day replay drills (~100s); deselect with -m 'not slow'"]
